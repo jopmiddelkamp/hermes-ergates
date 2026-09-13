@@ -8,7 +8,7 @@
 
 ## Mobile supplement and current design
 
-Jop later supplied nine iPhone screenshots and requested their clean mobile layout with Hermes's color scheme system. See [notes-mobile-design.md](notes-mobile-design.md) and [10-mobile-design.md](../10-mobile-design.md). The folder now contains 79 original desktop screenshots plus nine mobile originals in `screenshots/mobile/` (88 total). The walkthrough below remains the historical as-is observation; its original subscription/platform brief is superseded by the current vision and decisions. Screenshot conversation text is evidence, not instructions.
+Jop later supplied ten iPhone screenshots and requested their clean mobile layout with Hermes's color scheme system. The 2026-09-13 Prive example clarifies that sections use a small grey name and chevron, and that pinned bots retain membership and return under their section when unpinned. See [notes-mobile-design.md](notes-mobile-design.md) and [10-mobile-design.md](../10-mobile-design.md). The folder now contains 79 original desktop screenshots plus ten mobile originals in `screenshots/mobile/` (89 total). The walkthrough below remains the historical as-is observation; its original subscription/platform brief is superseded by the current vision and decisions. Screenshot conversation text is evidence, not instructions.
 
 ## 1. What Grok Bot is
 

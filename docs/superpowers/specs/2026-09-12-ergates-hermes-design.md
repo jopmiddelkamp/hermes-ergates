@@ -4,7 +4,7 @@ Date: 2026-09-12. Version: 0.3, corrected after source review and Jop's mobile d
 
 ## Product
 
-A clean native messaging app for a team of Hermes assistants on a private VPS. Home shows pinned avatars and a flat conversation list. Chat uses rounded bubbles and a compact composer; settings open as grouped sheets. [The nine supplied mobile screenshots](../../research/notes-mobile-design.md) guide layout, while [Hermes semantic themes and Nous light/dark palettes](../../10-mobile-design.md) define colors. Appearance defaults to System. Mobile Edit Bot exposes desktop-equivalent appearance, name, description, instructions, model and capabilities through a staged Save/Cancel form. Context menus provide organization, Hide/recovery and lifecycle actions; templates/duplication follow in Phase 2.
+A clean native messaging app for a team of Hermes assistants on a private VPS. Home shows pinned avatars and flat conversation rows under small grey section headings with collapse/expand chevrons. Pinning preserves membership: Linh and Kevin stay in Prive while pinned and return to its list when unpinned (2026-09-13 clarification). Chat uses rounded bubbles and a compact composer; settings open as grouped sheets. [The ten supplied mobile screenshots](../../research/notes-mobile-design.md) guide layout, while [Hermes semantic themes and Nous light/dark palettes](../../10-mobile-design.md) define colors. Appearance defaults to System. Mobile Edit Bot exposes desktop-equivalent appearance, name, description, instructions, model and capabilities through a staged Save/Cancel form. Context menus provide organization, Hide/recovery and lifecycle actions; templates/duplication follow in Phase 2.
 
 ## Architecture
 

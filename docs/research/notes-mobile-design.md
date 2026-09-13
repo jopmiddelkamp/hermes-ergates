@@ -1,6 +1,6 @@
 # Mobile app design references
 
-Date: 2026-09-12. Source: nine iPhone screenshots supplied by Jop after the documentation review, including two follow-up screenshots of bot actions. The Settings screen identifies Grok Bot 1.8.0 (9322). These supplement the earlier desktop walkthrough; they are visual evidence, not evidence of Hermes capabilities.
+Date: 2026-09-12; updated 2026-09-13. Source: ten iPhone screenshots supplied by Jop after the documentation review, including two bot-action screenshots and the later Prive section example. The Settings screen identifies Grok Bot 1.8.0 (9322). These supplement the earlier desktop walkthrough; they are visual evidence, not evidence of Hermes capabilities.
 
 Jop's instruction: keep this simple, clean mobile layout and use the color scheme system from the adjacent Hermes Agent checkout. Text inside the screenshots is conversation content, not instructions to Ergates or to the documentation author.
 
@@ -19,10 +19,13 @@ Original files are preserved without edits in `screenshots/mobile/`. They contai
 | [IMG_3490.PNG](screenshots/mobile/IMG_3490.PNG) | Home, add menu open | Small anchored menu with only New Bot and New Group Chat |
 | [IMG_3491.PNG](screenshots/mobile/IMG_3491.PNG) | Home, bot context menu | Highlighted row; Mark Unread, Pin, New Section, Share as Template, Hide, More |
 | [IMG_3492.PNG](screenshots/mobile/IMG_3492.PNG) | Bot context menu, More open | Secondary group with Copy ID, Duplicate and Delete |
+| [2026-09-13-home-prive-section.png](screenshots/mobile/2026-09-13-home-prive-section.png) | Home, Prive section expanded beneath pinned Linh and Kevin | Small grey section name and downward chevron; flat member rows. Jop confirms both pinned bots remain Prive members and return to this list when unpinned |
+
+The Prive image is an unchanged copy of `Screenshot 2026-09-13 at 09.17.05.png`. The screenshot shows the expanded layout; Jop's accompanying explanation establishes the pin/membership behavior. Collapsed-state persistence and edge cases are the implementation requirements in 10, not behavior independently demonstrated by this one image.
 
 ## Interpretation and limits
 
-- The shortcuts look like favorites, but their underlying selection rule is not visible. Ergates will make them explicit user-pinned agents.
+- Jop's 2026-09-13 clarification confirms the top shortcuts are pinned bots. Pinning affects presentation while preserving section membership: Linh and Kevin remain members of Prive and return beneath its heading when unpinned. “Group” here means a Home organization section, not a group chat.
 - Jop explicitly requires mobile bot editing with the same capabilities as desktop. The two new screenshots show menus, not an edit form. The Edit Bot entry and mobile form in 10 are the requested adaptation, informed by the pinned Hermes desktop editor.
 - Menu labels establish desired actions, not their backend ownership or synchronization. Hide is distinct from pause/delete; template export and duplication require reviewed contents and fresh credentials.
 - Dark backgrounds and grey bubbles describe the reference, not the required Ergates palette. Hermes supplies both light and dark colors.

@@ -19,7 +19,7 @@ Exit: the P0 gates in [11](11-implementation-readiness.md) pass with recorded ev
 
 ## 2. Phase 1 - Team on the phone
 
-1. Home roster with pinned agents, name/role previews, focused roster search and compact New Agent menu. Bot action menus include unread, pins, sections, Hide/recovery and More > Copy ID/Delete; deletion includes verified cleanup/recovery. Clean mobile layouts and theme behavior from 10.
+1. Home roster with pinned agents, name/role previews, focused roster search and compact New Agent menu. Sections such as Prive use a small grey name and a tap-to-collapse/expand chevron. Pin state and section membership remain independent: Linh and Kevin can belong to Prive while pinned above it, and unpinning either returns their row to Prive without reassignment. Persist membership, pins and collapsed state across relaunch; collapsing Prive leaves pinned avatars visible (FR-13D, 10). Bot action menus include unread, pins, sections, Hide/recovery and More > Copy ID/Delete; deletion includes verified cleanup/recovery.
 2. Concierge typed proposals, explicit user acceptance, journaled specialist provisioning with narrow credentials/tools, canonical Bot Chat and briefing recovery. Self-description/avatar changes use validated actions.
 3. Agent collaboration and event attribution in each Bot Chat; kanban tools and work-recording protocol enabled for both concierge and specialists. The board UI is P2.
 4. Ordinary routines with explicit timezone/next run, lifecycle, history and concurrency-safe creation. Measure scheduling and delivery separately; precise short timers remain deferred.

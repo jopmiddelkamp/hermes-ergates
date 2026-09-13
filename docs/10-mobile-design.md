@@ -76,6 +76,18 @@ All dimensions below are logical points/dp, not screenshot pixels. Reference scr
 - The Add menu contains New Agent; New Group Chat appears when Phase 2 rooms are available. Selecting an action closes the menu before opening its sheet.
 - Search focuses its input. Phase 1 searches the loaded roster by name, role, and description; Phase 2 adds conversation-content search. State the selected scope in the input label. Closing search restores home position.
 
+### Home sections and pinned members
+
+Clarified by Jop on 2026-09-13 in the [Prive reference](research/screenshots/mobile/2026-09-13-home-prive-section.png). A Home organization group is called a **section** in these docs; it does not create a shared conversation or a Hermes room.
+
+- Show the section name, such as **Prive**, as small, regular-weight grey text with a chevron immediately beside it. Use Hermes `mutedForeground` with the contrast fallback above; avoid a card, filled badge or large heading. The whole heading has a minimum 44-point hit area and an accessible section name and expanded/collapsed state.
+- Tap the heading to expand or collapse its conversation rows. Chevron down means expanded; right means collapsed. New sections start expanded; remember each section's state on this device.
+- Section membership and pin state are independent. Pinning a member shows it in the pinned area above the sections and removes its duplicate row from the section list, while retaining its section assignment. Moving a pinned bot to another section preserves its pin.
+- Unpinning returns the bot to its assigned section using the normal conversation ordering. If that section is collapsed, leave it collapsed and reveal the returned row when the user expands it. Unassigned bots return to the ordinary ungrouped list.
+- Collapsing a section never hides its pinned members. Keep its heading even when all members are pinned, so the section remains available. Removing a section clears its members' section assignment without changing their pin state.
+
+**Example:** Linh and Kevin belong to Prive and are pinned. Their large avatars appear at the top, while Prive's expanded list contains its unpinned members. Unpin Linh: her avatar leaves the pinned area and her conversation appears under Prive. Kevin stays pinned and remains a Prive member. Pin Linh again: her row leaves the list, her avatar returns to the top, and her Prive membership is unchanged.
+
 ### Bot actions
 
 Long-press a conversation or pinned avatar to open a compact action menu. Provide the same actions through the agent details overflow and native accessibility actions, so long-press is never the only route. Add **Edit Bot** as the first action: it is Jop's explicit requirement, even though it is not shown in the two additional menu screenshots. Keep the highlighted row visible behind the menu; use an opaque `popover` surface and neutral icons. Dismiss on outside tap or Back, and return focus to the trigger.
@@ -84,8 +96,8 @@ Long-press a conversation or pinned avatar to open a compact action menu. Provid
 |---|---|---|
 | Edit Bot | Opens the editor below; also available directly from agent details | 1 |
 | Mark Unread / Mark Read | Device-local reading marker; opening the conversation clears the manual unread flag | 1 |
-| Pin / Unpin | Device-local shortcut; first two prominent, additional pins in a horizontal strip | 1 |
-| New Section / Move to Section | Device-local named sections and membership; remove section returns its agents to the ordinary list | 1 |
+| Pin / Unpin | Device-local shortcut; first two prominent, additional pins in a horizontal strip. Preserve section membership; unpin returns to the assigned section | 1 |
+| New Section / Move to Section | Device-local collapsible sections; changing membership preserves pin state. Removing a section returns unpinned members to the ordinary list and keeps pinned members pinned | 1 |
 | Hide / Unhide | Shared Hermes bot metadata; removes from the usual roster without pausing work or muting notifications. Settings > Hidden Bots provides recovery | 1 |
 | Share as Template | Review a sanitized configuration snapshot before export; exclude credentials, conversation history, memory, files and active routines by default | 2 |
 | More > Copy ID | Copy the profile identifier with its gateway label; no URL credentials or access token | 1 |
@@ -158,3 +170,5 @@ Refresh Home, search, pinned labels, chat identity and details after confirmed s
 Compare Home, Chat (keyboard open/closed), Search, Add menu, bot action menu/More, Edit Bot (basic and advanced), Settings and an approval card against the supplied reference layouts. Check on 320–430 logical-pixel widths, iPhone safe areas, Android, both Nous appearances, and large text. Verify screen-reader labels, focus return after sheets, non-color state indicators, and contrast on every mapped surface. Theme switching must recolor all surfaces and controls without changing layout or resetting the conversation. Exercise Save, Cancel, dirty dismissal, partial failure, concurrent metadata edits and a model/tool change during an active turn. Confirm a display-name edit appears across Home/search/chat while the same profile and transcript remain selected.
 
 The conversation preview illustrates this direction with sample content. It is not a working mobile build; this document and the implementation checks remain authoritative.
+
+Section acceptance: assign Linh and Kevin to Prive; pin both and verify no duplicate rows under Prive. Unpin each and verify it returns to Prive; repin and verify membership persists. Repeat with Prive collapsed and after an app restart. Verify moving a pinned member to another section preserves its pin, collapsing Prive leaves pinned avatars visible, and deleting the section clears membership without unpinning its members. These checks are required for Phase 1; the earlier preview check does not establish this behavior.

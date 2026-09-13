@@ -53,6 +53,8 @@ The desktop namespace `ui_meta['hermes-bots']` carries `title` (friendly name), 
 
 Hermes desktop section membership is metadata, while its section definitions live in plugin storage (`user-sections.ts`). Ergates therefore defines mobile sections and pins as device-local; it does not claim cross-client synchronization. Shared Hide remains in Hermes metadata and has a Hidden Bots recovery list. Read/unread is a reader preference, not proof of agent-message delivery. Notification suppression is independent of Hide.
 
+Mobile organization keeps a section's stable id/name and collapsed state under its connection, and separate `sectionId` (nullable) and `pinned`/pin order fields per connection/profile. Pin/unpin never rewrites `sectionId`; moving sections never rewrites pin state. Derive the pinned area from visible pinned bots and each section's rows from its visible unpinned members. A collapsed section suppresses its rows only, not its pinned members. Keep the section definition/header when all members are pinned. Section removal clears membership and collapsed state for that section while preserving pins. Persist all three concerns across relaunch so unpinning Linh or Kevin still returns them to Prive (FR-13D).
+
 The editor's Save spans independent profile, avatar, config and subscription operations. Track confirmed and failed sections; cancellation after a partial save discards only unsaved edits. Existing revision checks do not protect all non-metadata fields against concurrent writers; the limits and acceptance gate are in 10 and 11.
 
 ## 4. Identifier and replay rules

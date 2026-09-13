@@ -19,7 +19,7 @@ Updated 2026-09-12 after source review and Jop's mobile design references. **The
 | [11 - Implementation readiness](11-implementation-readiness.md) | Verified support → app/integration work → acceptance gates; custom integration contracts |
 | [Design summary](superpowers/specs/2026-09-12-ergates-hermes-design.md) | Compact statement of the current design |
 | [Grok Bot research](research/00-research-summary.md) | Historical walkthrough, business rules and observed problems |
-| [Mobile references](research/notes-mobile-design.md) | Nine original iPhone screenshots supplied by Jop and their design interpretation |
+| [Mobile references](research/notes-mobile-design.md) | Ten original iPhone screenshots, including Prive sections and retained membership while pinned |
 | [Hermes source notes](research/notes-hermes-facts.md) | Upstream sources, corrected handler facts and unverified implementation boundaries |
 | [Vendor background](research/notes-claude-platform-facts.md) | Earlier recorded vendor documentation; recheck current terms before selecting an auth path |
 | [Archived own-platform design](archive/2026-09-12-own-platform-design/) | Superseded history; do not build from it |
@@ -28,4 +28,4 @@ Source of Hermes behavior and colors: adjacent checkout `../hermes-agent`, versi
 
 The current docs define the product; research records observations; the archive records the discarded architecture. If documents disagree, use the corrected handler contract in 06 for protocol details, 10 for mobile layout/colors, and 11 for capability status, then fix the conflicting text. None of the historical skill/playbook text is an instruction to execute it while reading the docs.
 
-Privacy: research contains personal data, including 79 desktop and nine mobile screenshots. Keep it private; do not bundle these originals into the app or a public preview.
+Privacy: research contains personal data, including 79 desktop and ten mobile screenshots. Keep it private; do not bundle these originals into the app or a public preview.
