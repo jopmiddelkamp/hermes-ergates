@@ -121,6 +121,7 @@ Requirement IDs: **FR-xxx** functional, **NFR-xxx** non-functional, **BR-xx** bu
 | FR-13A | Every agent uses the Hermes core; acceptance checks cover each enabled provider path, including any alternative runtime, before claiming equivalent tool policy and approval behavior. | M | |
 | FR-13B | Mobile Edit Bot provides all fields and save semantics in 10. Entry points: chat name > Edit Bot and roster action menu. Stage edits, support Cancel, handle partial saves/revision conflicts, and preserve profile identity/history when changing the display name. | M | Jop's mobile editing request |
 | FR-13C | Roster actions and accessible alternatives follow 10: unread/read, pin/unpin, sections, hide/recover, Copy ID and confirmed Delete. Hidden agents continue running. Share as Template and Duplicate use reviewed, sanitized configuration in Phase 2. | M / S | IMG_3491–3492 |
+| FR-13D | Home organization sections have a small grey name and expandable/collapsible chevron. Section membership persists independently of pin state: pinned members appear only in the pinned area, and unpinning returns them to their assigned section. Collapsing a section does not hide its pinned members. Preserve membership, pins and collapsed state across app restarts; full Prive example and edge cases in 10. | M | Jop, 2026-09-13; Prive screenshot |
 
 ### 3.4 Agent-to-agent collaboration
 | ID | Requirement | Pri | BR |
@@ -259,7 +260,7 @@ The authoritative mobile layout, token mapping, states and accessibility checks 
 
 | Screen | Content | Phase |
 |---|---|---|
-| Home | Account avatar, Search, Add, optional pinned agents, flat conversation list | 1 |
+| Home | Account avatar, Search, Add, pinned agents, flat conversation rows under small grey collapsible section headings; pins retain section membership | 1 |
 | Chat | Back, agent name/details, bubbles, compact event/working rows, Attach, composer, Mic/Send | 0–1 |
 | Search | Focused input and roster results; conversation-content search later | 1; content search 2 |
 | Agent details | Edit Bot, routines, tools/connectors, memory, files, actions overflow | 1 |

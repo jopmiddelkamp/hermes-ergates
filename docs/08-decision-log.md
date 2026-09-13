@@ -42,6 +42,8 @@ The previous app/config-only assumption did not cover typed creation actions, fa
 
 Jop explicitly requested the clean iPhone style shown in nine screenshots. Adopt flat Home rows, optional pinned avatars, compact chat controls, rounded bubbles/composer and grouped settings sheets. Use Hermes `DesktopThemeColors`, Nous light/dark palettes and `HermesSkin` conversion/resolution. Appearance defaults to System. Mobile includes desktop-equivalent Edit Bot with Save/Cancel, partial-save recovery, and compact context menus/More as explicitly requested. Friendly name and role badge have separate metadata mappings. Detailed tokens, native geometry, states and visual acceptance live in 10; screenshot colors and vendor branding are not product tokens.
 
+2026-09-13 clarification (tenth mobile reference): Home sections such as Prive use small grey text and a collapse/expand chevron. Pin state is independent of membership: Linh and Kevin remain Prive members while pinned above it, and unpinning returns them to Prive. Persist both properties and section collapse state; collapsing a section does not hide pinned members. FR-13D and 10 define the Phase 1 acceptance cases.
+
 ## ADR-027 Honest reminder and offline-delivery semantics
 
 The pinned cron ticker defaults to 60 seconds. P1 ordinary reminders target measured job start within 90 seconds on a healthy idle server, with phone delivery measured separately. Sub-minute/five-second precision is deferred. Client request ids do not establish durable exactly-once submission: uncertain sends require reconciliation and deliberate retry. Custom proposal/job-create retries use integration receipts, not text matching.
