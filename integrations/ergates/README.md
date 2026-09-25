@@ -70,14 +70,25 @@ No credentials are ever read from, or written into, this repository or the
 store. Push is skipped (not an error) whenever `ntfy.server` or `ntfy.topic`
 is unset; the event and its outbox row are still recorded.
 
+`python -m ergates.flush` sends the due rows of every profile with the push
+settings of the one profile it reads them from (`--profile`, else its
+`HERMES_HOME`). This holds until install-wide push settings land.
+
 ## The control store
 
 One SQLite file per Hermes install: `<hermes root>/ergates/control.sqlite3`.
 `paths.hermes_root()` is `hermes_constants.get_default_hermes_root()` inside
 Hermes, which maps a profile home (`<root>/profiles/<name>`) back to the
 root, so every profile and every process (gateway, `hermes serve`, the
-flush) shares it. The file and its folder are created private (`0600`,
-`0700`).
+flush) shares it. The database file is created `0600`, and an `ergates/`
+folder the store creates is `0700`. An existing folder keeps its
+permissions; the store does not tighten it. When a process running as root
+creates the folder or the file, it hands them to the owner of the Hermes
+root, so the `hermes` user can still open the store.
+
+Earlier versions kept JSON journals in `notifications/`, `proposals/` and
+`reminders/` under each profile's `$HERMES_HOME/ergates/`. Nothing reads
+them any more; you can delete those three folders (keep `control.sqlite3`).
 
 | Table | Holds |
 |---|---|
@@ -173,10 +184,12 @@ provisions that profile.
   approval pushes and their retries ignore them. They are read in the
   timezone Hermes is configured for, the zone its cron runs routines in, and
   in server local time when Hermes has none.
-- A worker leases an outbox row for 60 s before it sends, so two workers
-  never send one row at once, and a worker that dies mid-send leaves a lease
-  that runs out. Failed attempts back off 30 s, 120 s, 600 s, 600 s; the
-  fifth failure gives up. Push is at least once.
+- A worker leases an outbox row for 60 s before it sends, and no other
+  worker claims the row while the lease holds. Push is at least once: a
+  worker that dies mid-send leaves a lease that runs out, and the next
+  worker sends the row again; and when a batch takes longer than 60 s to
+  send, a second worker can claim and send its later rows too. Failed
+  attempts back off 30 s, 120 s, 600 s, 600 s; the fifth failure gives up.
 - The body is always `You have a new request`; the title is `Hermes needs
   your approval` or `A routine finished`; the `Click` link is
   `ergates://chat/<session>?connection=<id>&profile=<name>`. Errors are

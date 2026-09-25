@@ -3,11 +3,13 @@
 :class:`DeliveryWorker` sends the ``attention_outbox`` rows that
 :class:`~ergates.attention.AttentionService` committed with each event. A
 worker first claims a row -- a :data:`LEASE_SECONDS` lease taken inside a
-store transaction -- so two workers (a hook's background thread and
-``python -m ergates.flush``, or two flushes) never send one row at the same
-time. A worker that dies mid-send leaves a lease that simply runs out, and
-the next worker sends the row again. Push is therefore at least once, which
-docs/11 section 4.2 allows.
+store transaction -- and no other worker (a hook's background thread,
+``python -m ergates.flush``, a second flush) claims it while the lease
+holds. Push is at least once, which docs/11 section 4.2 allows: a worker
+that dies mid-send leaves a lease that runs out, and the next worker sends
+the row again; and :meth:`DeliveryWorker.run_due` leases a whole batch at
+once, so when sending the batch takes longer than :data:`LEASE_SECONDS`, a
+second worker can claim and send its later rows too.
 
 Bookkeeping stays on the outbox row: attempts, backoff (30 s, 120 s, 600 s,
 then 600 s) and give-up after five attempts. A completion retry that would
