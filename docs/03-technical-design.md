@@ -70,7 +70,7 @@ These are planned paths; they do not exist yet. Package versions and native buil
 
 Screens import features. Features import the gateway port, the Query cache and the device store. The port contract, the session reducer and the vendored client import no React Native or Expo module, so they run unchanged in Node tests. The session reducer lives in the chat feature (`src/features/chat/session-reducer.ts`); `createSessionController` (`src/features/chat/session-controller.ts`) wires it to the port, and `use-session.ts` only binds that controller to React.
 
-`apps/mobile/.dependency-cruiser.cjs` encodes these rules, one named rule per ADR-029 rule, and CI fails on any violation (`npm run depcruise`). Each feature exposes one public `index.ts`; screens, UI and other features import nothing else from it.
+`apps/mobile/.dependency-cruiser.cjs` encodes these rules as 13 named checks (prefix `adr029-<rule number>-`), and CI fails on any violation (`npm run depcruise`). Each feature exposes one public `index.ts`; screens, UI and other features import nothing else from it.
 
 ```mermaid
 flowchart TB
