@@ -46,8 +46,18 @@ def pytest_configure(config: pytest.Config) -> None:
     home.mkdir()
     (root / "plugins").mkdir(parents=True)
     (root / "plugins" / "ergates").symlink_to(PLUGIN_DIR, target_is_directory=True)
-    (root / "config.yaml").write_text("plugins:\n  enabled:\n  - ergates\n", encoding="utf-8")
+    # security.allow_lazy_installs: false blocks Hermes's lazy `uv pip install` in both
+    # sealed and unsealed venvs (tools/lazy_deps.py:321-322); without it a test that
+    # imports an optional provider stack can wait out the whole 300 s install timeout.
+    (root / "config.yaml").write_text(
+        "plugins:\n  enabled:\n  - ergates\nsecurity:\n  allow_lazy_installs: false\n", encoding="utf-8",
+    )
     os.environ.update({"HOME": str(home), "HERMES_HOME": str(root), "HERMES_DASHBOARD_SESSION_TOKEN": SESSION_TOKEN})
+    # Hermes computes some paths at import time; nothing has imported it yet here, so
+    # this keeps every .pyc the live suite would otherwise write into the pinned
+    # checkout (it must stay clean: contract/pinned.py's check_pin refuses local edits
+    # or untracked files there).
+    sys.dont_write_bytecode = True
     sys.path.insert(0, str(source))
     # Starlette at the pin prefers httpx2 for its TestClient; the pinned Hermes ships httpx.
     config.addinivalue_line("filterwarnings", "ignore:Using `httpx` with `starlette.testclient`")

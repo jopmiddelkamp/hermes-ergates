@@ -10,10 +10,11 @@ import time
 
 import pytest
 
-from conftest import raw_bytes, rows
+from conftest import FakeCron, raw_bytes, rows
+from ergates import flush
 from ergates.attention import APPROVAL_TTL_SECONDS, RETENTION_SECONDS, AttentionService
 from ergates.delivery import LEASE_SECONDS
-from ergates.flush import flush_once, load_settings, main, profile_home, settings_from_config, settings_home
+from ergates.flush import flush_once, main
 from ergates.proposals import ProposalService, validate_proposal
 from ergates.reminders import REMINDER_MAX_IDLE_SECONDS, ReminderService
 
@@ -21,12 +22,8 @@ SETTINGS = {"server": "https://ntfy.example.internal", "topic": "ergates-alerts"
             "connection_id": "conn-1"}
 
 
-def _config(**ntfy):
-    return {"plugins": {"entries": {"ergates": {"settings": {"ntfy": ntfy}}}}}
-
-
 def _write_config(home, **ntfy):
-    """Write a profile config.yaml shaped exactly like the one the runbook edits."""
+    """Write a config.yaml shaped exactly like the one the runbook edits."""
     settings = ntfy or SETTINGS
     home.mkdir(parents=True, exist_ok=True)
     (home / "config.yaml").write_text(
@@ -44,63 +41,6 @@ def _approval(store, now, command="rm -rf /tmp/x"):
     return AttentionService(store, clock=lambda: now).approval_requested(
         session_key="s1", pattern_key="p1", command=command, surface="gateway", profile="thijs",
     )
-
-
-# --- profile path resolution ------------------------------------------------
-
-
-def test_profile_home_is_the_hermes_root_for_the_default_profile(tmp_path):
-    """hermes_cli/profiles.py's get_profile_dir at the pin: the default profile's
-    home IS the Hermes root; only a named profile sits under profiles/."""
-    assert profile_home(tmp_path) == tmp_path
-    assert profile_home(tmp_path, "default") == tmp_path
-    assert profile_home(tmp_path, " Default ") == tmp_path
-
-
-def test_profile_home_of_a_named_profile(tmp_path):
-    assert profile_home(tmp_path, "thijs") == tmp_path / "profiles" / "thijs"
-
-
-def test_settings_home_is_the_named_profile_else_hermes_home_else_the_root(tmp_path, monkeypatch):
-    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "profiles" / "thijs"))
-    assert settings_home(tmp_path, "nora") == tmp_path / "profiles" / "nora"
-    assert settings_home(tmp_path, None) == tmp_path / "profiles" / "thijs"
-
-    monkeypatch.delenv("HERMES_HOME")
-    assert settings_home(tmp_path, None) == tmp_path
-
-
-# --- settings resolution (no secrets on the command line) -------------------
-
-
-def test_settings_come_from_the_plugin_entry_in_the_profile_config():
-    settings = settings_from_config(_config(server="https://x", topic="t", token="tok", connection_id="c"))
-
-    assert settings == {"server": "https://x", "topic": "t", "token": "tok", "connection_id": "c"}
-
-
-def test_settings_are_empty_when_the_plugin_is_not_configured():
-    assert settings_from_config({}) == {}
-    assert settings_from_config({"plugins": {}}) == {}
-    assert settings_from_config(_config()) == {}
-
-
-def test_settings_tolerate_a_config_of_the_wrong_shape():
-    """A maintenance sweep must not die on a config typo."""
-    assert settings_from_config({"plugins": {"entries": {"ergates": "oops"}}}) == {}
-    assert settings_from_config({"plugins": "oops"}) == {}
-    assert settings_from_config(_config(server="", topic=None, token=7)) == {}
-    assert settings_from_config({"plugins": {"entries": {"ergates": {"settings": {"ntfy": "oops"}}}}}) == {}
-
-
-def test_load_settings_returns_empty_when_there_is_no_config_file(tmp_path):
-    assert load_settings(tmp_path) == {}
-
-
-def test_load_settings_reads_the_profile_config(tmp_path):
-    _write_config(tmp_path)
-
-    assert load_settings(tmp_path) == SETTINGS
 
 
 # --- the delivery pass --------------------------------------------------------
@@ -233,7 +173,7 @@ def test_main_reports_counts_and_never_prints_a_secret(tmp_path, capsys, monkeyp
     _write_config(tmp_path)
     _approval(store, time.time() - RETENTION_SECONDS - APPROVAL_TTL_SECONDS - 60)
 
-    exit_code = main(["--profile", "default"])
+    exit_code = main([])
 
     out = capsys.readouterr().out
     assert exit_code == 0
@@ -241,36 +181,67 @@ def test_main_reports_counts_and_never_prints_a_secret(tmp_path, capsys, monkeyp
     assert SETTINGS["token"] not in out
 
 
-def test_bug8_main_sweeps_the_shared_store_from_a_profile_process(tmp_path, capsys, monkeypatch, store):
+def test_bug8_main_sweeps_the_shared_store_with_the_install_settings_from_a_profile_process(
+        tmp_path, capsys, monkeypatch, store):
     """Roadmap bug 8: with HERMES_HOME=<root>/profiles/<name> the sweep opened the
-    profile's own journals. It now sweeps the one store under the Hermes root and
-    still reads the push settings of the profile it runs as."""
+    profile's own journals. It sweeps the one store under the Hermes root, and it
+    pushes with the install-wide settings in the root's config.yaml, not with
+    whatever the profile's own config says. This also replaces the former
+    --profile coverage (roadmap bug 8, the other half): there is no --profile
+    any more, so the store opening under the Hermes root when the process runs
+    as a named profile is the whole of the remaining behavior, and
+    test_main_takes_no_credential_arguments_and_no_profile below shows --profile
+    is refused outright."""
     monkeypatch.setitem(sys.modules, "hermes_constants", None)
     profile = tmp_path / "profiles" / "thijs"
-    _write_config(profile)
+    _write_config(profile, server="https://profile-only.example.internal", topic="ignored")
+    _write_config(tmp_path)
     monkeypatch.setenv("HERMES_HOME", str(profile))
+    swept = []
+    sweep = flush.flush_once
+
+    def spy(root, settings, **kwargs):
+        swept.append((root, dict(settings)))
+        return sweep(root, {}, **kwargs)  # no network in a test: the delivery pass is skipped
+
+    monkeypatch.setattr(flush, "flush_once", spy)
     _approval(store, time.time() - RETENTION_SECONDS - APPROVAL_TTL_SECONDS - 60)
 
     assert main([]) == 0
 
+    assert swept == [(tmp_path, SETTINGS)]
     assert "pruned_notifications=1" in capsys.readouterr().out
     assert sorted(path.name for path in profile.iterdir()) == ["config.yaml"]
 
 
-def test_bug8_main_with_the_profile_flag_still_sweeps_the_shared_store(tmp_path, capsys, monkeypatch, store):
-    """Roadmap bug 8, the other half: today's code passes profile_home(...) itself
-    as the sweep's root, so --profile <name> opens <root>/profiles/<name>/ergates/
-    control.sqlite3 instead of the store the hooks write to. --profile must only
-    steer where the push settings are read from, never where the store opens."""
+def test_main_asks_hermes_cron_so_a_job_deleted_natively_drops_its_receipt(tmp_path, capsys, monkeypatch, store):
+    """The sweep's cron is Hermes's own (hermes_adapter.HermesCron), so a job the
+    operator deleted in the Routines screen does not keep its receipt for 30 days."""
     monkeypatch.setitem(sys.modules, "hermes_constants", None)
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    _write_config(tmp_path / "profiles" / "thijs")
-    _approval(store, time.time() - RETENTION_SECONDS - APPROVAL_TTL_SECONDS - 60)
+    cron = FakeCron()
+    monkeypatch.setattr(flush, "HermesCron", lambda: cron)
+    outcome = ReminderService(store, cron).create("thijs", "0 9 * * *", "UTC", "Check invoices.")
+    cron.delete_job(outcome.receipt["job_id"])
 
-    assert main(["--profile", "thijs"]) == 0
+    assert main([]) == 0
 
-    assert "pruned_notifications=1" in capsys.readouterr().out
-    assert sorted(path.name for path in tmp_path.iterdir()) == ["ergates", "profiles"]
+    assert "pruned_reminders=1" in capsys.readouterr().out
+    assert rows(store, "reminder_receipts") == []
+
+
+def test_main_without_hermes_keeps_a_receipt_it_cannot_check(tmp_path, capsys, monkeypatch, store, cron):
+    """Outside the Hermes runtime HermesCron answers "could not tell": only the 30-day rule applies."""
+    monkeypatch.setitem(sys.modules, "hermes_constants", None)
+    monkeypatch.setitem(sys.modules, "cron", None)
+    monkeypatch.setitem(sys.modules, "cron.jobs", None)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    ReminderService(store, cron).create("thijs", "0 9 * * *", "UTC", "Check invoices.")
+
+    assert main([]) == 0
+
+    assert "pruned_reminders=0" in capsys.readouterr().out
+    assert len(rows(store, "reminder_receipts")) == 1
 
 
 def test_main_fails_cleanly_on_a_missing_hermes_home(tmp_path, monkeypatch, capsys):
@@ -281,8 +252,11 @@ def test_main_fails_cleanly_on_a_missing_hermes_home(tmp_path, monkeypatch, caps
     assert "no Hermes home" in capsys.readouterr().err
 
 
-def test_main_takes_no_credential_arguments():
+def test_main_takes_no_credential_arguments_and_no_profile():
     """The whole point of reading config.yaml: a token must never reach a process
-    listing (04 section 6). argparse rejects anything token-shaped."""
+    listing (04 section 6). argparse rejects anything token-shaped. The push
+    settings are install-wide, so there is no profile to choose either."""
     with pytest.raises(SystemExit):
         main(["--token", "secret"])
+    with pytest.raises(SystemExit):
+        main(["--profile", "thijs"])

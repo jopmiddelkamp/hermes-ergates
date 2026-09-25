@@ -113,9 +113,11 @@ docker compose exec hermes-serve hermes plugins doctor /opt/data/plugins/ergates
 docker compose exec hermes-gateway hermes plugins doctor /opt/data/plugins/ergates
 ```
 
-Expect one registered tool (`ergates_propose_agent`) and two hooks
-(`pre_approval_request`, `post_approval_response`). The gateway matters
-separately: that is the process where the approval hooks actually fire.
+Expect two registered tools (`ergates_propose_agent`,
+`ergates_create_reminder`) and four hooks (`pre_tool_call`,
+`pre_approval_request`, `post_approval_response`, `post_llm_call`). The
+gateway matters separately: that is the process where the hooks actually
+fire.
 
 ## First-run credential provisioning
 
@@ -158,9 +160,10 @@ already done above, before first start.
    token and nothing else. One token per device keeps revocation per device
    (`ntfy token remove`). ([ntfy user/access/token CLI][ntfy-config])
 
-   The publisher token goes **only** into the plugin's settings
-   (`plugins.entries.ergates.settings.ntfy.token` on the profile that runs
-   the concierge -- see `integrations/ergates/README.md`); the subscriber
+   The publisher token goes **only** into the plugin's install-wide
+   settings (`plugins.entries.ergates.settings.ntfy.token` in the Hermes
+   root's `config.yaml`, `/opt/data/config.yaml`, which every profile's
+   hooks and the sweep read -- see `integrations/ergates/README.md`); the subscriber
    tokens go **only** into the ntfy app on each device. Neither belongs in
    this `deploy/` tree, in `.env`, or on any command line other than the
    `ntfy token add` above.
@@ -192,11 +195,12 @@ driver: it sends every due push from the outbox of the control store
 approval timeout, and applies retention to attention events, proposal
 receipts and reminder receipts.
 
-It reads the ntfy server, topic, token and connection id from the profile's own `config.yaml`
-(the same `plugins.entries.ergates.settings.ntfy.*` keys the plugin reads),
+It reads the ntfy server, topic, token and connection id from the Hermes root's `config.yaml`
+(the same install-wide `plugins.entries.ergates.settings.ntfy.*` keys every hook reads),
 so **no credential is ever passed as an argument** and none appears in a
 process listing or in the log line it prints (04 section 6). The only
-arguments are `--profile` and `--quiet`.
+argument is `--quiet`. It also asks Hermes cron whether each reminder's job
+still exists, so a job deleted in the Routines screen drops its receipt.
 
 Add this to the host's crontab (`crontab -e`), every two minutes:
 
@@ -213,8 +217,6 @@ Add this to the host's crontab (`crontab -e`), every two minutes:
   on the import path; the package inside it is `ergates/`.
 - Adjust `cd /srv/ergates/deploy` to wherever you cloned this repo, and
   `/usr/bin/docker` to `which docker` on the host (cron's `PATH` is minimal).
-- Add `--profile <name>` when the concierge runs as a named profile rather
-  than the default one.
 
 Run it once by hand first; it prints one line of counts:
 

@@ -5,7 +5,7 @@ A clean React Native messaging app for a team of Hermes Agent assistants on your
 | Part | Path | Status |
 |---|---|---|
 | Mobile app (Expo SDK 57) | [apps/mobile](apps/mobile/README.md) | Runs on the iOS simulator against a local `hermes serve`; see the app README |
-| Integration package (Hermes plugin, Python) | [integrations/ergates](integrations/ergates/README.md) | Unit-tested; not yet installed on a live gateway |
+| Integration package (Hermes plugin, Python) | [integrations/ergates](integrations/ergates/README.md) | Unit-tested and run against the pinned Hermes in the contract tests; not yet installed on a live gateway |
 | Deployment (Compose, profile templates, runbook) | [deploy](deploy/README.md) | Reviewed draft; not yet run on a VPS |
 | Design documents | [docs](docs/README.md) | Authoritative specification; `docs/superpowers/` holds the plans (among them the Fable upgrade roadmap) and research notes |
 
@@ -31,7 +31,7 @@ Connect in the app with `http://127.0.0.1:9119` and the token.
 | `lint` | the workflow files (actionlint) and the runner script |
 | `mobile` | `npm run typecheck`, Vitest with the coverage gate, the ADR-029 dependency rules |
 | `integration` | the Python suite with a 90% branch-coverage gate, including the Hermes boundary guard |
-| `contract` | facts about the pinned Hermes source the integration relies on |
+| `contract` | facts about the pinned Hermes source the integration relies on, and the integration running inside the pinned Hermes (its adapter, routes and tool gate) |
 | `deploy` | `docker compose config` and static checks of `deploy/` |
 
 Run one job with `scripts/ci-local.sh mobile`, several with `scripts/ci-local.sh integration contract`. The quick loops:

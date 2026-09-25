@@ -26,11 +26,12 @@ from typing import Any, Callable, Dict, Optional
 
 from . import hermes_adapter, policy
 from .attention import AttentionService
-from .delivery import DeliveryWorker, ntfy_settings, send_ntfy
+from .delivery import DeliveryWorker, send_ntfy
 from .operations import reminder_problem
 from .paths import hermes_root, store_path
 from .proposals import ProposalError, ProposalService, validate_proposal
 from .reminders import ReminderError, ReminderService
+from .settings import push_settings
 from .store import ControlStore, StoreError
 
 logger = logging.getLogger(__name__)
@@ -227,8 +228,6 @@ def create_reminder_handler(
     return json.dumps({"status": outcome.status, "receipt": outcome.receipt})
 
 
-NTFY_KEYS = ("server", "topic", "token", "connection_id")
-
 # Decision D9: by default only routine (cron) turns push when they finish.
 DEFAULT_COMPLETED_PLATFORMS = frozenset({"cron"})
 
@@ -362,9 +361,19 @@ def _resolve_profile(ctx: Any) -> Optional[str]:
         return None
 
 
-def _delivery_worker(ctx: Any, store: ControlStore) -> Optional[DeliveryWorker]:
-    """A worker for this profile's ``ntfy.*`` settings, read at call time; ``None`` when push is off."""
-    settings = ntfy_settings({key: ctx.get_config(f"ntfy.{key}", None) for key in NTFY_KEYS})
+def _delivery_worker(store: ControlStore) -> Optional[DeliveryWorker]:
+    """A worker for the install's push settings, read at call time; ``None`` when push is off.
+
+    The settings are install-wide (:mod:`ergates.settings`): the Hermes
+    root's ``config.yaml``, whichever profile this hook runs in. A settings
+    file that cannot be read turns push off for this call; the event and its
+    outbox row are still recorded, and the flush sends the push later.
+    """
+    try:
+        settings = push_settings(hermes_root())
+    except Exception as exc:
+        logger.warning("ergates: push settings unreadable (%s); the flush sends it later", type(exc).__name__)
+        return None
     if settings is None:
         return None
     return DeliveryWorker(store, send_ntfy, settings)
@@ -451,7 +460,7 @@ def register(ctx: Any) -> None:
     def handle_pre_approval(**kwargs: Any) -> None:
         opened = services()
         on_approval_request(
-            opened.attention, worker=_delivery_worker(ctx, opened.store), profile=_resolve_profile(ctx), **kwargs,
+            opened.attention, worker=_delivery_worker(opened.store), profile=_resolve_profile(ctx), **kwargs,
         )
 
     def handle_post_approval(**kwargs: Any) -> None:
@@ -463,7 +472,7 @@ def register(ctx: Any) -> None:
             return
         opened = services()
         on_turn_completed(
-            opened.attention, worker=_delivery_worker(ctx, opened.store), profile=_resolve_profile(ctx),
+            opened.attention, worker=_delivery_worker(opened.store), profile=_resolve_profile(ctx),
             platforms=platforms, **kwargs,
         )
 

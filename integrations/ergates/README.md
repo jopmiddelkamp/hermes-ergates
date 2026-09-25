@@ -1,15 +1,17 @@
 # ergates (Hermes plugin)
 
 Small, dependency-free Hermes Agent plugin for the Ergates project. It gives
-the concierge a validated agent-proposal tool, records approval requests and
-finished routine turns as attention events with an ntfy push, and keeps
-idempotent reminder receipts. Every record lives in one transactional SQLite
-control store under the Hermes root (ADR-030).
+the agents a validated agent-proposal tool and a reminder tool that a retry
+never duplicates, blocks tool calls the Ergates rules forbid, records
+approval requests and finished routine turns as attention events with an
+ntfy push, and serves the app's server operations as authenticated routes
+of `hermes serve`. Every record lives in one transactional SQLite control
+store under the Hermes root (ADR-030).
 
 This package does **not** create profiles or run a scheduler. The app
-performs the provisioning steps; Hermes cron stays the scheduler. The cron
-calls go through a `CronPort` (`ergates/reminders.py`), and the push goes
-through an injectable `publish` callable (`ergates/delivery.py`).
+performs the provisioning steps and reports each one; the plugin records
+them and does the one step the app cannot do, enabling itself in the new
+profile (ADR-032). Hermes cron stays the scheduler.
 
 See `docs/11-implementation-readiness.md` section 4 and
 `docs/03-technical-design.md` sections 8-9 in the repository root for the
@@ -21,41 +23,64 @@ contracts this package implements.
 integrations/ergates/
   plugin.yaml          # Hermes directory-plugin manifest
   __init__.py          # Hermes entry point: register(ctx)
+  dashboard/
+    manifest.json      # tells `hermes serve` to mount api.py (no dashboard page)
+    api.py             # the HTTP routes under /api/plugins/ergates (FastAPI router)
+    index.js           # empty dashboard bundle, so the dashboard reports no error
   ergates/             # the actual logic, plain importable package
     hermes_adapter.py  # the only module that imports Hermes (decision D5)
-    paths.py           # hermes_root() and store_path(): where the store lives
+    paths.py           # hermes_root(), store_path(), templates_dir()
     store.py           # ControlStore: SQLite, WAL, BEGIN IMMEDIATE, versioned schema
     reminders.py       # ReminderService: idempotent reminders on top of Hermes cron
     proposals.py       # ergates.agent-proposal.v1 validation, hash, ProposalService
+    templates.py       # proposal templates under <root>/ergates/templates/
     attention.py       # AttentionService: events, outbox rows, prefs, expiry, retention
     delivery.py        # DeliveryWorker: leased outbox delivery to ntfy, deep link
+    settings.py        # the install-wide push settings in the root's config.yaml
+    operations.py      # every HTTP route as a framework-free method
+    policy.py          # the pre_tool_call tool gate
     tool.py            # ctx.register_tool / ctx.register_hook wiring
     flush.py           # `python -m ergates.flush`: due pushes, expiry, retention
-  tests/               # pytest suite (one file per module above);
-                       # test_hermes_boundary.py fails when a module other than
-                       # ergates/hermes_adapter.py or dashboard/api.py imports Hermes
-  contract/            # contract tests: facts read from the pinned Hermes source
-                       # (HERMES_SOURCE); run by `scripts/ci-local.sh contract`
+  tests/               # pytest suite, no Hermes needed; test_hermes_boundary.py
+                       # fails when a module other than ergates/hermes_adapter.py
+                       # or dashboard/api.py imports Hermes
+  contract/            # facts read from the pinned Hermes source as text
+    live/              # the adapter, the routes and the gate run against the
+                       # pinned Hermes itself; `scripts/ci-local.sh contract`
 ```
 
 ## Install
 
-Copy or symlink this directory into `$HERMES_HOME/plugins/ergates/` (the
-user-plugin directory Hermes scans, per `hermes_cli/plugins_discovery.py`):
+Hermes loads a user plugin from the ACTIVE home's `plugins/` folder, and only
+when that home's `config.yaml` lists it in `plugins.enabled`
+(`hermes_cli/plugins_discovery.py`). A named profile runs with its own home,
+so the plugin is installed once at the root and linked into each profile
+(roadmap decision D7):
 
-```bash
-ln -s "$(pwd)/integrations/ergates" ~/.hermes/plugins/ergates
-hermes plugins doctor   # validates plugin.yaml, __init__.py, register(ctx)
-```
-
-In the Compose deployment this is a read-only bind mount at
-`/opt/data/plugins/ergates` instead -- see `deploy/docker-compose.yml` and
-the "Verify the integration plugin is installed" step in `deploy/README.md`.
+1. Link or mount this directory at `<hermes root>/plugins/ergates`
+   (`~/.hermes/plugins/ergates` on a laptop; a read-only bind mount at
+   `/opt/data/plugins/ergates` in the Compose deployment, see
+   `deploy/docker-compose.yml`).
+2. Enable it in the root's `config.yaml`:
+   ```yaml
+   plugins:
+     enabled:
+       - ergates
+   ```
+   `hermes serve` runs with the root as its home, so this is what makes it
+   mount the routes; it also loads the plugin in the default profile.
+3. For every other profile, `POST /api/plugins/ergates/profiles/<name>/plugin`
+   links `<root>/profiles/<name>/plugins/ergates` to the root's copy and adds
+   `ergates` to that profile's `plugins.enabled`. The app calls it as the
+   `plugin_enabled` provisioning step. It takes effect on the profile's next
+   session.
 
 ## Configuration
 
-Read via `ctx.get_config(...)`, i.e. `plugins.entries.ergates.settings.*` in
-the profile's `config.yaml`:
+Install-wide settings live in the Hermes root's `config.yaml` (the default
+profile's), under `plugins.entries.ergates.settings`. Every profile's hooks
+and `python -m ergates.flush` read them there (`ergates/settings.py`), so a
+push goes to the same place whichever profile raised it:
 
 | Key | Default | Purpose |
 |---|---|---|
@@ -63,15 +88,73 @@ the profile's `config.yaml`:
 | `ntfy.topic` | unset (push disabled) | ntfy topic to publish attention events to |
 | `ntfy.token` | unset | ntfy publish token (Bearer), or `user:pass` for Basic |
 | `ntfy.connection_id` | unset | app connection id used to build the `Click` deep link |
+
+Values are read as written; `${VAR}` references are not expanded. One
+setting is per profile, read with `ctx.get_config` from that profile's own
+`config.yaml`:
+
+| Key | Default | Purpose |
+|---|---|---|
 | `attention.completed_platforms` | `["cron"]` | platforms whose finished turns push "A routine finished" (decision D9); `[]` turns them off |
 
 No credentials are ever read from, or written into, this repository or the
 store. Push is skipped (not an error) whenever `ntfy.server` or `ntfy.topic`
 is unset; the event and its outbox row are still recorded.
 
-`python -m ergates.flush` sends the due rows of every profile with the push
-settings of the one profile it reads them from (`--profile`, else its
-`HERMES_HOME`). This holds until install-wide push settings land.
+## HTTP API
+
+`hermes serve` mounts `dashboard/api.py` under `/api/plugins/ergates`
+(roadmap decision D3, ADR-031). Hermes's own middleware authenticates every
+request first: the dashboard session token on loopback, the cookie gate when
+dashboard auth is on. JSON in and out; every error is
+`{"error": {"code": "<code>", "message": "<safe text>"}}`. One
+`ControlStore` serves every request of the process.
+
+| Method and path | Success | Errors |
+|---|---|---|
+| `GET /health` | 200 `{"ok": true, "schema_version": 1, "plugin_version": "0.2.0"}` | 503 `store_unavailable` |
+| `POST /reminders` `{profile, schedule, timezone, prompt, request_id, label?}` | 201 new, 200 existing, 202 uncertain; body `{"receipt"}` | 409 `conflict` (with `receipt`), 400 `invalid`, 404 `unknown_profile` |
+| `GET /proposals/{id}` | 200 `{"proposal"}` | 404 `not_found` |
+| `POST /proposals/{id}/accept` `{proposal}` | 200 `{"proposal"}` with `template` | 409 `hash_mismatch` / `not_acceptable` / `name_taken`, 410 `expired`, 422 `unknown_template` |
+| `POST /proposals/{id}/reject` | 200 `{"proposal"}` | 409 `not_acceptable` |
+| `POST /proposals/{id}/steps` `{step, status}` | 200 `{"proposal"}`; `briefing` `done` completes it | 409 `out_of_order` / `not_ready` |
+| `POST /profiles/{profile}/plugin` | 200 `{"profile", "enabled": true}` | 404 `unknown_profile` |
+| `GET /attention/prefs?profile=<name or *>` | 200 `{"prefs"}` | 400 `invalid` |
+| `PUT /attention/prefs` `{profile, muted, quiet_start, quiet_end}` | 200 `{"prefs"}` | 400 `invalid` |
+
+Also on every route: 400 `invalid` for a body that is not a JSON object or a
+field that fails validation, 404 `not_found` for an unknown proposal, and
+503 `store_unavailable` when the control store cannot be opened. Only the
+accept answer carries the proposal's `template`; every other proposal answer
+has `"template": null` (repeat the accept to read it again: an accepted
+proposal answers 200 with its receipt).
+
+`POST /reminders` checks, in order: the fields (a `timezone` must be an IANA
+zone; a `label` is at most 64 printable characters and never defaults to
+prompt text), that the profile exists, and that Hermes cron accepts the
+schedule. Only then does it create, so a schedule Hermes refuses is a 400,
+never an uncertain create. A second identical request waits up to 5 s for
+the first and answers the same receipt.
+
+## Tools and the tool gate
+
+- `ergates_propose_agent` validates a proposal, records its receipt as
+  `proposed` and returns it. It never creates a profile.
+- `ergates_create_reminder` creates a reminder in the calling agent's
+  profile with the same checks as `POST /reminders`. It sends no request
+  id, so the same schedule, time zone and prompt in one profile is one
+  reminder however often the model asks.
+- The `pre_tool_call` hook (roadmap contract C6, `ergates/policy.py`)
+  blocks every tool of a profile whose accepted proposal is still being
+  provisioned, and blocks `cronjob_manage` with `action: create` (agents
+  use `ergates_create_reminder`). Hermes runs a tool when a hook callback
+  raises, so the gate turns any failure of its own into a block. Revoked
+  toolsets are roadmap Plan 5.
+
+The profile is always `ctx.profile_name` read at the moment of the call
+(`hermes_adapter.current_profile`), never once at registration: a
+multiplexed gateway serves several profiles from one process (roadmap
+bug 8).
 
 ## The control store
 
@@ -79,15 +162,8 @@ One SQLite file per Hermes install: `<hermes root>/ergates/control.sqlite3`.
 `paths.hermes_root()` is `hermes_constants.get_default_hermes_root()` inside
 Hermes, which maps a profile home (`<root>/profiles/<name>`) back to the
 root, so every profile and every process (gateway, `hermes serve`, the
-flush) shares it. The database file is created `0600`, and an `ergates/`
-folder the store creates is `0700`. An existing folder keeps its
-permissions; the store does not tighten it. When a process running as root
-creates the folder or the file, it hands them to the owner of the Hermes
-root, so the `hermes` user can still open the store.
-
-Earlier versions kept JSON journals in `notifications/`, `proposals/` and
-`reminders/` under each profile's `$HERMES_HOME/ergates/`. Nothing reads
-them any more; you can delete those three folders (keep `control.sqlite3`).
+flush) shares it. The file and its folder are created private (`0600`,
+`0700`).
 
 | Table | Holds |
 |---|---|
@@ -122,13 +198,16 @@ Rules the store enforces:
 | Approval event | expires 1800 s after it was created (the profiles' `approvals.timeout`); its due push is cancelled, never sent |
 | Terminal attention event (resolved, expired, completion) | deleted 7 days after `resolved_at`, with its outbox row |
 | Unaccepted proposal receipt (proposed or rejected) | deleted 24 h after its `expires_at`; accepted and complete receipts are kept for resume-by-receipt |
-| Reminder receipt | deleted when cron reports its job gone, or after 30 days without use |
+| Reminder receipt | deleted when Hermes cron reports its job gone, or after 30 days without use |
 
 ## Reminders
 
 `ReminderService.create(profile, schedule, timezone, prompt, request_id=..., label=...)`
 returns a `ReminderOutcome` with `status` `created`, `existing`, `conflict`
-or `uncertain`, and the receipt.
+or `uncertain`, and the receipt. `hermes_adapter.HermesCron` is its cron:
+each call runs in the profile's own home the way Hermes's `cron.manage` RPC
+does, and a create goes through the same function as the app's Routines
+screen, so Hermes's prompt scan and scheduler registration apply.
 
 - **The receipt id** is the caller's `request_id` (the app's per-attempt
   outbox id) when given, else the payload hash. The same id with a
@@ -137,34 +216,34 @@ or `uncertain`, and the receipt.
   waits for the first creator (up to 5 s) and returns the same receipt.
 - **A job deleted natively** (Routines screen) is created again once, by
   the one request that still holds the version that saw it missing.
-- **A create whose answer was lost** leaves the receipt `uncertain`. The
-  next request reconciles it through the job's unique name
-  (`[bot:<profile>] <label> · <8 hex>`): one match is adopted, none is
-  created once, several leave it `uncertain`. A `creating` receipt older
-  than 60 s belongs to a creator that died and is reconciled the same way.
+- **Every create is reconciled by name first**: the job name
+  (`[bot:<profile>] <label> · <8 hex>`) is unique per receipt and payload.
+  One match is adopted, none is created once, several leave the receipt
+  `uncertain`. A create whose answer was lost, or a `creating` receipt
+  older than 60 s, is reconciled the same way.
 - **Timezone is advisory.** Hermes 0.21.2 has no per-job timezone, so the
   zone stays in the idempotency key and comes back as `timezone_advisory`;
-  a reminder fires in the timezone Hermes is configured for
-  (`HERMES_TIMEZONE` or `timezone` in `config.yaml`; server local time when
-  neither is set).
-
-The roadmap's contract C2 names the production `CronPort`,
-`hermes_adapter.HermesCron`. Until it is wired in, no entry point creates
-reminders, and the flush prunes with `UnavailableCron`, which applies only the
-30-day rule.
+  a reminder fires in the server's timezone.
 
 ## Proposals
 
 `ergates_propose_agent` validates the model's arguments, attaches the
 backend-owned `source_session_id` (from the handler's `session_id` or
 `task_id`, never from `args`), records the receipt as `proposed`, and
-returns the proposal as JSON. It never creates a profile.
-`ProposalService` then accepts (exactly as proposed, decision D10) or
-rejects it, records each provisioning step the app reports in order
-(`profile_created`, `plugin_enabled`, `configured`, `bot_chat`,
-`briefing`), and marks it `complete` only after it verifies the profile and
-the plugin. `is_admitted(profile)` is false while an accepted proposal still
-provisions that profile.
+returns the proposal as JSON. The operator then accepts it exactly as
+proposed (decision D10) or rejects it through the HTTP API.
+
+Accepting answers the proposal's template, read from
+`<hermes root>/ergates/templates/<template_id>.json` (fields `template_id`,
+`soul`, `enabled_toolsets`, `enabled_mcp_servers`); an unknown template is a
+422 and reserves nothing. The app then performs the provisioning steps in
+order and reports each one: `profile_created` (`profiles.create` with
+`mirror_credentials: false`), `plugin_enabled` (after
+`POST /profiles/{profile}/plugin`), `configured` (`profiles.configure` from
+the template), `bot_chat`, `briefing`. A reported `briefing` `done` marks
+the proposal `complete` only after Hermes confirms the profile exists and
+would load this plugin there; until then the tool gate blocks every tool
+of that profile (ADR-032).
 
 ## Attention and push
 
@@ -178,17 +257,13 @@ provisions that profile.
 - `post_llm_call` records a finished turn from `attention.completed_platforms`
   and pushes "A routine finished". It reads only `session_id` and
   `platform`, never the messages.
-- A muted profile gets events but no pushes. Quiet hours (`HH:MM`, may wrap
-  midnight) hold completion pushes and their retries until they end;
-  approval pushes and their retries ignore them. They are read in the
-  timezone Hermes is configured for, the zone its cron runs routines in, and
-  in server local time when Hermes has none.
-- A worker leases an outbox row for 60 s before it sends, and no other
-  worker claims the row while the lease holds. Push is at least once: a
-  worker that dies mid-send leaves a lease that runs out, and the next
-  worker sends the row again; and when a batch takes longer than 60 s to
-  send, a second worker can claim and send its later rows too. Failed
-  attempts back off 30 s, 120 s, 600 s, 600 s; the fifth failure gives up.
+- A muted profile gets events but no pushes. Quiet hours (`HH:MM`, server
+  local time, may wrap midnight) hold completion pushes until they end;
+  approval pushes ignore them.
+- A worker leases an outbox row for 60 s before it sends, so two workers
+  never send one row at once, and a worker that dies mid-send leaves a lease
+  that runs out. Failed attempts back off 30 s, 120 s, 600 s, 600 s; the
+  fifth failure gives up. Push is at least once.
 - The body is always `You have a new request`; the title is `Hermes needs
   your approval` or `A routine finished`; the `Click` link is
   `ergates://chat/<session>?connection=<id>&profile=<name>`. Errors are
@@ -198,22 +273,23 @@ provisions that profile.
 ## Periodic sweep
 
 ```bash
-HERMES_HOME=/opt/data python -m ergates.flush [--profile <name>] [--quiet]
+HERMES_HOME=/opt/data python -m ergates.flush [--quiet]
 # ergates.flush: retried=0 expired_notifications=0 pruned_notifications=0 pruned_proposals=0 pruned_reminders=0
 ```
 
-It opens the store under the Hermes root and reads the ntfy settings from
-the `config.yaml` of `--profile`, else of the `HERMES_HOME` it runs with,
-else of the root. No credential is ever passed as an argument or printed.
-`deploy/README.md` schedules it from host cron every two minutes, inside the
-container.
+It opens the store under the Hermes root, reads the install-wide push
+settings from the root's `config.yaml`, and asks Hermes cron whether each
+reminder's job still exists. No credential is ever passed as an argument or
+printed. `deploy/README.md` schedules it from host cron every two minutes,
+inside the container.
 
 ## Development
 
 Requires [`uv`](https://docs.astral.sh/uv/) and Python 3.11. Standard
-library only at runtime (`sqlite3`, `json`, `hashlib`, `urllib`, `threading`
-and friends). `pytest`, `pytest-cov` and `pyyaml` are test dependencies only
--- `ergates.flush` imports `yaml` lazily, from the Hermes runtime that ships
+library only at runtime (`sqlite3`, `json`, `hashlib`, `urllib`, `zoneinfo`,
+`threading` and friends); `dashboard/api.py` uses the FastAPI that Hermes
+ships. `pytest`, `pytest-cov` and `pyyaml` are test dependencies only --
+`ergates.settings` imports `yaml` lazily, from the Hermes runtime that ships
 it.
 
 ```bash
@@ -224,8 +300,12 @@ uv run --python 3.11 --with pytest --with pytest-cov --with pyyaml pytest
 uv run --python 3.11 --with pytest --with pytest-cov --with pyyaml pytest --cov --cov-fail-under=90
 ```
 
-The contract tests read the Hermes source at the pin and need a checkout of it.
-From the repository root, `scripts/ci-local.sh contract` prepares one under
-`.cache/hermes-pin` (a detached `git worktree add` from your Hermes clone) and
-runs them; or point `HERMES_SOURCE` at a clean checkout of
-`d76856cc6971b6e0e1903b5369498bcc4bb83a60`.
+The contract tests need a checkout of the Hermes source at the pin. From the
+repository root, `scripts/ci-local.sh contract` prepares one under
+`.cache/hermes-pin` (a detached `git worktree add` from your Hermes clone)
+and runs two suites: `contract/` reads the pinned files as text, and
+`contract/live/` imports the pinned Hermes, with its locked dependencies
+exported from the pin's `uv.lock`, in a temporary Hermes root. Or point
+`HERMES_SOURCE` at a clean checkout of
+`d76856cc6971b6e0e1903b5369498bcc4bb83a60`. Never point either suite at a
+real `~/.hermes`: the live suite makes its own.

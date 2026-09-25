@@ -463,11 +463,17 @@ def test_bug8_register_opens_the_store_under_the_hermes_root_not_the_profile_hom
     assert list(profile_process.iterdir()) == []
 
 
+def _write_root_settings(root, **ntfy):
+    """The install-wide push settings: plugins.entries.ergates.settings.ntfy in the root's config.yaml."""
+    (root / "config.yaml").write_text(
+        yaml.safe_dump({"plugins": {"entries": {"ergates": {"settings": {"ntfy": ntfy}}}}}), encoding="utf-8")
+
+
 def test_register_wires_the_tool_and_every_hook_end_to_end(tmp_path, profile_process, monkeypatch):
     published = []
     monkeypatch.setattr(tool, "send_ntfy", published.append)
-    ctx = _RecordingCtx({"ntfy.server": "https://ntfy.example.internal", "ntfy.topic": "alerts",
-                         "ntfy.connection_id": "conn-1"})
+    _write_root_settings(tmp_path, server="https://ntfy.example.internal", topic="alerts", connection_id="conn-1")
+    ctx = _RecordingCtx()
     tool.register(ctx)
 
     proposal = json.loads(ctx.tools["ergates_propose_agent"](_valid_args(), session_id="s-1"))
@@ -762,3 +768,41 @@ def test_the_reminder_tool_answers_an_error_when_hermes_cannot_tell_the_profile(
 
     assert json.loads(ctx.tools["ergates_create_reminder"](_reminder_args())) == {
         "error": "Ergates could not tell which agent is asking"}
+
+
+# --- install-wide push settings -------------------------------------------------------
+
+
+def _wait_for(published):
+    deadline = time.monotonic() + _THREAD_TIMEOUT
+    while not published and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+
+def test_every_profile_pushes_with_the_install_settings_in_the_root_config(tmp_path, profile_process, monkeypatch):
+    """One store serves every profile, and so do the push settings: a profile's own
+    config (or its plugin settings) no longer decides where a push goes."""
+    published = []
+    monkeypatch.setattr(tool, "send_ntfy", published.append)
+    _write_root_settings(tmp_path, server="https://ntfy.example.internal", topic="alerts", connection_id="conn-1")
+    (profile_process / "config.yaml").write_text("plugins: {entries: {ergates: {settings: {ntfy: "
+                                                  "{server: 'https://elsewhere.example', topic: x}}}}}\n")
+    ctx = _RecordingCtx({"ntfy.server": "https://elsewhere.example", "ntfy.topic": "x"})
+    tool.register(ctx)
+
+    ctx.hooks["pre_approval_request"](command="cmd", session_key="s-1", surface="gateway")
+    _wait_for(published)
+
+    assert [spec["url"] for spec in published] == ["https://ntfy.example.internal/alerts"]
+
+
+def test_unreadable_push_settings_still_record_the_event_for_the_flush(tmp_path, profile_process, caplog):
+    (tmp_path / "config.yaml").write_text("plugins: [unclosed\n", encoding="utf-8")
+    ctx = _RecordingCtx()
+    tool.register(ctx)
+
+    ctx.hooks["pre_approval_request"](command="cmd", session_key="s-1", surface="gateway")
+
+    store = ControlStore(store_path(tmp_path))
+    assert rows(store, "attention_outbox")[0]["state"] == "due"
+    assert "push settings unreadable" in caplog.text
