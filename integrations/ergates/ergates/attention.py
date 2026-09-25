@@ -1,319 +1,300 @@
-"""Background attention/push: ntfy publish requests, the mobile deep link, and retention.
+"""Attention events and their push outbox: the server half of docs/11 section 4.2.
 
-Implements docs/11-implementation-readiness.md section 4.2. The stock Hermes
-ntfy adapter (``plugins/platforms/ntfy/adapter.py`` at the pinned checkout)
-posts plain-text bodies with ``Authorization``, ``Content-Type`` and
-``X-Tags: hermes-agent`` headers, but never sets a ``Click`` header.
-``build_ntfy_publish`` is this package's addition: it builds the full
-publish request -- server URL, headers (including ``Title``, ``Click``,
-``Priority`` and ``X-Tags``) and a fixed, generic body -- without ever
-sending it, so callers can unit-test the request shape and inject their own
-transport (mirroring ``ReminderCreator``'s ``create_job`` pattern).
+An attention event is one row in ``attention_events``: an ``approval`` that
+waits for the operator, or a ``completion`` -- a finished routine turn
+(roadmap decision D9). Every event that should reach the phone gets its
+``attention_outbox`` row in the same transaction, so a process that dies
+right after recording the event still leaves the push for
+:class:`~ergates.delivery.DeliveryWorker` (roadmap bug 4). Delivery
+bookkeeping -- attempts, backoff, give-up -- lives on the outbox row only; an
+event's ``state`` changes only through resolution or expiry (roadmap bug 5).
+A completion has nothing to answer, so it is recorded ``resolved`` at once
+and ages out on the seven-day rule.
 
-The body is a constant string on purpose: notifications carry a generic
-preview and identifiers, never the prompt, a command, or an approval
-decision (04 section 6-7; 11 section 4.2). ``event_id`` is accepted for the
-caller's own bookkeeping (e.g. to correlate a publish attempt with an
-``AttentionJournal`` record) -- ntfy's publish API has no client-settable
-message-id header, so it is deliberately not encoded into the HTTP request
-itself.
+The store holds identifiers and hashes, never the command, its description
+or a prompt. Approvals correlate on ``sha256([session_key, pattern_key,
+command_hash(command), surface])``, because the approval hooks carry no
+approval id at the pin; a ``request_id``, when Hermes supplies one, wins.
 
-The notification record itself is equally restricted: 11 section 4.2 defines
-it as event id, owning profile/session, approval id, event state, attempts,
-next retry and delivery result -- never the command or its description.
-``command_hash`` (a sha256 digest, never the command text) lets
-``tool.on_approval_response`` correlate a response back to the right pending
-event without the journal ever holding the command itself.
+Preferences (``attention_prefs``) are per profile, with ``"*"`` as the
+default row. A muted profile gets its events but no outbox rows. Quiet hours
+(``HH:MM`` in server local time; the window may wrap midnight) hold a
+completion push until the window ends. Approval pushes ignore quiet hours:
+the approval would time out first.
 """
 
 from __future__ import annotations
 
-import base64
 import hashlib
-import urllib.parse
-from typing import Any, Dict, List, Optional, Tuple
+import json
+import logging
+import re
+import sqlite3
+import time
+import uuid
+from datetime import datetime, timedelta
+from typing import Any, Callable, Optional
 
-from .journal import Journal
+from .store import ControlStore
 
-SECONDS_PER_DAY = 86400
-RETENTION_SECONDS = 7 * SECONDS_PER_DAY
+logger = logging.getLogger(__name__)
 
-_GENERIC_BODY = "You have a new request"
-_ECHO_TAG = "hermes-agent"
+# The shipped profiles set approvals.timeout: 1800; an approval still pending
+# after that has timed out in Hermes and can no longer be answered.
+APPROVAL_TTL_SECONDS = 1800
+RETENTION_SECONDS = 7 * 86400
+DEFAULT_PREFS_PROFILE = "*"
+SMART_SURFACE = "smart"
 
-_PENDING = "pending"
-_RESOLVED = "resolved"
-_FAILED = "failed"
-_EXPIRED = "expired"
+APPROVAL = "approval"
+COMPLETION = "completion"
+PENDING = "pending"
+RESOLVED = "resolved"
+EXPIRED = "expired"
 
-# Backoff between ntfy publish retries: 30s, then 2min, then 10min, then hold
-# at 10min for any further attempt before giving up (11 section 4.2's "at
-# least once" push is best-effort, not unbounded).
-RETRY_BACKOFF_SECONDS: Tuple[int, ...] = (30, 120, 600)
-MAX_PUBLISH_ATTEMPTS = 5
+_PROFILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")  # Hermes profile ids at the pin
+_CLOCK_RE = re.compile(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
+_NO_PREFS = {"muted": False, "quiet_start": None, "quiet_end": None}
 
-# How long a pending attention event can be worth notifying about. The shipped
-# profiles set ``approvals.timeout: 1800`` (deploy/profiles/*/config.yaml), so
-# an approval still pending past that has expired in Hermes and must never be
-# re-published: 11 section 4.2 is explicit -- "Never retry an expired approval
-# notification". Records that stay pending past this age are also the ones a
-# crashed process leaves behind (a pre hook journaled, the post hook never
-# fired), so this age cap is what makes them collectable at all.
-PENDING_MAX_AGE_SECONDS = 1800
+
+class AttentionError(ValueError):
+    """Invalid attention input: C3 ``invalid`` (HTTP 400)."""
+
+    code = "invalid"
+    http_status = 400
 
 
 def command_hash(command: Optional[str]) -> Optional[str]:
-    """sha256 hex digest of ``command``, or ``None`` when there is nothing to hash.
-
-    A hash is not the command: this is what ``AttentionJournal`` records and
-    what ``on_approval_response`` correlates on, so the journal never has to
-    store the command text itself to tell two pending approvals apart.
-    """
+    """sha256 hex digest of ``command``, or ``None`` when there is nothing to hash."""
     if not command:
         return None
     return hashlib.sha256(command.encode("utf-8")).hexdigest()
 
 
-def pending_expired(record: Dict[str, Any], now: float) -> bool:
-    """True when a still-pending record is older than :data:`PENDING_MAX_AGE_SECONDS`.
+def duplicate_hook_call(surface: Optional[str], coalesced: Any) -> bool:
+    """True when an approval hook call is not a new user-visible prompt.
 
-    A record without a ``created_at`` is never treated as expired -- its age
-    is unknowable, and guessing would delete live events.
+    Hermes fires the approval hooks more than once per decision (verified at
+    the pin):
+
+    - ``coalesced=True``: a follower waiting on an identical pending approval
+      (``tools/approval_gateway_wait.py``'s ``_await_coalesced_leader``). The
+      leader already recorded and pushed; a follower that adopts ``once``
+      fires no post hook, so an event for it would never resolve.
+    - ``surface == "smart"``: the guardian pre-check in
+      ``tools/approval_smart.py``, which is not a request for the operator's
+      attention at all.
+
+    ``coalesced`` is read for truthiness: any truthy value means "not the leader".
     """
-    created_at = record.get("created_at")
-    if created_at is None:
-        return False
-    try:
-        return (now - float(created_at)) > PENDING_MAX_AGE_SECONDS
-    except (TypeError, ValueError):  # pragma: no cover - defensive against a hand-edited record
-        return False
+    return bool(coalesced) or surface == SMART_SURFACE
 
 
-def deep_link(session_id: str, connection_id: str, profile: str) -> str:
-    """``ergates://chat/<session>?connection=<id>&profile=<name>``, values url-encoded.
-
-    Opening this link only ever leads to connection selection for an unknown
-    ``connection_id`` -- it is never treated as automatic trust of a
-    supplied URL (11 section 4.2).
-    """
-    path = urllib.parse.quote(str(session_id), safe="")
-    query = urllib.parse.urlencode({"connection": connection_id, "profile": profile})
-    return f"ergates://chat/{path}?{query}"
+def correlation(
+    session_key: Optional[str], pattern_key: Optional[str], command: Optional[str], surface: Optional[str],
+) -> str:
+    """The approval correlation hash: one value per (session, pattern, command, surface)."""
+    canonical = json.dumps([session_key, pattern_key, command_hash(command), surface], separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _authorization_header(token: str) -> Dict[str, str]:
-    token = (token or "").strip()
-    if not token:
-        return {}
-    if ":" in token:
-        encoded = base64.b64encode(token.encode("utf-8")).decode("ascii")
-        return {"Authorization": f"Basic {encoded}"}
-    return {"Authorization": f"Bearer {token}"}
+def _minutes(clock: str) -> int:
+    hours, minutes = clock.split(":")
+    return int(hours) * 60 + int(minutes)
 
 
-def build_ntfy_publish(
-    server: str,
-    topic: str,
-    token: str,
-    *,
-    title: str,
-    click_url: str,
-    event_id: str,
-) -> Dict[str, Any]:
-    """Build (never send) an ntfy publish request for one attention event.
-
-    Returns ``{"url", "headers", "body", "event_id"}``. ``headers`` holds
-    ``Authorization`` (only when ``token`` is set), ``Title``, ``Click``,
-    ``X-Tags`` and ``Priority``. ``body`` is always the fixed generic string
-    below, regardless of input -- it can never carry a prompt, a command, or
-    an approval decision.
-    """
-    url = f"{server.rstrip('/')}/{topic}"
-    headers: Dict[str, str] = {}
-    headers.update(_authorization_header(token))
-    headers["Title"] = title
-    headers["Click"] = click_url
-    headers["X-Tags"] = _ECHO_TAG
-    headers["Priority"] = "default"
-    return {
-        "url": url,
-        "headers": headers,
-        "body": _GENERIC_BODY,
-        "event_id": event_id,
-    }
+def quiet_until(now: float, quiet_start: Optional[str], quiet_end: Optional[str]) -> Optional[float]:
+    """The end of the quiet window that contains ``now`` (server local time), or ``None`` outside it."""
+    if not quiet_start or not quiet_end or quiet_start == quiet_end:
+        return None
+    local = datetime.fromtimestamp(now)
+    minute = local.hour * 60 + local.minute
+    start, end = _minutes(quiet_start), _minutes(quiet_end)
+    inside = start <= minute < end if start < end else (minute >= start or minute < end)
+    if not inside:
+        return None
+    window_end = local.replace(hour=end // 60, minute=end % 60, second=0, microsecond=0)
+    if window_end <= local:
+        window_end += timedelta(days=1)
+    return window_end.timestamp()
 
 
-class AttentionJournal(Journal):
-    """Durable, non-secret attention/notification records under ``ergates/notifications/``.
+def _check_profile(profile: Any) -> None:
+    if profile != DEFAULT_PREFS_PROFILE and not (isinstance(profile, str) and _PROFILE_RE.match(profile)):
+        raise AttentionError("profile must be '*' or a Hermes profile name")
 
-    A record holds exactly: event id (the journal id), owning
-    profile/session (``session_key``, ``profile``), ``pattern_key`` and
-    ``command_hash`` (approval-id-shaped correlation, never the command
-    text), ``connection_id`` (a non-secret app-connection routing
-    identifier, captured once so a later retry addresses the same app
-    connection the original push did), ``state`` (``"pending"`` /
-    ``"resolved"`` / ``"failed"`` / ``"expired"``), ``attempts``, ``next_retry`` and
-    ``delivery`` and ``surface`` -- matching 11 section 4.2 exactly
-    (``connection_id`` and ``surface`` are routing metadata the app already
-    handles, never the command or its description).
 
-    Retention (11 section 4.2: "Retain pending events until resolved or
-    expired; retain resolved delivery metadata for seven days"):
+class AttentionService:
+    """Records attention events with their outbox rows, resolves and expires them, and applies retention."""
 
-    - A pending event older than :data:`PENDING_MAX_AGE_SECONDS` is
-      *transitioned*, not deleted: :meth:`expire_pending` stamps
-      ``state="expired"`` and a ``resolved_at`` of the moment the approval
-      actually timed out, leaving ``attempts``/``delivery`` untouched as the
-      record of what delivery managed. It then ages out on the same
-      seven-day rule as every other terminal event, so an approval nobody
-      answered leaves an audit trail instead of vanishing.
-      :meth:`retry_due` never returns one, expired-but-not-yet-swept
-      included.
-    - Terminal events -- resolved, expired, or given up on after
-      :data:`MAX_PUBLISH_ATTEMPTS` delivery attempts -- are pruned seven
-      days after they stopped being pending, tracked in ``resolved_at``. All
-      three branches stamp ``resolved_at``, so "gave up" is genuinely
-      collectable rather than immortal.
+    def __init__(
+        self, store: ControlStore, *, clock: Callable[[], float] = time.time,
+        approval_ttl_seconds: int = APPROVAL_TTL_SECONDS,
+    ) -> None:
+        self._store = store
+        self._clock = clock
+        self._ttl = approval_ttl_seconds
 
-    The expiry sweep is a backstop, not the normal path: a gateway approval
-    that times out fires ``post_approval_response`` with ``choice="timeout"``
-    (``tools/approval_gateway_wait.py``'s ``_finish``), which resolves the
-    record properly. This catches the cases where no post hook arrives at
-    all -- a process that died between the two hooks.
-    """
+    def approval_requested(
+        self, *, session_key: str | None, pattern_key: str | None, command: str | None,
+        surface: str | None, coalesced: object = None, profile: str | None, request_id: str | None = None,
+    ) -> str | None:
+        """Record a pending approval and, unless the profile is muted, its push.
 
-    def __init__(self, root):
-        super().__init__(root, "notifications")
-
-    def expire_pending(self, now: float) -> int:
-        """Turn stale pending records terminal. Returns how many were expired.
-
-        A pending record older than :data:`PENDING_MAX_AGE_SECONDS` points
-        at an approval that has timed out in Hermes: it can no longer be
-        answered, and 11 section 4.2 forbids re-notifying it. Rather than
-        delete it, this stamps ``state="expired"`` and a ``resolved_at`` of
-        the moment it stopped being answerable (``created_at`` plus the max
-        age -- not "now", so a record the sweep only notices days later
-        still ages out from its real expiry), clears any scheduled
-        ``next_retry``, and leaves ``attempts`` and ``delivery`` exactly as
-        delivery left them. :meth:`prune` then applies the ordinary
-        seven-day terminal rule to it.
+        Returns the event id, or ``None`` (nothing written) for a duplicate hook call.
         """
-        expired = 0
-        with self._lock():
-            for path in sorted(self._record_paths()):
-                record = self._try_read(path)
-                if record is None or record.get("state") != _PENDING:
-                    continue
-                if not pending_expired(record, now):
-                    continue
-                record["state"] = _EXPIRED
-                record["resolved_at"] = float(record["created_at"]) + PENDING_MAX_AGE_SECONDS
-                record["next_retry"] = None
-                self._write_atomic(path, record)
-                expired += 1
-        return expired
+        if duplicate_hook_call(surface, coalesced):
+            return None
+        now = self._clock()
+        event_id = str(uuid.uuid4())
+        with self._store.transaction() as conn:
+            conn.execute(
+                "INSERT INTO attention_events (id, kind, state, profile, session_id, surface, correlation, "
+                "request_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (event_id, APPROVAL, PENDING, profile, session_key, surface,
+                 correlation(session_key, pattern_key, command, surface), request_id, now, now + self._ttl),
+            )
+            if not self._prefs(conn, profile)["muted"]:
+                self._enqueue(conn, event_id, now, now)
+        return event_id
+
+    def approval_resolved(
+        self, *, session_key: str | None, pattern_key: str | None, command: str | None,
+        surface: str | None, coalesced: object = None, choice: str | None, request_id: str | None = None,
+    ) -> str | None:
+        """Resolve the oldest matching pending approval and cancel its due push.
+
+        Matches on ``request_id`` when one is given, else on the correlation
+        hash. Returns the event id, or ``None`` when nothing matches: a
+        resolved or expired event is never touched again.
+        """
+        if duplicate_hook_call(surface, coalesced):
+            return None
+        now = self._clock()
+        if request_id is not None:
+            where, value = "request_id = ?", request_id
+        else:
+            where, value = "correlation = ?", correlation(session_key, pattern_key, command, surface)
+        with self._store.transaction() as conn:
+            match = conn.execute(
+                f"SELECT id FROM attention_events WHERE kind = ? AND state = ? AND {where} "
+                "ORDER BY created_at, rowid LIMIT 1",
+                (APPROVAL, PENDING, value),
+            ).fetchone()
+            if match is None:
+                logger.info("attention: no pending approval matches this response (surface=%r)", surface)
+                return None
+            conn.execute(
+                "UPDATE attention_events SET state = ?, resolved_at = ?, choice = ? WHERE id = ?",
+                (RESOLVED, now, choice, match["id"]),
+            )
+            self._cancel_due(conn, match["id"], now)
+        return match["id"]
+
+    def turn_completed(
+        self, *, session_id: str, profile: str | None, platform: str | None, platforms: frozenset[str],
+    ) -> str | None:
+        """Record a finished turn from one of ``platforms`` and its push. ``None`` for any other platform.
+
+        Quiet hours hold the push until they end; a muted profile gets no push.
+        """
+        if platform not in platforms:
+            return None
+        now = self._clock()
+        event_id = str(uuid.uuid4())
+        with self._store.transaction() as conn:
+            conn.execute(
+                "INSERT INTO attention_events (id, kind, state, profile, session_id, surface, created_at, "
+                "resolved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (event_id, COMPLETION, RESOLVED, profile, session_id, platform, now, now),
+            )
+            prefs = self._prefs(conn, profile)
+            if not prefs["muted"]:
+                due = quiet_until(now, prefs["quiet_start"], prefs["quiet_end"]) or now
+                self._enqueue(conn, event_id, due, now)
+        return event_id
+
+    def get_prefs(self, profile: str) -> dict:
+        """The effective ``AttentionPrefs`` (C3): the profile's row, else the ``"*"`` row, else defaults."""
+        _check_profile(profile)
+        with self._store.read() as conn:
+            return {"profile": profile, **self._prefs(conn, profile)}
+
+    def set_prefs(self, profile: str, *, muted: bool, quiet_start: str | None, quiet_end: str | None) -> dict:
+        """Store the preferences of ``profile`` (``"*"`` for the default) and return them."""
+        _check_profile(profile)
+        if not isinstance(muted, bool):
+            raise AttentionError("muted must be true or false")
+        if (quiet_start is None) != (quiet_end is None):
+            raise AttentionError("set both quiet_start and quiet_end, or neither")
+        for value in (quiet_start, quiet_end):
+            if value is not None and not (isinstance(value, str) and _CLOCK_RE.match(value)):
+                raise AttentionError("quiet hours use HH:MM from 00:00 to 23:59")
+        if quiet_start is not None and quiet_start == quiet_end:
+            raise AttentionError("quiet_start and quiet_end must differ")
+        with self._store.transaction() as conn:
+            conn.execute(
+                "INSERT INTO attention_prefs (profile, muted, quiet_start, quiet_end, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) ON CONFLICT (profile) DO UPDATE SET muted = excluded.muted, "
+                "quiet_start = excluded.quiet_start, quiet_end = excluded.quiet_end, updated_at = excluded.updated_at",
+                (profile, int(muted), quiet_start, quiet_end, self._clock()),
+            )
+        return {"profile": profile, "muted": muted, "quiet_start": quiet_start, "quiet_end": quiet_end}
+
+    def expire(self, now: float) -> int:
+        """Expire pending approvals past their timeout and cancel their pushes. Returns how many.
+
+        ``resolved_at`` is the moment the approval stopped being answerable,
+        so a sweep that runs late still ages it out from its real expiry.
+        """
+        with self._store.transaction() as conn:
+            stale = conn.execute(
+                "SELECT id, expires_at FROM attention_events WHERE kind = ? AND state = ? AND expires_at <= ?",
+                (APPROVAL, PENDING, now),
+            ).fetchall()
+            for event in stale:
+                conn.execute(
+                    "UPDATE attention_events SET state = ?, resolved_at = ? WHERE id = ?",
+                    (EXPIRED, event["expires_at"], event["id"]),
+                )
+                self._cancel_due(conn, event["id"], now)
+        return len(stale)
 
     def prune(self, now: float) -> int:
-        """Delete records whose retention window has passed. Returns how many were removed.
+        """Delete events terminal for more than seven days; their outbox rows go with them."""
+        with self._store.transaction() as conn:
+            cursor = conn.execute(
+                "DELETE FROM attention_events WHERE state != ? AND resolved_at < ?",
+                (PENDING, now - RETENTION_SECONDS),
+            )
+        return cursor.rowcount
 
-        Runs :meth:`expire_pending` first, so a stale pending record becomes
-        terminal and is then subject to the single retention rule from 11
-        section 4.2: a ``state`` other than ``"pending"`` and a
-        ``resolved_at`` older than :data:`RETENTION_SECONDS`. A record that
-        expired more than seven days ago is therefore transitioned and
-        removed in the same call.
+    @staticmethod
+    def _prefs(conn: sqlite3.Connection, profile: str | None) -> dict:
+        found = {
+            row["profile"]: row
+            for row in conn.execute(
+                "SELECT profile, muted, quiet_start, quiet_end FROM attention_prefs WHERE profile IN (?, ?)",
+                (profile or DEFAULT_PREFS_PROFILE, DEFAULT_PREFS_PROFILE),
+            )
+        }
+        row = found.get(profile) or found.get(DEFAULT_PREFS_PROFILE)
+        if row is None:
+            return dict(_NO_PREFS)
+        return {"muted": bool(row["muted"]), "quiet_start": row["quiet_start"], "quiet_end": row["quiet_end"]}
 
-        A pending record with no ``created_at``, or a terminal one with no
-        ``resolved_at``, is kept: its age is unknowable and guessing would
-        delete live events.
-        """
-        self.expire_pending(now)
-        removed = 0
-        with self._lock():
-            for path in sorted(self._record_paths()):
-                record = self._try_read(path)
-                if record is None:
-                    continue
-                if record.get("state") == _PENDING:
-                    continue
-                resolved_at = record.get("resolved_at")
-                if resolved_at is None:
-                    continue
-                if now - resolved_at > RETENTION_SECONDS:
-                    path.unlink(missing_ok=True)
-                    removed += 1
-        return removed
+    @staticmethod
+    def _enqueue(conn: sqlite3.Connection, event_id: str, due: float, now: float) -> None:
+        conn.execute(
+            "INSERT INTO attention_outbox (event_id, state, attempts, next_attempt_at, updated_at) "
+            "VALUES (?, 'due', 0, ?, ?)",
+            (event_id, due, now),
+        )
 
-    def retry_due(self, now: float) -> List[Dict[str, Any]]:
-        """Pending, not-yet-expired records whose scheduled retry has arrived.
-
-        An expired pending record (older than
-        :data:`PENDING_MAX_AGE_SECONDS`) is deliberately *not* returned,
-        however overdue its retry is: 11 section 4.2 forbids retrying an
-        expired approval notification, and a push that lands after the
-        approval timed out points the user at a request they can no longer
-        answer. This holds whether or not :meth:`expire_pending` has already
-        marked it, so a retry can never slip through between sweeps.
-        """
-        return [
-            record
-            for record in self.list()
-            if record.get("state") == _PENDING
-            and not pending_expired(record, now)
-            and record.get("next_retry") is not None
-            and record["next_retry"] <= now
-        ]
-
-    def record_publish_attempt(self, event_id: str, *, ok: bool, now: float) -> Dict[str, Any]:
-        """Record the outcome of one ntfy publish attempt for ``event_id``.
-
-        On success: clears any scheduled retry and marks ``delivery`` as
-        ``"sent"`` -- the record's ``state`` is untouched, since a
-        successfully delivered push does not by itself mean the approval was
-        answered (that is ``on_approval_response``'s job).
-
-        On failure: increments ``attempts`` and schedules the next retry per
-        :data:`RETRY_BACKOFF_SECONDS`, or -- once ``attempts`` reaches
-        :data:`MAX_PUBLISH_ATTEMPTS` -- gives up: clears ``next_retry``,
-        sets ``state`` to ``"failed"`` and stamps ``resolved_at`` so the
-        seven-day retention sweep can collect it. Giving up on *notifying* is not the
-        same as the approval being resolved; ``on_approval_response`` still
-        matches ``"failed"`` records (any state other than ``"resolved"``),
-        since the user may still answer the approval through a channel this
-        push never reached.
-
-        Built on :meth:`~ergates.journal.Journal.modify`, so the read of the
-        current ``attempts`` count and the write of the new one happen
-        inside one lock acquisition. Two concurrent calls for the same
-        ``event_id`` (e.g. two threads racing to record an attempt) can
-        therefore never both read the same starting ``attempts`` value and
-        stomp on each other's increment -- each one is guaranteed to observe
-        the other's already-committed result.
-        """
-        def _apply(record: Dict[str, Any]) -> Dict[str, Any]:
-            attempts = int(record.get("attempts") or 0) + 1
-            record["attempts"] = attempts
-
-            if ok:
-                record["next_retry"] = None
-                record["delivery"] = "sent"
-                return record
-
-            if attempts >= MAX_PUBLISH_ATTEMPTS:
-                record["next_retry"] = None
-                record["state"] = _FAILED
-                record["delivery"] = "gave_up"
-                # Stamp the moment it stopped being pending, or prune() can
-                # never collect it: the seven-day rule keys off resolved_at,
-                # and this branch is exactly the terminal state the class
-                # docstring and 11 section 4.2 promise to retire.
-                record["resolved_at"] = now
-                return record
-
-            delay = RETRY_BACKOFF_SECONDS[min(attempts - 1, len(RETRY_BACKOFF_SECONDS) - 1)]
-            record["next_retry"] = now + delay
-            record["delivery"] = "error"
-            return record
-
-        return self.modify(event_id, _apply)
+    @staticmethod
+    def _cancel_due(conn: sqlite3.Connection, event_id: str, now: float) -> None:
+        conn.execute(
+            "UPDATE attention_outbox SET state = 'cancelled', lease_owner = NULL, lease_until = NULL, "
+            "updated_at = ? WHERE event_id = ? AND state = 'due'",
+            (now, event_id),
+        )

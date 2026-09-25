@@ -1,37 +1,37 @@
-"""Tests for ergates.tool: propose_handler and the approval-attention hooks.
+"""Tests for ergates.tool: propose_handler, the approval-attention hooks and register().
 
-propose_handler and the two approval hooks are the load-bearing
-glue described in 11 section 4.1-4.2 ("never creates a profile", "journals with
-state 'proposed'", "writes a pending attention event ... and publishes to ntfy
-when configured").
+propose_handler and the two approval hooks are the load-bearing glue described
+in 11 section 4.1-4.2 ("never creates a profile", "records the proposal as
+'proposed'", "writes a pending attention event ... and publishes to ntfy when
+configured").
 """
 
 import json
+import sys
 import threading
 import time
 
 import pytest
 
 from conftest import raw_bytes, rows
-from ergates.attention import AttentionJournal, command_hash
+from ergates import tool
+from ergates.attention import AttentionService
+from ergates.delivery import DeliveryWorker, NtfySettings
+from ergates.paths import store_path
 from ergates.proposals import ProposalService, payload_hash, validate_proposal
-from ergates.tool import (
-    _resolve_profile,
-    duplicate_hook_call,
-    flush_retries,
-    on_approval_request,
-    on_approval_response,
-    propose_handler,
-)
+from ergates.store import ControlStore
+from ergates.tool import _resolve_profile, on_approval_request, on_approval_response, propose_handler
 
 _THREAD_TIMEOUT = 5.0
+SETTINGS = NtfySettings(server="https://ntfy.example.internal", topic="hermes-alerts", token="tok",
+                        connection_id="conn-1")
 
 
 def _join(thread):
-    """Wait for the background publish thread (never longer than a watchdog)."""
+    """Wait for the background push thread (never longer than a watchdog)."""
     if thread is not None:
         thread.join(timeout=_THREAD_TIMEOUT)
-        assert not thread.is_alive(), "publish thread did not finish"
+        assert not thread.is_alive(), "push thread did not finish"
     return thread
 
 
@@ -53,6 +53,18 @@ def _valid_args(**overrides):
 @pytest.fixture
 def proposals(store):
     return ProposalService(store)
+
+
+@pytest.fixture
+def attention(store):
+    return AttentionService(store)
+
+
+def _worker(store, publish):
+    return DeliveryWorker(store, publish, SETTINGS)
+
+
+# --- the propose tool ---------------------------------------------------------
 
 
 def test_propose_handler_returns_json_and_records_it_as_proposed(proposals):
@@ -120,460 +132,6 @@ def test_the_returned_proposal_is_exactly_what_accept_verifies(proposals):
     assert receipt["state"] == "accepted"
 
 
-class _CtxWithSessionProfile:
-    profile_name = "thijs"
-
-    def get_config(self, key, default=None):
-        return default
-
-
-class _CtxWithoutSessionProfile:
-    def get_config(self, key, default=None):
-        return "config-default-profile" if key == "ntfy.default_profile" else default
-
-
-class _CtxWhoseProfileNameRaises:
-    @property
-    def profile_name(self):
-        raise RuntimeError("no active profile in this context")
-
-    def get_config(self, key, default=None):
-        return "config-default-profile" if key == "ntfy.default_profile" else default
-
-
-def test_resolve_profile_prefers_ctx_session_context():
-    assert _resolve_profile(_CtxWithSessionProfile()) == "thijs"
-
-
-def test_resolve_profile_falls_back_to_config_default_profile_when_ctx_has_none():
-    assert _resolve_profile(_CtxWithoutSessionProfile()) == "config-default-profile"
-
-
-def test_resolve_profile_falls_back_when_ctx_profile_name_raises():
-    assert _resolve_profile(_CtxWhoseProfileNameRaises()) == "config-default-profile"
-
-
-def test_on_approval_request_journals_a_pending_event(tmp_path):
-    journal = AttentionJournal(tmp_path)
-
-    on_approval_request(
-        journal,
-        command="rm -rf /tmp/x",
-        description="Delete a temp directory",
-        session_key="session-1",
-        surface="cli",
-    )
-
-    records = journal.list()
-    assert len(records) == 1
-    assert records[0]["state"] == "pending"
-    assert records[0]["session_key"] == "session-1"
-
-
-def test_on_approval_request_publishes_when_ntfy_is_configured(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    published = []
-
-    thread = on_approval_request(
-        journal,
-        command="rm -rf /tmp/x",
-        description="Delete a temp directory",
-        session_key="session-1",
-        surface="cli",
-        ntfy_server="https://ntfy.example.internal",
-        ntfy_topic="hermes-alerts",
-        ntfy_token="tok",
-        connection_id="conn-1",
-        profile="thijs",
-        publish=lambda spec: published.append(spec),
-    )
-    _join(thread)
-
-    assert len(published) == 1
-    assert published[0]["body"] == "You have a new request"
-    assert "Click" in published[0]["headers"]
-
-    record = journal.list()[0]
-    assert record["connection_id"] == "conn-1"
-    assert record["profile"] == "thijs"
-
-
-def test_on_approval_request_skips_publish_when_ntfy_not_configured(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    published = []
-
-    on_approval_request(
-        journal,
-        command="rm -rf /tmp/x",
-        session_key="session-1",
-        publish=lambda spec: published.append(spec),
-    )
-
-    assert published == []
-    assert len(journal.list()) == 1
-
-
-def test_on_approval_request_never_stores_the_raw_command_or_description(tmp_path):
-    """11 section 4.2: the notification record is event id, owning profile/session,
-    approval id, state, attempts, next retry, delivery result -- never the command."""
-    journal = AttentionJournal(tmp_path)
-
-    on_approval_request(
-        journal,
-        command="rm -rf /tmp/secret-project",
-        description="Delete the secret project directory",
-        pattern_key="pattern-1",
-        session_key="session-1",
-    )
-
-    records = journal.list()
-    assert len(records) == 1
-    record = records[0]
-    assert "command" not in record
-    assert "description" not in record
-    assert record["command_hash"] == command_hash("rm -rf /tmp/secret-project")
-    assert record["pattern_key"] == "pattern-1"
-    assert record["attempts"] == 0
-    assert record["next_retry"] is None
-
-
-def test_on_approval_request_tracks_a_failed_publish_attempt(tmp_path):
-    journal = AttentionJournal(tmp_path)
-
-    def failing_publish(spec):
-        raise RuntimeError("connection refused")
-
-    thread = on_approval_request(
-        journal,
-        command="rm -rf /tmp/x",
-        session_key="session-1",
-        ntfy_server="https://ntfy.example.internal",
-        ntfy_topic="hermes-alerts",
-        publish=failing_publish,
-    )
-    _join(thread)
-
-    record = journal.list()[0]
-    assert record["state"] == "pending"  # not resolved -- only the push failed
-    assert record["attempts"] == 1
-    assert record["next_retry"] is not None
-    assert record["delivery"] == "error"
-
-
-def test_on_approval_response_resolves_the_matching_pending_event(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    on_approval_request(journal, command="rm -rf /tmp/x", session_key="session-1")
-
-    on_approval_response(
-        journal, choice="once", decided_by="user", command="rm -rf /tmp/x", session_key="session-1",
-    )
-
-    records = journal.list()
-    assert len(records) == 1
-    assert records[0]["state"] == "resolved"
-    assert records[0]["choice"] == "once"
-    assert records[0]["decided_by"] == "user"
-    assert records[0]["resolved_at"] is not None
-
-
-def test_on_approval_response_resolves_the_right_event_when_several_are_pending(tmp_path):
-    """Hermes allows several pending approvals in one session; session_key alone is
-    not enough to disambiguate -- must correlate on (session_key, pattern_key,
-    command_hash) and only touch the matching one."""
-    journal = AttentionJournal(tmp_path)
-    on_approval_request(journal, command="cmd-a", pattern_key="pattern-a", session_key="session-1")
-    on_approval_request(journal, command="cmd-b", pattern_key="pattern-b", session_key="session-1")
-
-    on_approval_response(
-        journal, choice="once", decided_by="user",
-        command="cmd-b", pattern_key="pattern-b", session_key="session-1",
-    )
-
-    by_hash = {r["command_hash"]: r for r in journal.list()}
-    assert by_hash[command_hash("cmd-b")]["state"] == "resolved"
-    assert by_hash[command_hash("cmd-a")]["state"] == "pending"
-
-
-def test_on_approval_response_resolves_the_oldest_matching_event(tmp_path):
-    """Two requests that share session_key, pattern_key and command (hence the same
-    command_hash) -- the OLDEST unresolved match must be the one resolved."""
-    journal = AttentionJournal(tmp_path)
-    on_approval_request(journal, command="cmd-a", pattern_key="pattern-a", session_key="session-1")
-    first_id = journal.list()[0]["id"]
-    on_approval_request(journal, command="cmd-a", pattern_key="pattern-a", session_key="session-1")
-
-    on_approval_response(
-        journal, choice="once", decided_by="user",
-        command="cmd-a", pattern_key="pattern-a", session_key="session-1",
-    )
-
-    resolved = [r for r in journal.list() if r["state"] == "resolved"]
-    assert len(resolved) == 1
-    assert resolved[0]["id"] == first_id
-
-
-def test_on_approval_response_is_a_no_op_when_nothing_matches(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    on_approval_request(journal, command="cmd-a", pattern_key="pattern-a", session_key="session-1")
-
-    on_approval_response(
-        journal, choice="once", decided_by="user",
-        command="a-completely-different-command", pattern_key="pattern-a", session_key="session-1",
-    )
-
-    assert journal.list()[0]["state"] == "pending"
-
-
-def test_on_approval_response_is_a_no_op_when_nothing_is_pending(tmp_path):
-    journal = AttentionJournal(tmp_path)
-
-    on_approval_response(journal, choice="once", decided_by="user", session_key="unknown-session")
-
-    assert journal.list() == []
-
-
-def test_flush_retries_republishes_due_records_and_records_success(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    _join(on_approval_request(
-        journal,
-        command="rm -rf /tmp/x",
-        session_key="session-1",
-        ntfy_server="https://ntfy.example.internal",
-        ntfy_topic="hermes-alerts",
-        publish=lambda spec: (_ for _ in ()).throw(RuntimeError("down")),
-    ))
-    event_id = journal.list()[0]["id"]
-    due_at = journal.read(event_id)["next_retry"]
-    published = []
-
-    attempted = flush_retries(
-        journal, due_at, lambda spec: published.append(spec),
-        ntfy_server="https://ntfy.example.internal", ntfy_topic="hermes-alerts",
-    )
-
-    assert attempted == 1
-    assert len(published) == 1
-    record = journal.read(event_id)
-    assert record["delivery"] == "sent"
-    assert record["next_retry"] is None
-    assert record["attempts"] == 2
-
-
-def test_flush_retries_skips_records_not_yet_due(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    journal.claim("not-due", {
-        "state": "pending", "session_key": "s1", "next_retry": 1_000_000.0, "attempts": 1,
-    })
-
-    attempted = flush_retries(
-        journal, 500.0, lambda spec: None, ntfy_server="https://x", ntfy_topic="y",
-    )
-
-    assert attempted == 0
-
-
-def test_flush_retries_builds_each_click_link_from_its_own_records_routing(tmp_path):
-    """flush_retries takes no global connection_id/profile at all -- two due records
-    belonging to different sessions/connections/profiles must each get a Click
-    link built from THEIR OWN stored routing, never one applied to both."""
-    journal = AttentionJournal(tmp_path)
-    journal.claim("evt-a", {
-        "state": "pending", "session_key": "session-a", "connection_id": "conn-a",
-        "profile": "thijs", "next_retry": 100.0, "attempts": 1,
-    })
-    journal.claim("evt-b", {
-        "state": "pending", "session_key": "session-b", "connection_id": "conn-b",
-        "profile": "nora", "next_retry": 100.0, "attempts": 1,
-    })
-    published = []
-
-    attempted = flush_retries(
-        journal, 150.0, lambda spec: published.append(spec),
-        ntfy_server="https://ntfy.example.internal", ntfy_topic="hermes-alerts",
-    )
-
-    assert attempted == 2
-    clicks = {p["headers"]["Click"] for p in published}
-    assert any("session-a" in c and "connection=conn-a" in c and "profile=thijs" in c for c in clicks)
-    assert any("session-b" in c and "connection=conn-b" in c and "profile=nora" in c for c in clicks)
-
-
-# --- item 3: the publish never blocks the approval hook ---------------------
-
-
-def test_on_approval_request_returns_before_a_slow_publisher_completes(tmp_path):
-    """`pre_approval_request` is NOT in Hermes's _HOOK_TIMEOUT_BOUNDED_HOOKS
-    (plugins_dispatch.py: "Hooks not listed below run synchronously to
-    completion") and on the gateway path it fires BEFORE notify_cb reaches the
-    app (approval_gateway_wait.py), so anything slow here delays the in-app
-    approval card itself. The journal write stays synchronous; the network call
-    must not."""
-    journal = AttentionJournal(tmp_path)
-    entered = threading.Event()
-    release = threading.Event()
-
-    def blocking_publish(spec):
-        entered.set()
-        assert release.wait(timeout=_THREAD_TIMEOUT), "publisher was never released"
-
-    started = time.monotonic()
-    thread = on_approval_request(
-        journal,
-        command="rm -rf /tmp/x",
-        session_key="session-1",
-        ntfy_server="https://ntfy.example.internal",
-        ntfy_topic="hermes-alerts",
-        publish=blocking_publish,
-    )
-    elapsed = time.monotonic() - started
-
-    # The hook returned while the publisher is still inside its call...
-    assert entered.wait(timeout=_THREAD_TIMEOUT)
-    assert thread is not None and thread.is_alive()
-    assert elapsed < 1.0
-    # ...and the pending record was already journaled synchronously, so the
-    # retry sweep can see it even if this process dies now.
-    assert journal.list()[0]["state"] == "pending"
-
-    release.set()
-    _join(thread)
-
-
-def test_the_background_publish_still_records_its_outcome_for_the_retry_sweep(tmp_path):
-    journal = AttentionJournal(tmp_path)
-
-    _join(on_approval_request(
-        journal,
-        command="rm -rf /tmp/x",
-        session_key="session-1",
-        ntfy_server="https://ntfy.example.internal",
-        ntfy_topic="hermes-alerts",
-        publish=lambda spec: (_ for _ in ()).throw(RuntimeError("down")),
-    ))
-
-    record = journal.list()[0]
-    assert record["attempts"] == 1
-    assert record["delivery"] == "error"
-    assert record["next_retry"] is not None
-
-
-# --- item 7: coalesced followers and the smart surface ----------------------
-
-
-def test_duplicate_hook_call_flags_coalesced_and_smart_only():
-    assert duplicate_hook_call("gateway", True) is True
-    assert duplicate_hook_call("smart", None) is True
-    assert duplicate_hook_call("gateway", None) is False
-    assert duplicate_hook_call("cli", False) is False
-    assert duplicate_hook_call(None, None) is False
-
-
-def test_on_approval_request_ignores_a_coalesced_follower(tmp_path):
-    """approval_gateway_wait.py fires pre_approval_request with coalesced=True for a
-    follower on an already-pending identical approval: the leader's push already
-    went out, and a follower that adopts `once` fires NO post hook, so a record
-    here would stay pending forever."""
-    journal = AttentionJournal(tmp_path)
-    published = []
-
-    thread = on_approval_request(
-        journal,
-        command="rm -rf /tmp/x",
-        session_key="session-1",
-        surface="gateway",
-        coalesced=True,
-        ntfy_server="https://ntfy.example.internal",
-        ntfy_topic="hermes-alerts",
-        publish=lambda spec: published.append(spec),
-    )
-
-    assert thread is None
-    assert journal.list() == []
-    assert published == []
-
-
-def test_on_approval_request_ignores_the_smart_guardian_precheck(tmp_path):
-    """approval_smart.py fires pre/post with surface="smart" around an aux-LLM
-    verdict and only fires post when the verdict decides -- not a request for the
-    user's attention, and an undecided verdict would strand a pending record."""
-    journal = AttentionJournal(tmp_path)
-    published = []
-
-    thread = on_approval_request(
-        journal,
-        command="rm -rf /tmp/x",
-        session_key="session-1",
-        surface="smart",
-        ntfy_server="https://ntfy.example.internal",
-        ntfy_topic="hermes-alerts",
-        publish=lambda spec: published.append(spec),
-    )
-
-    assert thread is None
-    assert journal.list() == []
-    assert published == []
-
-
-def test_one_prompt_with_two_coalesced_followers_produces_one_record_and_one_push(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    published = []
-    kwargs = dict(
-        command="rm -rf /tmp/x",
-        session_key="session-1",
-        surface="gateway",
-        ntfy_server="https://ntfy.example.internal",
-        ntfy_topic="hermes-alerts",
-        publish=lambda spec: published.append(spec),
-    )
-
-    _join(on_approval_request(journal, **kwargs))          # the leader
-    on_approval_request(journal, coalesced=True, **kwargs)  # follower
-    on_approval_request(journal, coalesced=True, **kwargs)  # follower
-
-    assert len(journal.list()) == 1
-    assert len(published) == 1
-
-
-def test_on_approval_request_records_the_surface(tmp_path):
-    journal = AttentionJournal(tmp_path)
-
-    on_approval_request(journal, command="cmd", session_key="session-1", surface="gateway")
-
-    assert journal.list()[0]["surface"] == "gateway"
-
-
-def test_on_approval_response_ignores_a_coalesced_follower_response(tmp_path):
-    """A follower's post hook (approval_gateway_wait.py's _finish(..., coalesced=True))
-    must not close out the leader's still-open request."""
-    journal = AttentionJournal(tmp_path)
-    on_approval_request(journal, command="cmd", session_key="session-1", surface="gateway")
-
-    on_approval_response(
-        journal, choice="session", decided_by="user",
-        command="cmd", session_key="session-1", surface="gateway", coalesced=True,
-    )
-
-    assert journal.list()[0]["state"] == "pending"
-
-
-def test_on_approval_response_correlates_within_the_same_surface(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    on_approval_request(journal, command="cmd", session_key="session-1", surface="gateway")
-    on_approval_request(journal, command="cmd", session_key="session-1", surface="cli")
-
-    on_approval_response(
-        journal, choice="once", decided_by="user",
-        command="cmd", session_key="session-1", surface="cli",
-    )
-
-    by_surface = {r["surface"]: r for r in journal.list()}
-    assert by_surface["cli"]["state"] == "resolved"
-    assert by_surface["gateway"]["state"] == "pending"
-
-
-# --- item 5: the proposal receipt is a hash, not the content ---------------
-
-
 def test_propose_handler_stores_the_proposal_hash_never_the_briefing(proposals, store):
     """11 section 4.1: the receipt is "proposal hash, reserved profile name,
     completed steps, session id and briefing delivery state" -- the hash, not the
@@ -608,3 +166,234 @@ def test_extra_proposal_arguments_never_reach_the_proposal_or_the_receipt(propos
     assert b"mirror_credentials" not in raw_bytes(store)
     assert b"share_auth" not in raw_bytes(store)
     assert validate_proposal(_valid_args(mirror_credentials=True)).get("mirror_credentials") is None
+
+
+# --- the approval hooks -----------------------------------------------------
+
+
+class _CtxWithSessionProfile:
+    profile_name = "thijs"
+
+    def get_config(self, key, default=None):
+        return default
+
+
+class _CtxWithoutSessionProfile:
+    def get_config(self, key, default=None):
+        return "config-default-profile" if key == "ntfy.default_profile" else default
+
+
+class _CtxWhoseProfileNameRaises:
+    @property
+    def profile_name(self):
+        raise RuntimeError("no active profile in this context")
+
+    def get_config(self, key, default=None):
+        return "config-default-profile" if key == "ntfy.default_profile" else default
+
+
+def test_resolve_profile_prefers_ctx_session_context():
+    assert _resolve_profile(_CtxWithSessionProfile()) == "thijs"
+
+
+def test_resolve_profile_falls_back_to_config_default_profile_when_ctx_has_none():
+    assert _resolve_profile(_CtxWithoutSessionProfile()) == "config-default-profile"
+
+
+def test_resolve_profile_falls_back_when_ctx_profile_name_raises():
+    assert _resolve_profile(_CtxWhoseProfileNameRaises()) == "config-default-profile"
+
+
+def test_on_approval_request_records_a_pending_event_with_its_push(attention, store):
+    on_approval_request(attention, command="rm -rf /tmp/x", description="Delete a temp directory",
+                        session_key="session-1", surface="cli", profile="thijs")
+
+    event = rows(store, "attention_events")[0]
+    assert (event["state"], event["session_id"], event["profile"], event["surface"]) == (
+        "pending", "session-1", "thijs", "cli")
+    assert rows(store, "attention_outbox")[0]["state"] == "due"
+
+
+def test_on_approval_request_publishes_when_ntfy_is_configured(attention, store):
+    published = []
+
+    thread = on_approval_request(
+        attention, worker=_worker(store, published.append), command="rm -rf /tmp/x",
+        session_key="session-1", surface="cli", profile="thijs",
+    )
+    _join(thread)
+
+    assert len(published) == 1
+    assert published[0]["body"] == "You have a new request"
+    assert published[0]["headers"]["Click"] == "ergates://chat/session-1?connection=conn-1&profile=thijs"
+    assert rows(store, "attention_outbox")[0]["state"] == "sent"
+
+
+def test_on_approval_request_without_ntfy_still_records_the_event(attention, store):
+    assert on_approval_request(attention, command="rm -rf /tmp/x", session_key="session-1") is None
+
+    assert len(rows(store, "attention_events")) == 1
+
+
+def test_on_approval_request_never_stores_the_raw_command_or_description(attention, store):
+    on_approval_request(attention, command="rm -rf /tmp/secret-project",
+                        description="Delete the secret project directory", session_key="session-1")
+
+    assert b"secret-project" not in raw_bytes(store)
+    assert b"Delete the secret" not in raw_bytes(store)
+
+
+def test_a_failed_first_push_stays_due_for_the_next_flush(attention, store):
+    def failing_publish(spec):
+        raise RuntimeError("connection refused")
+
+    _join(on_approval_request(attention, worker=_worker(store, failing_publish), command="rm -rf /tmp/x",
+                              session_key="session-1"))
+
+    outbox = rows(store, "attention_outbox")[0]
+    assert (outbox["state"], outbox["attempts"], outbox["last_error"]) == ("due", 1, "RuntimeError")
+    assert rows(store, "attention_events")[0]["state"] == "pending"
+
+
+def test_on_approval_request_returns_before_a_slow_publisher_completes(attention, store):
+    """`pre_approval_request` is NOT in Hermes's _HOOK_TIMEOUT_BOUNDED_HOOKS
+    (plugins_dispatch.py: "Hooks not listed below run synchronously to
+    completion") and on the gateway path it fires BEFORE notify_cb reaches the
+    app (approval_gateway_wait.py), so anything slow here delays the in-app
+    approval card itself. The store write stays synchronous; the network call
+    must not."""
+    entered = threading.Event()
+    release = threading.Event()
+
+    def blocking_publish(spec):
+        entered.set()
+        assert release.wait(timeout=_THREAD_TIMEOUT), "publisher was never released"
+
+    started = time.monotonic()
+    thread = on_approval_request(attention, worker=_worker(store, blocking_publish), command="rm -rf /tmp/x",
+                                 session_key="session-1")
+    elapsed = time.monotonic() - started
+
+    assert entered.wait(timeout=_THREAD_TIMEOUT)
+    assert thread is not None and thread.is_alive()
+    assert elapsed < 1.0
+    # The event and its push were committed before the hook returned, so the
+    # next flush sends the push even if this process dies now.
+    assert rows(store, "attention_events")[0]["state"] == "pending"
+    assert rows(store, "attention_outbox")[0]["state"] == "due"
+
+    release.set()
+    _join(thread)
+
+
+def test_a_push_thread_that_hits_a_store_error_only_logs(attention, store, caplog):
+    class BrokenWorker:
+        def deliver(self, event_id):
+            raise OSError("disk full")
+
+    _join(on_approval_request(attention, worker=BrokenWorker(), command="cmd", session_key="session-1"))
+
+    assert "OSError" in caplog.text
+
+
+def test_duplicate_hook_calls_record_and_push_nothing(attention, store):
+    """A coalesced follower (approval_gateway_wait.py) or the smart guardian
+    pre-check (approval_smart.py) is not a new prompt for the operator."""
+    published = []
+    worker = _worker(store, published.append)
+
+    assert on_approval_request(attention, worker=worker, command="cmd", session_key="s1",
+                               surface="gateway", coalesced=True) is None
+    assert on_approval_request(attention, worker=worker, command="cmd", session_key="s1", surface="smart") is None
+
+    assert rows(store, "attention_events") == []
+    assert published == []
+
+
+def test_on_approval_response_resolves_the_matching_pending_event(attention, store):
+    on_approval_request(attention, command="rm -rf /tmp/x", session_key="session-1", surface="gateway")
+
+    on_approval_response(attention, choice="once", decided_by="user", command="rm -rf /tmp/x",
+                         session_key="session-1", surface="gateway")
+
+    event = rows(store, "attention_events")[0]
+    assert (event["state"], event["choice"]) == ("resolved", "once")
+    assert event["resolved_at"] is not None
+    assert rows(store, "attention_outbox")[0]["state"] == "cancelled"
+
+
+def test_on_approval_response_ignores_a_coalesced_follower_response(attention, store):
+    """A follower's post hook must not close out the leader's still-open request."""
+    on_approval_request(attention, command="cmd", session_key="session-1", surface="gateway")
+
+    assert on_approval_response(attention, choice="session", command="cmd", session_key="session-1",
+                                surface="gateway", coalesced=True) is None
+    assert rows(store, "attention_events")[0]["state"] == "pending"
+
+
+# --- register(): one store under the Hermes root ----------------------------
+
+
+class _RecordingCtx:
+    """The parts of Hermes's PluginContext that register() uses."""
+
+    profile_name = "thijs"
+
+    def __init__(self, config=None):
+        self.config = config or {}
+        self.tools = {}
+        self.hooks = {}
+
+    def get_config(self, key, default=None):
+        return self.config.get(key, default)
+
+    def register_tool(self, *, name, toolset, schema, handler, description, emoji):
+        self.tools[name] = handler
+
+    def register_hook(self, name, callback):
+        self.hooks[name] = callback
+
+
+@pytest.fixture
+def profile_process(tmp_path, monkeypatch):
+    """A Hermes process of the named profile `thijs`, outside a Hermes runtime."""
+    monkeypatch.setitem(sys.modules, "hermes_constants", None)
+    profile_home = tmp_path / "profiles" / "thijs"
+    profile_home.mkdir(parents=True)
+    monkeypatch.setenv("HERMES_HOME", str(profile_home))
+    return profile_home
+
+
+def test_bug8_register_opens_the_store_under_the_hermes_root_not_the_profile_home(tmp_path, profile_process):
+    """Roadmap bug 8: register() put its journals under $HERMES_HOME, which is the
+    profile's own home in a named profile. Every profile now shares one store."""
+    ctx = _RecordingCtx()
+
+    tool.register(ctx)
+    ctx.tools["ergates_propose_agent"](_valid_args(), session_id="s-1")
+    ctx.hooks["pre_approval_request"](command="cmd", session_key="s-1", surface="gateway")
+
+    assert (tmp_path / "ergates" / "control.sqlite3").exists()
+    assert list(profile_process.iterdir()) == []
+
+
+def test_register_wires_the_tool_and_both_hooks_end_to_end(tmp_path, profile_process, monkeypatch):
+    published = []
+    monkeypatch.setattr(tool, "send_ntfy", published.append)
+    ctx = _RecordingCtx({"ntfy.server": "https://ntfy.example.internal", "ntfy.topic": "alerts",
+                         "ntfy.connection_id": "conn-1"})
+    tool.register(ctx)
+
+    proposal = json.loads(ctx.tools["ergates_propose_agent"](_valid_args(), session_id="s-1"))
+    ctx.hooks["pre_approval_request"](command="cmd", session_key="s-1", surface="gateway",
+                                      description="ignored", pattern_keys=["p"])
+    deadline = time.monotonic() + _THREAD_TIMEOUT
+    while not published and time.monotonic() < deadline:
+        time.sleep(0.01)
+    ctx.hooks["post_approval_response"](command="cmd", session_key="s-1", surface="gateway", choice="once",
+                                        decided_by="user")
+
+    store = ControlStore(store_path(tmp_path))
+    assert rows(store, "proposal_receipts")[0]["id"] == proposal["proposal_id"]
+    assert rows(store, "attention_events")[0]["state"] == "resolved"
+    assert published[0]["headers"]["Click"] == "ergates://chat/s-1?connection=conn-1&profile=thijs"

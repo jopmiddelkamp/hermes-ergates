@@ -2,13 +2,13 @@
 
 Two jobs this package cannot do for itself from inside Hermes:
 
-1. **Retry due ntfy publishes.** ``pre_approval_request`` /
-   ``post_approval_response`` fire only on an actual approval event, so
-   there is no periodic-timer hook in the surface this plugin uses. A push
-   that failed while the ntfy server was down is scheduled for a retry that
-   nothing would otherwise run (``ergates.tool.flush_retries``).
-2. **Apply retention.** Every journal here has a ``prune``; nothing calls
-   it from inside a hook either (04 section 8; 11 sections 4.1-4.3).
+1. **Send due pushes.** The approval hooks fire only on an approval event,
+   so nothing inside Hermes runs a timer. A push whose first attempt failed,
+   or whose process died mid-send, stays due in the control store's outbox
+   until this sweep sends it (:class:`~ergates.delivery.DeliveryWorker`).
+2. **Apply retention and expiry.** Every service has an ``expire`` or a
+   ``prune``; nothing calls them from inside a hook (04 section 8; 11
+   sections 4.1-4.3).
 
 Run it from the host, inside the container, every two minutes -- see
 ``deploy/README.md``. The ntfy credentials are read from the profile's own
@@ -28,19 +28,19 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Optional
 
-from .attention import AttentionJournal
+from .attention import AttentionService
+from .delivery import DeliveryWorker, ntfy_settings, send_ntfy
 from .paths import store_path
 from .proposals import ProposalService
 from .reminders import CronPort, ReminderService, UnavailableCron
 from .store import ControlStore
-from .tool import flush_retries, hermes_home, send_ntfy
+from .tool import hermes_home
 
 logger = logging.getLogger("ergates.flush")
 
 PLUGIN_ID = "ergates"
-JOURNAL_DIR_NAME = "ergates"
 
-_SETTING_KEYS = ("server", "topic", "token")
+_SETTING_KEYS = ("server", "topic", "token", "connection_id")
 
 
 def profile_home(base: Path, profile: Optional[str] = None) -> Path:
@@ -53,11 +53,6 @@ def profile_home(base: Path, profile: Optional[str] = None) -> Path:
     if not profile or profile.strip().lower() == "default":
         return Path(base)
     return Path(base) / "profiles" / profile.strip()
-
-
-def journal_root(home: Path) -> Path:
-    """``<home>/ergates`` -- the directory holding this package's three journals."""
-    return Path(home) / JOURNAL_DIR_NAME
 
 
 def settings_from_config(config: Any, plugin_id: str = PLUGIN_ID) -> Dict[str, str]:
@@ -107,52 +102,48 @@ def load_settings(home: Path, plugin_id: str = PLUGIN_ID) -> Dict[str, str]:
 
 
 def flush_once(
-    home: Path,
+    root: Path,
     settings: Mapping[str, str],
     *,
     now: Optional[float] = None,
     publish: Callable[[Dict[str, Any]], None] = send_ntfy,
     cron: Optional[CronPort] = None,
 ) -> Dict[str, int]:
-    """Run one expiry pass, one retention pass and one retry pass. Counts only, never content.
+    """Run one expiry pass, one retention pass and one delivery pass. Counts only, never content.
 
-    The retry pass is skipped (not an error) when ``ntfy.server`` or
-    ``ntfy.topic`` is unset, exactly like the hook path: a deployment
-    without push still gets its retention sweep.
+    ``root`` is the Hermes root; the store is ``paths.store_path(root)``.
+    Expiry runs before delivery, so an approval that timed out is cancelled,
+    never pushed. The delivery pass is skipped (not an error) when
+    ``ntfy.server`` or ``ntfy.topic`` is unset: a deployment without push
+    still gets its retention sweep.
 
     ``cron`` is optional and, when given, lets the reminder sweep drop
     receipts whose cron job has been deleted natively; without it the sweep
     applies only the 30-day idle rule (:class:`~ergates.reminders.UnavailableCron`).
     """
     moment = time.time() if now is None else now
-    root = journal_root(home)
-    attention = AttentionJournal(root)
-    store = ControlStore(store_path(home))
+    clock = lambda: moment  # noqa: E731 - one timestamp for the whole sweep
+    store = ControlStore(store_path(root))
     try:
-        reminders = ReminderService(store, cron or UnavailableCron(), clock=lambda: moment)
-        pruned_reminders = reminders.prune(moment)
-        pruned_proposals = ProposalService(store, clock=lambda: moment).prune(moment)
+        attention = AttentionService(store, clock=clock)
+        counts = {
+            "retried": 0,
+            # Expiries are reported separately from deletions: an expired approval
+            # becomes a terminal record with a seven-day audit window, it is not
+            # removed here, and an operator reading the log line should be able to
+            # tell "N approvals timed out unanswered" from "N records aged out".
+            "expired_notifications": attention.expire(moment),
+            "pruned_notifications": attention.prune(moment),
+            "pruned_proposals": ProposalService(store, clock=clock).prune(moment),
+            "pruned_reminders": ReminderService(store, cron or UnavailableCron(), clock=clock).prune(moment),
+        }
+        ntfy = ntfy_settings(settings)
+        if ntfy is not None:
+            counts["retried"] = DeliveryWorker(store, publish, ntfy, clock=clock).run_due()
+        else:
+            logger.info("ergates.flush: ntfy.server/ntfy.topic unset; delivery pass skipped")
     finally:
         store.close()
-    counts = {
-        "retried": 0,
-        # Expiries are reported separately from deletions: an expired approval
-        # becomes a terminal record with a seven-day audit window, it is not
-        # removed here, and an operator reading the log line should be able to
-        # tell "N approvals timed out unanswered" from "N records aged out".
-        "expired_notifications": attention.expire_pending(moment),
-        "pruned_notifications": attention.prune(moment),
-        "pruned_proposals": pruned_proposals,
-        "pruned_reminders": pruned_reminders,
-    }
-    server, topic = settings.get("server"), settings.get("topic")
-    if server and topic:
-        counts["retried"] = flush_retries(
-            attention, moment, publish,
-            ntfy_server=server, ntfy_topic=topic, ntfy_token=settings.get("token", ""),
-        )
-    else:
-        logger.info("ergates.flush: ntfy.server/ntfy.topic unset; retry pass skipped")
     return counts
 
 
@@ -161,7 +152,7 @@ def main(argv: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m ergates.flush",
         description=(
-            "Retry due ntfy pushes and apply journal retention for the ergates plugin. "
+            "Send due ntfy pushes and apply retention to the ergates control store. "
             "Credentials are read from the profile's config.yaml, never from arguments."
         ),
     )

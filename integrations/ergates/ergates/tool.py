@@ -2,9 +2,12 @@
 
 Registered by ``register(ctx)`` in the top-level ``__init__.py`` (the Hermes
 plugin entry point). Kept separate from ``ctx`` so every function here stays
-plain and unit-testable: each takes its dependencies (a service, a
-``publish`` callable, config values) as explicit arguments rather than
-reaching into a global ``ctx``.
+plain and unit-testable: each takes its dependencies (a service, a delivery
+worker, config values) as explicit arguments rather than reaching into a
+global ``ctx``.
+
+Every handler writes to the one control store of the Hermes install,
+``<hermes root>/ergates/control.sqlite3``, whichever profile it runs in.
 """
 
 from __future__ import annotations
@@ -13,12 +16,11 @@ import json
 import logging
 import os
 import threading
-import time
-import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
-from .attention import AttentionJournal, build_ntfy_publish, command_hash, deep_link
+from .attention import AttentionService
+from .delivery import DeliveryWorker, ntfy_settings, send_ntfy
 from .paths import hermes_root, store_path
 from .proposals import ProposalError, ProposalService, validate_proposal
 from .store import ControlStore
@@ -125,69 +127,27 @@ def propose_handler(
     return json.dumps(proposal)
 
 
-SMART_SURFACE = "smart"
-
-NTFY_TITLE = "Hermes needs your approval"
+NTFY_KEYS = ("server", "topic", "token", "connection_id")
 
 
-def duplicate_hook_call(surface: Optional[str], coalesced: Any) -> bool:
-    """True when this ``pre_approval_request`` is not a new user-visible prompt.
-
-    Hermes fires the approval hooks more than once per decision, and two of
-    those calls must not become a record or a buzz (verified at the pin):
-
-    - ``coalesced=True``: a follower waiting on an already-pending identical
-      approval (``tools/approval_gateway_wait.py``'s
-      ``_await_coalesced_leader``). The leader's own call already journaled
-      and pushed. Worse, a follower that adopts a ``once`` decision
-      deliberately fires **no** post hook and falls through to a fresh
-      prompt, so journaling it would strand a pending record that nothing
-      ever resolves.
-    - ``surface == "smart"``: the guardian pre-check in
-      ``tools/approval_smart.py``, which fires pre/post around an aux-LLM
-      verdict and only fires post when the verdict decides. That is not a
-      request for the user's attention at all, and an undecided verdict
-      would likewise strand a pending record.
-
-    ``coalesced`` is read for truthiness rather than identity: it arrives as
-    a keyword Hermes sets only on the follower path, and any truthy value
-    means "not the leader".
-    """
-    return bool(coalesced) or surface == SMART_SURFACE
-
-
-def _publish_in_background(
-    journal: AttentionJournal,
-    event_id: str,
-    spec: Dict[str, Any],
-    publish: Callable[[Dict[str, Any]], None],
-) -> "threading.Thread":
-    """Publish ``spec`` off the caller's thread and record the attempt. Never raises.
+def _deliver_in_background(worker: DeliveryWorker, event_id: str) -> threading.Thread:
+    """Send the push of ``event_id`` off the caller's thread. Never raises.
 
     ``pre_approval_request`` is deliberately **not** in
     ``_HOOK_TIMEOUT_BOUNDED_HOOKS`` (``hermes_cli/plugins_dispatch.py`` at
     the pin: "Hooks not listed below run synchronously to completion"), and
     on the gateway path it fires *before* ``notify_cb`` reaches the app
     (``tools/approval_gateway_wait.py``). So anything slow here delays the
-    in-app approval card itself, on every dangerous command, with no
-    timeout from Hermes to rescue it. The journal write stays synchronous --
-    it is a local, locked file write and it is what the retry sweep needs --
-    but the network call runs on a short-lived daemon thread so the hook
-    returns immediately. The thread records its own outcome through
-    ``record_publish_attempt``, so a failure is still picked up by
-    ``flush_retries`` rather than lost.
+    in-app approval card itself. The event and its outbox row are already
+    committed when this starts; the network call runs on a short-lived daemon
+    thread. A push this thread cannot finish stays due in the outbox, and
+    the next ``python -m ergates.flush`` sends it.
     """
     def _run() -> None:
         try:
-            publish(spec)
-        except Exception:
-            ok = False
-        else:
-            ok = True
-        try:
-            journal.record_publish_attempt(event_id, ok=ok, now=time.time())
-        except Exception as exc:  # pragma: no cover - the record was just claimed
-            logger.warning("ergates: could not record publish attempt for %s: %s", event_id, exc)
+            worker.deliver(event_id)
+        except Exception as exc:
+            logger.warning("ergates: push for event %s failed (%s)", event_id, type(exc).__name__)
 
     thread = threading.Thread(target=_run, name=f"ergates-ntfy-{event_id}", daemon=True)
     thread.start()
@@ -195,245 +155,58 @@ def _publish_in_background(
 
 
 def on_approval_request(
-    journal: AttentionJournal,
+    attention: AttentionService,
     *,
-    command: Optional[str] = None,
-    description: Optional[str] = None,
-    pattern_key: Optional[str] = None,
-    pattern_keys: Optional[Any] = None,
-    session_key: Optional[str] = None,
-    surface: Optional[str] = None,
-    coalesced: Any = None,
-    ntfy_server: Optional[str] = None,
-    ntfy_topic: Optional[str] = None,
-    ntfy_token: Optional[str] = None,
-    connection_id: Optional[str] = None,
+    worker: Optional[DeliveryWorker] = None,
     profile: Optional[str] = None,
-    publish: Optional[Callable[[Dict[str, Any]], None]] = None,
-    **_kwargs: Any,
-) -> Optional["threading.Thread"]:
-    """``pre_approval_request`` hook: journal a pending attention event and push when configured.
+    **hook_kwargs: Any,
+) -> Optional[threading.Thread]:
+    """``pre_approval_request`` hook: record a pending approval with its push, then send it.
 
-    The journaled record is restricted to exactly what 11 section 4.2
-    defines -- event id, owning profile/session, approval id, state,
-    attempts, next retry and delivery result -- and never the raw
-    ``command`` or ``description``: only ``command_hash`` (a sha256 digest)
-    is stored, which is enough for ``on_approval_response`` to correlate a
-    later response back to this event without ever persisting the command
-    text itself. ``connection_id`` and ``profile`` are captured here too --
-    non-secret routing identifiers, not the command -- so a later retry (see
-    ``flush_retries``) builds its ``Click`` link from *this event's own*
-    values instead of whatever connection/profile happens to be configured
-    at retry time, which could belong to a different pending approval.
-
-    Publishing is best-effort, off-thread, and never raises into the
-    approval path: a push failure must not block or fail the underlying
-    approval request, and a slow ntfy server must not delay the in-app
-    approval card (see :func:`_publish_in_background`). It is still tracked:
-    a failed attempt schedules a retry (or gives up after
-    :data:`~ergates.attention.MAX_PUBLISH_ATTEMPTS` attempts) via
-    :meth:`AttentionJournal.record_publish_attempt`, rather than being
-    silently swallowed.
-
-    Calls that are not a new user-visible prompt -- a coalesced follower, or
-    the ``smart`` guardian pre-check -- are skipped entirely: no record, no
-    push (see :func:`duplicate_hook_call`). ``surface`` is stored on the
-    record so ``on_approval_response`` correlates within the same surface.
-
-    Returns the publish thread when one was started (for tests); Hermes
-    ignores approval-observer return values by design.
+    ``hook_kwargs`` are Hermes's own hook arguments (``command``,
+    ``description``, ``pattern_key``, ``pattern_keys``, ``session_key``,
+    ``surface``, ``coalesced``). The store keeps a correlation hash, never
+    the command or its description. A coalesced follower or the ``smart``
+    guardian pre-check records nothing. ``worker`` is ``None`` when push is
+    not configured; the event is still recorded. Returns the push thread
+    when one was started (for tests); Hermes ignores observer return values.
     """
-    if duplicate_hook_call(surface, coalesced):
-        logger.debug(
-            "ergates: skipping duplicate approval hook (surface=%r coalesced=%r)",
-            surface, coalesced,
-        )
-        return None
-
-    event_id = str(uuid.uuid4())
-    now = time.time()
-    record = journal.claim(event_id, {
-        "state": "pending",
-        "session_key": session_key,
-        "pattern_key": pattern_key,
-        "command_hash": command_hash(command),
-        "connection_id": connection_id,
-        "profile": profile,
-        "surface": surface,
-        "created_at": now,
-        "resolved_at": None,
-        "attempts": 0,
-        "next_retry": None,
-        "delivery": None,
-    })
-    if record is None:  # pragma: no cover - event_id is a fresh uuid4 per call
-        return None
-
-    if not (ntfy_server and ntfy_topic) or publish is None:
-        return None
-
-    click_url = deep_link(session_key or "", connection_id or "", profile or "")
-    spec = build_ntfy_publish(
-        ntfy_server, ntfy_topic, ntfy_token or "",
-        title=NTFY_TITLE,
-        click_url=click_url,
-        event_id=event_id,
+    event_id = attention.approval_requested(
+        session_key=hook_kwargs.get("session_key"),
+        pattern_key=hook_kwargs.get("pattern_key"),
+        command=hook_kwargs.get("command"),
+        surface=hook_kwargs.get("surface"),
+        coalesced=hook_kwargs.get("coalesced"),
+        profile=profile,
+        request_id=hook_kwargs.get("request_id"),
     )
-    return _publish_in_background(journal, event_id, spec, publish)
+    if event_id is None or worker is None:
+        return None
+    return _deliver_in_background(worker, event_id)
 
 
-def on_approval_response(
-    journal: AttentionJournal,
-    *,
-    choice: Optional[str] = None,
-    decided_by: Optional[str] = None,
-    command: Optional[str] = None,
-    description: Optional[str] = None,
-    pattern_key: Optional[str] = None,
-    pattern_keys: Optional[Any] = None,
-    session_key: Optional[str] = None,
-    surface: Optional[str] = None,
-    coalesced: Any = None,
-    **_kwargs: Any,
-) -> None:
-    """``post_approval_response`` hook: resolve the matching unresolved attention event.
+def on_approval_response(attention: AttentionService, **hook_kwargs: Any) -> Optional[str]:
+    """``post_approval_response`` hook: resolve the matching pending approval and cancel its push.
 
-    The approval hooks carry no stable approval id (see ``VALID_HOOKS`` in
-    ``hermes_cli/plugins.py``), and Hermes allows several approvals to be
-    pending in the same session at once, so ``session_key`` alone is not
-    enough to pick the right event -- it risks resolving the wrong one.
-    This correlates on ``(session_key, pattern_key, command_hash)`` instead
-    (``command_hash`` is the same sha256 digest ``on_approval_request``
-    stored, computed here from ``command`` -- the raw command is never
-    persisted) and resolves the *oldest* matching unresolved record. A
-    record whose delivery already gave up (``state == "failed"``) still
-    matches: giving up on notifying is not the same as the approval being
-    answered, and the user may have answered through a channel this push
-    never reached. When nothing matches, this resolves nothing and logs,
-    rather than guessing.
-
-    ``surface`` joins the correlation tuple because the same command can be
-    approved on two surfaces (a ``smart`` guardian pre-check and then the
-    real gateway prompt), and only the record from *this* surface should be
-    resolved by this response. Responses on the paths
-    :func:`duplicate_hook_call` covers never journaled a record in the
-    first place, so they are skipped here too instead of resolving somebody
-    else's event -- notably a coalesced follower, whose post hook would
-    otherwise close out the leader's still-open request.
+    The approval hooks carry no stable approval id at the pin, and several
+    approvals can be pending in one session, so the service correlates on
+    ``(session_key, pattern_key, command hash, surface)`` and resolves the
+    oldest match. When nothing matches, nothing changes.
     """
-    if duplicate_hook_call(surface, coalesced):
-        logger.debug(
-            "ergates: skipping duplicate approval response (surface=%r coalesced=%r)",
-            surface, coalesced,
-        )
-        return
-
-    wanted_hash = command_hash(command)
-    candidates = [
-        r for r in journal.list()
-        if r.get("state") != "resolved"
-        and r.get("session_key") == session_key
-        and r.get("pattern_key") == pattern_key
-        and r.get("command_hash") == wanted_hash
-        and r.get("surface") == surface
-    ]
-    if not candidates:
-        logger.info(
-            "on_approval_response: no matching unresolved attention event for "
-            "session_key=%r pattern_key=%r (command given: %s)",
-            session_key, pattern_key, command is not None,
-        )
-        return
-    target = min(candidates, key=lambda r: r.get("created_at") or 0)
-    journal.update(
-        target["id"],
-        state="resolved",
-        resolved_at=time.time(),
-        choice=choice,
-        decided_by=decided_by,
+    return attention.approval_resolved(
+        session_key=hook_kwargs.get("session_key"),
+        pattern_key=hook_kwargs.get("pattern_key"),
+        command=hook_kwargs.get("command"),
+        surface=hook_kwargs.get("surface"),
+        coalesced=hook_kwargs.get("coalesced"),
+        choice=hook_kwargs.get("choice"),
+        request_id=hook_kwargs.get("request_id"),
     )
-
-
-def flush_retries(
-    journal: AttentionJournal,
-    now: float,
-    publish: Callable[[Dict[str, Any]], None],
-    *,
-    ntfy_server: str,
-    ntfy_topic: str,
-    ntfy_token: str = "",
-) -> int:
-    """Re-publish every due ntfy retry in ``journal``. Returns how many were attempted.
-
-    Deliberately takes no global ``connection_id``/``profile`` -- each due
-    record's ``Click`` link is built from *that record's own*
-    ``session_key``/``connection_id``/``profile`` (captured once, when
-    ``on_approval_request`` first journaled the event). Applying one
-    global connection/profile to every due record would be wrong the moment
-    two different pending approvals belong to different sessions/profiles:
-    a retried notification would carry the wrong deep link. ``ntfy_server``/
-    ``ntfy_topic``/``ntfy_token`` remain deployment-wide, since they are not
-    per-approval routing -- every retry goes to the same ntfy server/topic.
-
-    Not wired into any Hermes hook -- there is no periodic-timer hook in the
-    approval-observer surface this package uses (``pre_approval_request`` /
-    ``post_approval_response`` both fire only on an actual approval event).
-    This is a plain function meant to be driven by an external periodic
-    job (a cron job, a systemd timer, a manual invocation) -- see
-    ``integrations/ergates/README.md``.
-    """
-    attempted = 0
-    for record in journal.retry_due(now):
-        attempted += 1
-        click_url = deep_link(
-            record.get("session_key") or "",
-            record.get("connection_id") or "",
-            record.get("profile") or "",
-        )
-        spec = build_ntfy_publish(
-            ntfy_server, ntfy_topic, ntfy_token,
-            title=NTFY_TITLE,
-            click_url=click_url,
-            event_id=record["id"],
-        )
-        try:
-            publish(spec)
-        except Exception:
-            journal.record_publish_attempt(record["id"], ok=False, now=now)
-        else:
-            journal.record_publish_attempt(record["id"], ok=True, now=now)
-    return attempted
 
 
 def hermes_home() -> Path:
     """The Hermes data root: ``$HERMES_HOME``, defaulting to ``~/.hermes``."""
     return Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
-
-
-def send_ntfy(spec: Dict[str, Any], *, timeout: float = 3.0) -> None:
-    """Default runtime transport for ``build_ntfy_publish`` output: a plain HTTP POST.
-
-    Uses only :mod:`urllib.request` (standard library) so the package stays
-    dependency-free. Not exercised by the unit test suite -- tests inject
-    their own ``publish`` callable instead of touching the network.
-
-    The socket timeout is short on purpose. It applies to the connect *and*
-    the read, so the worst case is roughly twice this value, and a push is
-    retryable (``AttentionJournal.record_publish_attempt`` schedules the
-    next attempt) while a blocked thread is not free. ``on_approval_request``
-    already runs this off the hook thread, so the timeout is a backstop for
-    the worker, not for the approval path.
-    """
-    import urllib.request
-
-    request = urllib.request.Request(
-        spec["url"],
-        data=spec["body"].encode("utf-8"),
-        headers=spec["headers"],
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
-        response.read()
 
 
 def _resolve_profile(ctx: Any) -> Optional[str]:
@@ -455,30 +228,30 @@ def _resolve_profile(ctx: Any) -> Optional[str]:
     return ctx.get_config("ntfy.default_profile", None)
 
 
+def _delivery_worker(ctx: Any, store: ControlStore) -> Optional[DeliveryWorker]:
+    """A worker for this profile's ``ntfy.*`` settings, read at call time; ``None`` when push is off."""
+    settings = ntfy_settings({key: ctx.get_config(f"ntfy.{key}", None) for key in NTFY_KEYS})
+    if settings is None:
+        return None
+    return DeliveryWorker(store, send_ntfy, settings)
+
+
 def register(ctx: Any) -> None:
     """Wire the ``ergates_propose_agent`` tool and the approval-attention hooks into Hermes."""
-    home = hermes_home()
     store = ControlStore(store_path(hermes_root()))
     proposals = ProposalService(store)
-    attention_journal = AttentionJournal(home / "ergates")
+    attention = AttentionService(store)
 
     def handle_propose(args: Dict[str, Any], **kwargs: Any) -> str:
         return propose_handler(args, service=proposals, **kwargs)
 
     def handle_pre_approval(**kwargs: Any) -> None:
         on_approval_request(
-            attention_journal,
-            ntfy_server=ctx.get_config("ntfy.server", None),
-            ntfy_topic=ctx.get_config("ntfy.topic", None),
-            ntfy_token=ctx.get_config("ntfy.token", None),
-            connection_id=ctx.get_config("ntfy.connection_id", None),
-            profile=_resolve_profile(ctx),
-            publish=send_ntfy,
-            **kwargs,
+            attention, worker=_delivery_worker(ctx, store), profile=_resolve_profile(ctx), **kwargs,
         )
 
     def handle_post_approval(**kwargs: Any) -> None:
-        on_approval_response(attention_journal, **kwargs)
+        on_approval_response(attention, **kwargs)
 
     ctx.register_tool(
         name=PROPOSE_TOOL_NAME,

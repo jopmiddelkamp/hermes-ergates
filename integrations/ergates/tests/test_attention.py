@@ -1,416 +1,353 @@
-"""Tests for ergates.attention: build_ntfy_publish, deep_link, and AttentionJournal.prune."""
+"""Tests for ergates.attention: attention events, the outbox rows they commit, prefs, expiry, retention."""
 
-import threading
+from __future__ import annotations
+
 import time
+from datetime import datetime
 
+import pytest
+
+from conftest import raw_bytes, rows
 from ergates.attention import (
-    MAX_PUBLISH_ATTEMPTS,
-    PENDING_MAX_AGE_SECONDS,
+    APPROVAL_TTL_SECONDS,
     RETENTION_SECONDS,
-    RETRY_BACKOFF_SECONDS,
-    AttentionJournal,
-    build_ntfy_publish,
+    AttentionError,
+    AttentionService,
     command_hash,
-    deep_link,
-    pending_expired,
+    correlation,
+    duplicate_hook_call,
+    quiet_until,
 )
 
-
-def test_deep_link_has_the_expected_scheme_and_path():
-    link = deep_link("session-1", "connection-1", "thijs")
-
-    assert link.startswith("ergates://chat/session-1?")
-    assert "connection=connection-1" in link
-    assert "profile=thijs" in link
+COMPLETION_PLATFORMS = frozenset({"cron"})
 
 
-def test_deep_link_url_encodes_special_characters_in_every_field():
-    link = deep_link("sess/with slash", "conn with space", "name&with=chars")
-
-    # The raw separators must never leak into the query string unescaped.
-    assert "sess/with slash" not in link
-    assert " " not in link
-    assert "connection=conn+with+space" in link or "connection=conn%20with%20space" in link
-    assert "profile=name%26with%3Dchars" in link
+@pytest.fixture
+def attention(store, clock) -> AttentionService:
+    return AttentionService(store, clock=clock)
 
 
-def test_build_ntfy_publish_targets_the_server_and_topic():
-    result = build_ntfy_publish(
-        "https://ntfy.example.internal", "hermes-alerts", "",
-        title="Hermes needs your approval",
-        click_url="ergates://chat/s1?connection=c1&profile=thijs",
-        event_id="evt-1",
-    )
-
-    assert result["url"] == "https://ntfy.example.internal/hermes-alerts"
-
-
-def test_build_ntfy_publish_sets_click_header():
-    click_url = "ergates://chat/s1?connection=c1&profile=thijs"
-
-    result = build_ntfy_publish(
-        "https://ntfy.example.internal", "hermes-alerts", "",
-        title="Hermes needs your approval",
-        click_url=click_url,
-        event_id="evt-1",
-    )
-
-    assert result["headers"]["Click"] == click_url
+@pytest.fixture
+def utc(monkeypatch):
+    """Quiet hours are server local time; pin the server to UTC for these tests."""
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
 
 
-def test_build_ntfy_publish_body_is_generic_and_never_carries_the_prompt():
-    sensitive_prompt = "Wire EUR 10,000 to the following IBAN: NL00BANK0123456789"
-
-    result = build_ntfy_publish(
-        "https://ntfy.example.internal", "hermes-alerts", "",
-        title=sensitive_prompt,  # even if a caller misuses the title, the body stays fixed
-        click_url="ergates://chat/s1?connection=c1&profile=thijs",
-        event_id="evt-1",
-    )
-
-    assert result["body"] == "You have a new request"
-    assert "IBAN" not in result["body"]
-    assert "Wire" not in result["body"]
+def _approval(attention, **overrides):
+    values = dict(session_key="session-1", pattern_key="rm_recursive", command="rm -rf /tmp/x",
+                  surface="gateway", profile="thijs")
+    values.update(overrides)
+    return attention.approval_requested(**values)
 
 
-def test_build_ntfy_publish_sets_bearer_authorization_for_a_plain_token():
-    result = build_ntfy_publish(
-        "https://ntfy.example.internal", "hermes-alerts", "sometoken",
-        title="t", click_url="ergates://chat/s1", event_id="evt-1",
-    )
-
-    assert result["headers"]["Authorization"] == "Bearer sometoken"
+def _resolve(attention, **overrides):
+    values = dict(session_key="session-1", pattern_key="rm_recursive", command="rm -rf /tmp/x",
+                  surface="gateway", choice="once")
+    values.update(overrides)
+    return attention.approval_resolved(**values)
 
 
-def test_build_ntfy_publish_sets_basic_authorization_for_a_user_pass_token():
-    result = build_ntfy_publish(
-        "https://ntfy.example.internal", "hermes-alerts", "user:pass",
-        title="t", click_url="ergates://chat/s1", event_id="evt-1",
-    )
-
-    assert result["headers"]["Authorization"].startswith("Basic ")
+def _event(store, event_id):
+    return next(row for row in rows(store, "attention_events") if row["id"] == event_id)
 
 
-def test_build_ntfy_publish_omits_authorization_when_no_token():
-    result = build_ntfy_publish(
-        "https://ntfy.example.internal", "hermes-alerts", "",
-        title="t", click_url="ergates://chat/s1", event_id="evt-1",
-    )
-
-    assert "Authorization" not in result["headers"]
+def _outbox(store, event_id):
+    return next((row for row in rows(store, "attention_outbox") if row["event_id"] == event_id), None)
 
 
-def test_build_ntfy_publish_sets_tags_and_priority():
-    result = build_ntfy_publish(
-        "https://ntfy.example.internal", "hermes-alerts", "",
-        title="t", click_url="ergates://chat/s1", event_id="evt-1",
-    )
-
-    assert result["headers"]["X-Tags"] == "hermes-agent"
-    assert "Priority" in result["headers"]
+# --- helpers ----------------------------------------------------------------
 
 
-def test_prune_drops_resolved_events_older_than_seven_days_and_keeps_pending(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    now = time.time()
-
-    journal.claim("old-resolved", {
-        "state": "resolved", "resolved_at": now - RETENTION_SECONDS - 60,
-    })
-    journal.claim("recent-resolved", {
-        "state": "resolved", "resolved_at": now - 60,
-    })
-    journal.claim("still-pending", {
-        "state": "pending", "resolved_at": None,
-    })
-
-    removed = journal.prune(now)
-
-    assert removed == 1
-    assert journal.read("old-resolved") is None
-    assert journal.read("recent-resolved") is not None
-    assert journal.read("still-pending") is not None
-
-
-def test_prune_keeps_a_resolved_event_exactly_at_the_seven_day_boundary(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    now = time.time()
-
-    journal.claim("at-boundary", {"state": "resolved", "resolved_at": now - RETENTION_SECONDS})
-
-    removed = journal.prune(now)
-
-    assert removed == 0
-    assert journal.read("at-boundary") is not None
-
-
-def test_prune_is_a_no_op_on_an_empty_journal(tmp_path):
-    journal = AttentionJournal(tmp_path)
-
-    assert journal.prune(time.time()) == 0
-
-
-def test_prune_skips_in_flight_temp_writes_and_corrupt_records(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    journal.claim("old-resolved", {"state": "resolved", "resolved_at": time.time() - RETENTION_SECONDS - 60})
-
-    kind_dir = tmp_path / "notifications"
-    (kind_dir / ".tmp-orphan123.json").write_text('{"incomplete": tr', encoding="utf-8")
-    (kind_dir / "corrupt.json").write_text("{not valid json", encoding="utf-8")
-
-    removed = journal.prune(time.time())
-
-    assert removed == 1
-    assert journal.read("old-resolved") is None
-
-
-def test_command_hash_is_none_for_no_command():
+def test_command_hash_is_none_for_no_command_and_stable_otherwise():
     assert command_hash(None) is None
     assert command_hash("") is None
+    assert command_hash("rm -rf /tmp/x") == command_hash("rm -rf /tmp/x") != command_hash("rm -rf /tmp/y")
+    assert len(command_hash("rm -rf /tmp/x")) == 64
 
 
-def test_command_hash_is_stable_and_content_sensitive():
-    a = command_hash("rm -rf /tmp/x")
-    b = command_hash("rm -rf /tmp/x")
-    c = command_hash("rm -rf /tmp/y")
+def test_correlation_separates_session_pattern_command_and_surface():
+    base = correlation("s1", "p1", "cmd", "gateway")
 
-    assert a == b
-    assert a != c
-    assert len(a) == 64
-    int(a, 16)  # valid hex
+    assert base == correlation("s1", "p1", "cmd", "gateway")
+    assert len({base, correlation("s2", "p1", "cmd", "gateway"), correlation("s1", "p2", "cmd", "gateway"),
+                correlation("s1", "p1", "other", "gateway"), correlation("s1", "p1", "cmd", "cli")}) == 5
 
 
-def test_record_publish_attempt_schedules_backoff_then_gives_up(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    journal.claim("evt-1", {"state": "pending", "attempts": 0, "next_retry": None, "resolved_at": None})
-    assert RETRY_BACKOFF_SECONDS == (30, 120, 600)
-    assert MAX_PUBLISH_ATTEMPTS == 5
-
-    t0 = 1_000_000.0
-    r1 = journal.record_publish_attempt("evt-1", ok=False, now=t0)
-    assert (r1["attempts"], r1["state"], r1["next_retry"]) == (1, "pending", t0 + 30)
-
-    r2 = journal.record_publish_attempt("evt-1", ok=False, now=t0 + 30)
-    assert (r2["attempts"], r2["state"], r2["next_retry"]) == (2, "pending", t0 + 30 + 120)
-
-    r3 = journal.record_publish_attempt("evt-1", ok=False, now=t0 + 150)
-    assert (r3["attempts"], r3["state"], r3["next_retry"]) == (3, "pending", t0 + 150 + 600)
-
-    # Backoff table exhausted after 3 entries -- holds steady at the last value.
-    r4 = journal.record_publish_attempt("evt-1", ok=False, now=t0 + 750)
-    assert (r4["attempts"], r4["state"], r4["next_retry"]) == (4, "pending", t0 + 750 + 600)
-
-    # 5th attempt: give up.
-    r5 = journal.record_publish_attempt("evt-1", ok=False, now=t0 + 1350)
-    assert r5["attempts"] == 5
-    assert r5["state"] == "failed"
-    assert r5["next_retry"] is None
-    assert r5["delivery"] == "gave_up"
+def test_duplicate_hook_call_flags_coalesced_followers_and_the_smart_surface():
+    assert duplicate_hook_call("gateway", True) is True
+    assert duplicate_hook_call("smart", None) is True
+    assert duplicate_hook_call("gateway", None) is False
+    assert duplicate_hook_call("cli", False) is False
+    assert duplicate_hook_call(None, None) is False
 
 
-def test_record_publish_attempt_success_clears_retry_state_but_keeps_pending(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    journal.claim("evt-1", {"state": "pending", "attempts": 2, "next_retry": 123.0, "resolved_at": None})
+def test_quiet_until_handles_a_window_that_wraps_midnight(utc):
+    """22:00-07:00 holds a 23:30 push until 07:00 the next morning."""
+    at = lambda text: datetime.fromisoformat(text).timestamp()  # noqa: E731 - local time, pinned to UTC
 
-    result = journal.record_publish_attempt("evt-1", ok=True, now=1000.0)
-
-    assert result["attempts"] == 3
-    assert result["next_retry"] is None
-    assert result["delivery"] == "sent"
-    # A delivered push is not the same as an answered approval.
-    assert result["state"] == "pending"
+    assert quiet_until(at("2026-09-25T23:30"), "22:00", "07:00") == at("2026-09-26T07:00")
+    assert quiet_until(at("2026-09-26T06:59"), "22:00", "07:00") == at("2026-09-26T07:00")
+    assert quiet_until(at("2026-09-26T07:00"), "22:00", "07:00") is None
+    assert quiet_until(at("2026-09-25T21:59"), "22:00", "07:00") is None
 
 
-def test_record_publish_attempt_is_atomic_across_concurrent_threads(tmp_path):
-    """Two threads racing to record a failed attempt for the SAME event must never
-    lose an increment to a race between one thread's read and the other's write --
-    the old read()-then-update() implementation could produce attempts == 1 here
-    instead of 2. next_retry must also land on the value that matches a true,
-    strictly-serialized attempts=1-then-2 sequence (30s then 120s backoff), not
-    some inconsistent mix from two threads computing off the same stale read."""
-    journal = AttentionJournal(tmp_path)
-    journal.claim("evt-1", {"state": "pending", "attempts": 0, "next_retry": None, "resolved_at": None})
-    now = 1_000_000.0
-    barrier = threading.Barrier(2)
+def test_quiet_until_handles_a_window_inside_one_day(utc):
+    at = lambda text: datetime.fromisoformat(text).timestamp()  # noqa: E731
 
-    def worker():
-        barrier.wait()  # maximize the chance both threads overlap
-        journal.record_publish_attempt("evt-1", ok=False, now=now)
-
-    threads = [threading.Thread(target=worker) for _ in range(2)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-
-    record = journal.read("evt-1")
-    assert record["attempts"] == 2
-    # Whichever thread ran second must have seen attempts=1 (the first thread's
-    # committed write), landing on the second backoff entry -- never two
-    # first-backoff writes racing each other.
-    assert record["next_retry"] == now + RETRY_BACKOFF_SECONDS[1]
-    assert record["state"] == "pending"
+    assert quiet_until(at("2026-09-25T13:15"), "12:00", "14:00") == at("2026-09-25T14:00")
+    assert quiet_until(at("2026-09-25T14:00"), "12:00", "14:00") is None
+    assert quiet_until(at("2026-09-25T13:15"), None, None) is None
+    assert quiet_until(at("2026-09-25T13:15"), "07:00", "07:00") is None
 
 
-def test_retry_due_returns_only_pending_records_whose_next_retry_has_arrived(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    journal.claim("due", {"state": "pending", "next_retry": 100.0})
-    journal.claim("not-due-yet", {"state": "pending", "next_retry": 200.0})
-    journal.claim("no-retry-scheduled", {"state": "pending", "next_retry": None})
-    journal.claim("resolved-with-past-retry", {"state": "resolved", "next_retry": 50.0})
-    journal.claim("failed-with-past-retry", {"state": "failed", "next_retry": 50.0})
-
-    due = journal.retry_due(150.0)
-
-    assert sorted(r["id"] for r in due) == ["due"]
+# --- approvals --------------------------------------------------------------
 
 
-# --- pending expiry and the give-up branch (11 section 4.2) ----------------
+def test_bug4_an_approval_and_its_push_commit_together(attention, store, clock):
+    """Roadmap bug 4: the first push was saved with next_retry=None, so a crash
+    during the first send lost it. The outbox row now commits with the event,
+    due at once, before anything is sent."""
+    event_id = _approval(attention)
+
+    event = _event(store, event_id)
+    outbox = _outbox(store, event_id)
+    assert (event["kind"], event["state"], event["profile"], event["session_id"]) == (
+        "approval", "pending", "thijs", "session-1")
+    assert event["expires_at"] == clock() + APPROVAL_TTL_SECONDS
+    assert (outbox["state"], outbox["attempts"], outbox["next_attempt_at"]) == ("due", 0, clock())
 
 
-def test_a_gave_up_record_is_stamped_resolved_at_and_is_prunable(tmp_path):
-    """The give-up branch is terminal, so prune() must be able to collect it seven
-    days later. Without a resolved_at stamp it was immortal -- prune() skips any
-    record without one -- contradicting the class docstring and 11 section 4.2."""
-    journal = AttentionJournal(tmp_path)
-    journal.claim("evt-1", {
-        "state": "pending", "attempts": MAX_PUBLISH_ATTEMPTS - 1,
-        "next_retry": 1.0, "resolved_at": None, "created_at": 1_000_000.0,
-    })
-    gave_up_at = 1_000_500.0
+def test_an_approval_never_stores_the_command_or_the_description(attention, store):
+    """docs/11 section 4.2: event id, owning profile/session, approval id, state,
+    attempts, next retry, delivery result -- never the command."""
+    _approval(attention, command="rm -rf /srv/secret-project")
 
-    record = journal.record_publish_attempt("evt-1", ok=False, now=gave_up_at)
-    assert (record["state"], record["delivery"]) == ("failed", "gave_up")
-    assert record["resolved_at"] == gave_up_at
-
-    assert journal.prune(gave_up_at + RETENTION_SECONDS - 1) == 0
-    assert journal.prune(gave_up_at + RETENTION_SECONDS + 1) == 1
-    assert journal.read("evt-1") is None
+    event = rows(store, "attention_events")[0]
+    assert event["correlation"] == correlation("session-1", "rm_recursive", "rm -rf /srv/secret-project", "gateway")
+    assert b"secret-project" not in raw_bytes(store)
 
 
-def test_pending_max_age_matches_the_shipped_approval_timeout():
-    """deploy/profiles/*/config.yaml set approvals.timeout: 1800, so an approval
-    still pending past that has expired in Hermes."""
-    assert PENDING_MAX_AGE_SECONDS == 1800
+def test_duplicate_hook_calls_write_nothing(attention, store):
+    """A coalesced follower or the smart guardian pre-check is not a new prompt."""
+    assert _approval(attention, coalesced=True) is None
+    assert _approval(attention, surface="smart") is None
+    assert _resolve(attention, coalesced=True) is None
+    assert rows(store, "attention_events") == []
 
 
-def test_retry_due_never_returns_an_expired_pending_record(tmp_path):
-    """11 section 4.2: "Never retry an expired approval notification." A push that
-    lands after the approval timed out points the user at a dead request."""
-    journal = AttentionJournal(tmp_path)
-    created = 1_000_000.0
-    journal.claim("expired", {
-        "state": "pending", "created_at": created, "next_retry": created + 30, "attempts": 1,
-    })
-    journal.claim("live", {
-        "state": "pending", "created_at": created, "next_retry": created + 30, "attempts": 1,
-    })
+def test_one_prompt_with_two_coalesced_followers_is_one_event_and_one_push(attention, store):
+    _approval(attention)
+    _approval(attention, coalesced=True)
+    _approval(attention, coalesced=True)
 
-    still_live = journal.retry_due(created + 60)
-    after_expiry = journal.retry_due(created + PENDING_MAX_AGE_SECONDS + 1)
-
-    assert sorted(r["id"] for r in still_live) == ["expired", "live"]
-    assert after_expiry == []
+    assert len(rows(store, "attention_events")) == 1
+    assert len(rows(store, "attention_outbox")) == 1
 
 
-def test_retry_due_still_returns_a_record_with_no_created_at(tmp_path):
-    """An unknowable age is not an expiry: guessing would drop live events."""
-    journal = AttentionJournal(tmp_path)
-    journal.claim("no-created-at", {"state": "pending", "next_retry": 100.0})
+def test_a_muted_profile_gets_the_event_but_no_push(attention, store):
+    attention.set_prefs("thijs", muted=True, quiet_start=None, quiet_end=None)
 
-    assert [r["id"] for r in journal.retry_due(1_000_000.0)] == ["no-created-at"]
+    event_id = _approval(attention)
 
-
-def test_a_stale_pending_record_becomes_terminal_rather_than_disappearing(tmp_path):
-    """A process that dies between the pre and post hooks leaves a pending record
-    nothing will ever resolve. It must not stay pending (the retry sweep would keep
-    looking at it) and it must not simply vanish: an approval nobody answered is
-    worth the same seven-day audit window as one that was answered."""
-    journal = AttentionJournal(tmp_path)
-    created = 1_000_000.0
-    journal.claim("orphan", {
-        "state": "pending", "created_at": created, "resolved_at": None,
-        "attempts": 2, "delivery": "sent", "next_retry": created + 30,
-    })
-
-    assert journal.expire_pending(created + PENDING_MAX_AGE_SECONDS - 1) == 0
-    assert journal.read("orphan")["state"] == "pending"
-
-    assert journal.expire_pending(created + PENDING_MAX_AGE_SECONDS + 1) == 1
-    record = journal.read("orphan")
-    assert record["state"] == "expired"
-    # Stamped at the moment it stopped being answerable, not at sweep time, so a
-    # record noticed days late still ages out from its real expiry.
-    assert record["resolved_at"] == created + PENDING_MAX_AGE_SECONDS
-    assert record["next_retry"] is None
-    # What delivery managed is left exactly as delivery left it.
-    assert record["attempts"] == 2
-    assert record["delivery"] == "sent"
+    assert _event(store, event_id)["state"] == "pending"
+    assert _outbox(store, event_id) is None
 
 
-def test_expiring_a_pending_record_is_idempotent(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    created = 1_000_000.0
-    journal.claim("orphan", {"state": "pending", "created_at": created})
-    later = created + PENDING_MAX_AGE_SECONDS + 1
+def test_approval_pushes_ignore_quiet_hours(attention, store, clock, utc):
+    """The approval times out after 30 minutes; holding its push would only hide it."""
+    clock.now = datetime.fromisoformat("2026-09-25T23:30").timestamp()
+    attention.set_prefs("*", muted=False, quiet_start="22:00", quiet_end="07:00")
 
-    assert journal.expire_pending(later) == 1
-    assert journal.expire_pending(later) == 0
-    assert journal.read("orphan")["state"] == "expired"
+    event_id = _approval(attention)
 
-
-def test_an_expired_record_ages_out_on_the_same_seven_day_rule(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    created = 1_000_000.0
-    journal.claim("orphan", {"state": "pending", "created_at": created})
-    expired_at = created + PENDING_MAX_AGE_SECONDS
-
-    # prune() expires first, then applies the terminal rule in the same call.
-    assert journal.prune(expired_at + RETENTION_SECONDS - 1) == 0
-    assert journal.read("orphan")["state"] == "expired"
-
-    assert journal.prune(expired_at + RETENTION_SECONDS + 1) == 1
-    assert journal.read("orphan") is None
+    assert _outbox(store, event_id)["next_attempt_at"] == clock()
 
 
-def test_prune_expires_and_removes_a_long_dead_pending_record_in_one_call(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    created = 1_000_000.0
-    journal.claim("ancient", {"state": "pending", "created_at": created})
+def test_a_response_resolves_the_matching_approval_and_cancels_its_push(attention, store, clock):
+    event_id = _approval(attention)
+    clock.advance(5)
 
-    assert journal.prune(created + PENDING_MAX_AGE_SECONDS + RETENTION_SECONDS + 60) == 1
-    assert journal.read("ancient") is None
+    assert _resolve(attention, choice="deny") == event_id
 
-
-def test_retry_due_skips_an_already_expired_record(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    created = 1_000_000.0
-    journal.claim("orphan", {
-        "state": "pending", "created_at": created, "next_retry": created + 30, "attempts": 1,
-    })
-    journal.expire_pending(created + PENDING_MAX_AGE_SECONDS + 1)
-
-    assert journal.retry_due(created + PENDING_MAX_AGE_SECONDS + 2) == []
+    event = _event(store, event_id)
+    assert (event["state"], event["choice"], event["resolved_at"]) == ("resolved", "deny", clock())
+    assert _outbox(store, event_id)["state"] == "cancelled"
 
 
-def test_prune_keeps_a_live_pending_record_pending(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    now = time.time()
-    journal.claim("live", {"state": "pending", "created_at": now, "resolved_at": None})
+def test_a_response_resolves_the_right_one_of_several_pending_approvals(attention, store):
+    """Several approvals can be pending in one session; correlate on
+    (session, pattern, command hash, surface) and touch only the match."""
+    a = _approval(attention, command="cmd-a", pattern_key="pattern-a")
+    b = _approval(attention, command="cmd-b", pattern_key="pattern-b")
 
-    assert journal.prune(now + 60) == 0
-    assert journal.read("live")["state"] == "pending"
+    _resolve(attention, command="cmd-b", pattern_key="pattern-b")
 
-
-def test_a_pending_record_with_no_created_at_is_never_expired(tmp_path):
-    journal = AttentionJournal(tmp_path)
-    journal.claim("unknowable", {"state": "pending"})
-
-    assert journal.expire_pending(1_000_000.0) == 0
-    assert journal.prune(1_000_000.0) == 0
-    assert journal.read("unknowable")["state"] == "pending"
+    assert (_event(store, a)["state"], _event(store, b)["state"]) == ("pending", "resolved")
 
 
-def test_pending_expired_is_false_without_a_created_at():
-    assert pending_expired({"state": "pending"}, 1_000_000.0) is False
-    assert pending_expired({"created_at": 0.0}, PENDING_MAX_AGE_SECONDS + 1) is True
+def test_a_response_resolves_the_oldest_identical_approval_first(attention, clock):
+    first = _approval(attention)
+    clock.advance(1)
+    _approval(attention)
+
+    assert _resolve(attention) == first
+
+
+def test_a_response_correlates_within_its_own_surface(attention, store):
+    gateway = _approval(attention, surface="gateway")
+    cli = _approval(attention, surface="cli")
+
+    _resolve(attention, surface="cli")
+
+    assert (_event(store, gateway)["state"], _event(store, cli)["state"]) == ("pending", "resolved")
+
+
+def test_a_request_id_correlates_when_hermes_supplies_one(attention, store):
+    first = _approval(attention, request_id="approval-1")
+    second = _approval(attention, request_id="approval-2")
+
+    assert _resolve(attention, request_id="approval-2", command="something else") == second
+    assert _event(store, first)["state"] == "pending"
+
+
+def test_a_response_with_no_match_changes_nothing(attention, store):
+    event_id = _approval(attention)
+
+    assert _resolve(attention, command="a different command") is None
+    assert _event(store, event_id)["state"] == "pending"
+
+
+# --- completions (decision D9) ----------------------------------------------
+
+
+def test_a_finished_routine_turn_is_an_event_with_a_push(attention, store, clock):
+    event_id = attention.turn_completed(session_id="cron-session", profile="thijs", platform="cron",
+                                        platforms=COMPLETION_PLATFORMS)
+
+    event = _event(store, event_id)
+    assert (event["kind"], event["state"], event["resolved_at"]) == ("completion", "resolved", clock())
+    assert _outbox(store, event_id)["next_attempt_at"] == clock()
+
+
+def test_other_platforms_are_ignored_by_default(attention, store):
+    assert attention.turn_completed(session_id="s", profile="thijs", platform="cli",
+                                    platforms=COMPLETION_PLATFORMS) is None
+    assert attention.turn_completed(session_id="s", profile="thijs", platform=None,
+                                    platforms=COMPLETION_PLATFORMS) is None
+    assert rows(store, "attention_events") == []
+
+
+def test_quiet_hours_hold_a_completion_push_until_they_end(attention, store, clock, utc):
+    """A window that wraps midnight: 23:30 waits until 07:00."""
+    clock.now = datetime.fromisoformat("2026-09-25T23:30").timestamp()
+    attention.set_prefs("thijs", muted=False, quiet_start="22:00", quiet_end="07:00")
+
+    event_id = attention.turn_completed(session_id="s", profile="thijs", platform="cron",
+                                        platforms=COMPLETION_PLATFORMS)
+
+    assert _outbox(store, event_id)["next_attempt_at"] == datetime.fromisoformat("2026-09-26T07:00").timestamp()
+
+
+def test_a_muted_profile_gets_no_completion_push(attention, store):
+    attention.set_prefs("*", muted=True, quiet_start=None, quiet_end=None)
+
+    event_id = attention.turn_completed(session_id="s", profile="thijs", platform="cron",
+                                        platforms=COMPLETION_PLATFORMS)
+
+    assert _outbox(store, event_id) is None
+
+
+# --- preferences (C3 AttentionPrefs) ----------------------------------------
+
+
+def test_prefs_default_to_unmuted_without_quiet_hours(attention):
+    assert attention.get_prefs("thijs") == {"profile": "thijs", "muted": False, "quiet_start": None, "quiet_end": None}
+    assert attention.get_prefs("*")["muted"] is False
+
+
+def test_a_profile_falls_back_to_the_default_row_until_it_has_its_own(attention):
+    attention.set_prefs("*", muted=True, quiet_start="22:00", quiet_end="07:00")
+    assert attention.get_prefs("thijs") == {"profile": "thijs", "muted": True, "quiet_start": "22:00", "quiet_end": "07:00"}
+
+    stored = attention.set_prefs("thijs", muted=False, quiet_start=None, quiet_end=None)
+
+    assert stored == {"profile": "thijs", "muted": False, "quiet_start": None, "quiet_end": None}
+    assert attention.get_prefs("thijs") == stored
+    assert attention.get_prefs("nora")["muted"] is True
+
+
+@pytest.mark.parametrize("profile, muted, start, end", [
+    ("Not A Profile", False, None, None),
+    ("thijs", "yes", None, None),
+    ("thijs", False, "22:00", None),
+    ("thijs", False, "24:00", "07:00"),
+    ("thijs", False, "7:00", "08:00"),
+    ("thijs", False, "07:00", "07:00"),
+])
+def test_invalid_prefs_are_refused(attention, profile, muted, start, end):
+    with pytest.raises(AttentionError) as caught:
+        attention.set_prefs(profile, muted=muted, quiet_start=start, quiet_end=end)
+
+    assert (caught.value.code, caught.value.http_status) == ("invalid", 400)
+
+
+def test_get_prefs_refuses_an_invalid_profile(attention):
+    with pytest.raises(AttentionError):
+        attention.get_prefs("../etc")
+
+
+# --- expiry and retention ----------------------------------------------------
+
+
+def test_an_approval_expires_after_the_approval_timeout_and_its_push_is_cancelled(attention, store, clock):
+    """docs/11 section 4.2: never retry an expired approval notification."""
+    event_id = _approval(attention)
+
+    assert attention.expire(clock() + APPROVAL_TTL_SECONDS - 1) == 0
+    assert attention.expire(clock() + APPROVAL_TTL_SECONDS) == 1
+
+    event = _event(store, event_id)
+    assert (event["state"], event["resolved_at"]) == ("expired", clock() + APPROVAL_TTL_SECONDS)
+    assert _outbox(store, event_id)["state"] == "cancelled"
+    assert attention.expire(clock() + APPROVAL_TTL_SECONDS + 60) == 0
+
+
+def test_the_approval_timeout_is_configurable(store, clock):
+    short = AttentionService(store, clock=clock, approval_ttl_seconds=60)
+    _approval(short)
+
+    assert short.expire(clock() + 60) == 1
+
+
+def test_an_expired_approval_is_never_resolved_later(attention, store, clock):
+    event_id = _approval(attention)
+    attention.expire(clock() + APPROVAL_TTL_SECONDS)
+
+    assert _resolve(attention) is None
+    assert _event(store, event_id)["state"] == "expired"
+
+
+def test_terminal_events_age_out_after_seven_days_with_their_outbox_rows(attention, store, clock):
+    resolved = _approval(attention)
+    _resolve(attention)
+    pending = _approval(attention, command="still waiting")
+
+    assert attention.prune(clock() + RETENTION_SECONDS) == 0
+    assert attention.prune(clock() + RETENTION_SECONDS + 1) == 1
+
+    assert [row["id"] for row in rows(store, "attention_events")] == [pending]
+    assert [row["event_id"] for row in rows(store, "attention_outbox")] == [pending]
+    assert resolved not in {row["id"] for row in rows(store, "attention_events")}
+
+
+def test_an_expired_approval_ages_out_seven_days_after_it_expired(attention, store, clock):
+    _approval(attention)
+    expired_at = clock() + APPROVAL_TTL_SECONDS
+    attention.expire(expired_at)
+
+    assert attention.prune(expired_at + RETENTION_SECONDS) == 0
+    assert attention.prune(expired_at + RETENTION_SECONDS + 1) == 1
