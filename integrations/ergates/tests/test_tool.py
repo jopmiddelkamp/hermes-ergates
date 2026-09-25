@@ -10,9 +10,11 @@ import json
 import threading
 import time
 
+import pytest
+
+from conftest import raw_bytes, rows
 from ergates.attention import AttentionJournal, command_hash
-from ergates.journal import Journal
-from ergates.proposals import ProposalJournal, payload_hash, validate_proposal
+from ergates.proposals import ProposalService, payload_hash, validate_proposal
 from ergates.tool import (
     _resolve_profile,
     duplicate_hook_call,
@@ -48,78 +50,74 @@ def _valid_args(**overrides):
     return args
 
 
-def test_propose_handler_returns_json_and_journals_as_proposed(tmp_path):
-    journal = Journal(tmp_path, "proposals")
+@pytest.fixture
+def proposals(store):
+    return ProposalService(store)
 
-    result = propose_handler(_valid_args(), journal=journal)
+
+def test_propose_handler_returns_json_and_records_it_as_proposed(proposals):
+    result = propose_handler(_valid_args(), service=proposals)
 
     proposal = json.loads(result)
     assert "error" not in proposal
     assert proposal["kind"] == "ergates.agent-proposal.v1"
-
-    stored = journal.read(proposal["proposal_id"])
-    assert stored is not None
-    assert stored["state"] == "proposed"
+    assert proposals.get(proposal["proposal_id"])["state"] == "proposed"
 
 
-def test_propose_handler_never_creates_a_profile_only_a_journal_record(tmp_path):
+def test_propose_handler_never_creates_a_profile_only_a_receipt(proposals, store, tmp_path):
     """propose_handler has no access to any profile-creation API at all --
-    the only side effect it can have is a Journal.claim call."""
-    journal = Journal(tmp_path, "proposals")
+    the only side effect it can have is one proposal receipt."""
+    propose_handler(_valid_args(), service=proposals)
 
-    propose_handler(_valid_args(), journal=journal)
-
-    # The only artifact on disk is the journal record; nothing profile-shaped exists.
-    assert [p.name for p in (tmp_path / "proposals").glob("*.json")]
-    assert not any((tmp_path / "proposals").glob("*profile*"))
+    assert [path.name for path in tmp_path.iterdir()] == ["ergates"]
+    assert len(rows(store, "proposal_receipts")) == 1
+    assert rows(store, "proposal_steps") == []
 
 
-def test_propose_handler_returns_an_error_payload_for_invalid_input(tmp_path):
-    journal = Journal(tmp_path, "proposals")
-
-    result = propose_handler(_valid_args(name="Bad Name!"), journal=journal)
+def test_propose_handler_returns_an_error_payload_for_invalid_input(proposals, store):
+    result = propose_handler(_valid_args(name="Bad Name!"), service=proposals)
 
     payload = json.loads(result)
     assert "error" in payload
-    assert journal.list() == []
+    assert rows(store, "proposal_receipts") == []
 
 
-def test_propose_handler_attaches_the_backend_session_id_never_a_model_supplied_one(tmp_path):
+def test_propose_handler_attaches_the_backend_session_id_never_a_model_supplied_one(proposals, store):
     """source_session_id is backend-owned: it comes only from the handler's own
     session_id/task_id kwargs (how Hermes actually dispatches tool handlers --
     tools/registry.py's dispatch_kwargs), never from a model-supplied `args` field,
     even when a caller tries to smuggle one in."""
-    journal = Journal(tmp_path, "proposals")
-
     args = _valid_args(source_session_id="model-supplied-fake-session")
     result = propose_handler(
-        args, journal=journal, session_id="concierge-session-42", task_id="task-99",
+        args, service=proposals, session_id="concierge-session-42", task_id="task-99",
     )
 
     proposal = json.loads(result)
     assert proposal["source_session_id"] == "concierge-session-42"
-
-    stored = journal.read(proposal["proposal_id"])
-    assert stored["source_session_id"] == "concierge-session-42"
-    assert stored["task_id"] == "task-99"
+    assert rows(store, "proposal_receipts")[0]["source_session_id"] == "concierge-session-42"
 
 
-def test_propose_handler_falls_back_to_task_id_when_session_id_is_absent(tmp_path):
-    journal = Journal(tmp_path, "proposals")
-
-    result = propose_handler(_valid_args(), journal=journal, task_id="task-only-77")
+def test_propose_handler_falls_back_to_task_id_when_session_id_is_absent(proposals):
+    result = propose_handler(_valid_args(), service=proposals, task_id="task-only-77")
 
     proposal = json.loads(result)
     assert proposal["source_session_id"] == "task-only-77"
 
 
-def test_propose_handler_source_session_id_is_none_when_hermes_supplies_neither(tmp_path):
-    journal = Journal(tmp_path, "proposals")
-
-    result = propose_handler(_valid_args(), journal=journal)
+def test_propose_handler_source_session_id_is_none_when_hermes_supplies_neither(proposals):
+    result = propose_handler(_valid_args(), service=proposals)
 
     proposal = json.loads(result)
     assert proposal["source_session_id"] is None
+
+
+def test_the_returned_proposal_is_exactly_what_accept_verifies(proposals):
+    """The app sends the tool result back unchanged; its hash must match the receipt."""
+    proposal = json.loads(propose_handler(_valid_args(), service=proposals, session_id="s-1"))
+
+    receipt = proposals.accept(proposal["proposal_id"], proposal, profile_exists=lambda name: False)
+
+    assert receipt["state"] == "accepted"
 
 
 class _CtxWithSessionProfile:
@@ -576,58 +574,37 @@ def test_on_approval_response_correlates_within_the_same_surface(tmp_path):
 # --- item 5: the proposal receipt is a hash, not the content ---------------
 
 
-def test_propose_handler_journals_the_proposal_hash_never_the_briefing(tmp_path):
+def test_propose_handler_stores_the_proposal_hash_never_the_briefing(proposals, store):
     """11 section 4.1: the receipt is "proposal hash, reserved profile name,
     completed steps, session id and briefing delivery state" -- the hash, not the
     text. The briefing is up to 4,000 characters of user content."""
-    journal = ProposalJournal(tmp_path)
     briefing = "Seed fact: the IBAN for the payroll account is NL00BANK0123456789."
     description = "Reconcile the payroll ledger every Monday."
 
     result = propose_handler(
         _valid_args(briefing=briefing, description=description),
-        journal=journal, session_id="concierge-session-42",
+        service=proposals, session_id="concierge-session-42",
     )
 
     proposal = json.loads(result)
-    stored = journal.read(proposal["proposal_id"])
-    on_disk = (tmp_path / "proposals" / f"{proposal['proposal_id']}.json").read_text()
-
+    stored = rows(store, "proposal_receipts")[0]
     assert stored["proposal_hash"] == payload_hash(proposal)
     assert stored["reserved_profile_name"] == "thijs"
-    assert stored["completed_steps"] == []
-    assert stored["briefing_delivery"] is None
     assert stored["source_session_id"] == "concierge-session-42"
+    on_disk = raw_bytes(store)
     for content in (briefing, description, "Bookkeeper", "Thijs"):
-        assert content not in on_disk
-    assert "briefing" not in stored
-    assert "agent" not in stored
+        assert content.encode("utf-8") not in on_disk
 
 
-def test_the_journaled_proposal_hash_matches_the_returned_proposal(tmp_path):
-    """The accept operation verifies the approved payload against this hash, so it
-    must be computed over exactly what the caller received."""
-    journal = ProposalJournal(tmp_path)
-
-    proposal = json.loads(propose_handler(_valid_args(), journal=journal, session_id="s-1"))
-    recomputed = payload_hash(proposal)
-
-    assert journal.read(proposal["proposal_id"])["proposal_hash"] == recomputed
-
-
-def test_extra_proposal_arguments_never_reach_the_proposal_or_the_receipt(tmp_path):
-    """proposals.py builds from an allowlist; nothing guarded that until now."""
-    journal = ProposalJournal(tmp_path)
-
+def test_extra_proposal_arguments_never_reach_the_proposal_or_the_receipt(proposals, store):
+    """proposals.py builds from an allowlist."""
     result = propose_handler(
         _valid_args(mirror_credentials=True, share_auth="concierge", scopes=["*"]),
-        journal=journal,
+        service=proposals,
     )
 
-    proposal = json.loads(result)
-    on_disk = (tmp_path / "proposals" / f"{proposal['proposal_id']}.json").read_text()
     assert "mirror_credentials" not in result
     assert "share_auth" not in result
-    assert "mirror_credentials" not in on_disk
-    assert "share_auth" not in on_disk
+    assert b"mirror_credentials" not in raw_bytes(store)
+    assert b"share_auth" not in raw_bytes(store)
     assert validate_proposal(_valid_args(mirror_credentials=True)).get("mirror_credentials") is None

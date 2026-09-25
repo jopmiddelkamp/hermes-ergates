@@ -21,7 +21,7 @@ from ergates.flush import (
     settings_from_config,
 )
 from conftest import rows
-from ergates.proposals import PROPOSED_STATE, ProposalJournal
+from ergates.proposals import ProposalService, validate_proposal
 from ergates.reminders import REMINDER_MAX_IDLE_SECONDS, ReminderService
 
 
@@ -165,9 +165,12 @@ def test_flush_once_prunes_all_three_journals(tmp_path, store, cron):
     AttentionJournal(root).claim("gave-up", {
         "state": "failed", "delivery": "gave_up", "resolved_at": now - RETENTION_SECONDS - 60,
     })
-    ProposalJournal(root).claim("expired-proposal", {
-        "state": PROPOSED_STATE, "expires_at": "2020-01-01T00:00:00Z",
+    proposal = validate_proposal({
+        "name": "thijs", "title": "Thijs", "role": "Bookkeeper", "template_id": "bookkeeper-readonly",
+        "provider": "p", "model": "m", "briefing": "Role and boundaries.",
     })
+    proposal["expires_at"] = "2020-01-01T00:00:00Z"
+    ProposalService(store).record(proposal)
     idle_since = now - REMINDER_MAX_IDLE_SECONDS - 60
     ReminderService(store, cron, clock=lambda: idle_since).create("thijs", "0 9 * * *", "UTC", "Check invoices.")
 
@@ -177,7 +180,7 @@ def test_flush_once_prunes_all_three_journals(tmp_path, store, cron):
     assert counts["pruned_proposals"] == 1
     assert counts["pruned_reminders"] == 1
     assert AttentionJournal(root).list() == []
-    assert ProposalJournal(root).list() == []
+    assert rows(store, "proposal_receipts") == []
     assert rows(store, "reminder_receipts") == []
 
 

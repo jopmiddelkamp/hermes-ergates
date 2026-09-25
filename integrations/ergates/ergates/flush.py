@@ -30,7 +30,7 @@ from typing import Any, Callable, Dict, Mapping, Optional
 
 from .attention import AttentionJournal
 from .paths import store_path
-from .proposals import ProposalJournal
+from .proposals import ProposalService
 from .reminders import CronPort, ReminderService, UnavailableCron
 from .store import ControlStore
 from .tool import flush_retries, hermes_home, send_ntfy
@@ -131,6 +131,7 @@ def flush_once(
     try:
         reminders = ReminderService(store, cron or UnavailableCron(), clock=lambda: moment)
         pruned_reminders = reminders.prune(moment)
+        pruned_proposals = ProposalService(store, clock=lambda: moment).prune(moment)
     finally:
         store.close()
     counts = {
@@ -141,7 +142,7 @@ def flush_once(
         # tell "N approvals timed out unanswered" from "N records aged out".
         "expired_notifications": attention.expire_pending(moment),
         "pruned_notifications": attention.prune(moment),
-        "pruned_proposals": ProposalJournal(root).prune(moment),
+        "pruned_proposals": pruned_proposals,
         "pruned_reminders": pruned_reminders,
     }
     server, topic = settings.get("server"), settings.get("topic")

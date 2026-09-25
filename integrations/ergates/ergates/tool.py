@@ -2,7 +2,7 @@
 
 Registered by ``register(ctx)`` in the top-level ``__init__.py`` (the Hermes
 plugin entry point). Kept separate from ``ctx`` so every function here stays
-plain and unit-testable: each takes its dependencies (a ``Journal``, a
+plain and unit-testable: each takes its dependencies (a service, a
 ``publish`` callable, config values) as explicit arguments rather than
 reaching into a global ``ctx``.
 """
@@ -19,14 +19,9 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from .attention import AttentionJournal, build_ntfy_publish, command_hash, deep_link
-from .journal import Journal
-from .proposals import (
-    PROPOSED_STATE,
-    ProposalError,
-    ProposalJournal,
-    payload_hash,
-    validate_proposal,
-)
+from .paths import hermes_root, store_path
+from .proposals import ProposalError, ProposalService, validate_proposal
+from .store import ControlStore
 
 logger = logging.getLogger(__name__)
 
@@ -91,12 +86,12 @@ PROPOSE_SCHEMA: Dict[str, Any] = {
 def propose_handler(
     args: Dict[str, Any],
     *,
-    journal: Journal,
+    service: ProposalService,
     session_id: Optional[str] = None,
     task_id: Optional[str] = None,
     **_kwargs: Any,
 ) -> str:
-    """Validate a proposal, journal it as ``"proposed"``, and return it as JSON.
+    """Validate a proposal, record its receipt as ``"proposed"``, and return it as JSON.
 
     Always returns a JSON string, per the Hermes tool contract: a validation
     failure or a proposal-id collision comes back as ``{"error": "..."}``
@@ -112,37 +107,21 @@ def propose_handler(
     never honored. ``session_id`` is preferred; ``task_id`` is the fallback
     for contexts (e.g. cron) that may carry a task id but no session id.
 
-    The journaled receipt is **not** the proposal. 11 section 4.1 defines it
+    The stored receipt is **not** the proposal. 11 section 4.1 defines it
     as "proposal hash, reserved profile name, completed steps, session id
-    and briefing delivery state" -- so the record carries ``proposal_hash``
-    (a sha256 over the proposal exactly as returned to the caller, which is
-    what the accept operation verifies the approved payload against) and
+    and briefing delivery state" -- so :meth:`ProposalService.record` keeps
+    the sha256 of the proposal exactly as returned to the caller, which is
+    what the accept operation verifies the approved payload against, and
     never the ``briefing`` (up to 4,000 characters of user content) or the
     ``description``. The full proposal still reaches the app through the
     tool result, which is a transport, not a retained store.
     """
     try:
         proposal = validate_proposal(args)
+        proposal["source_session_id"] = session_id or task_id
+        service.record(proposal)
     except ProposalError as exc:
         return json.dumps({"error": str(exc)})
-
-    proposal["source_session_id"] = session_id or task_id
-
-    record = {
-        "kind": proposal["kind"],
-        "state": PROPOSED_STATE,
-        "proposal_hash": payload_hash(proposal),
-        "reserved_profile_name": proposal["agent"]["name"],
-        "completed_steps": [],
-        "briefing_delivery": None,
-        "source_session_id": proposal["source_session_id"],
-        "task_id": task_id,
-        "expires_at": proposal["expires_at"],
-    }
-    claimed = journal.claim(proposal["proposal_id"], record)
-    if claimed is None:  # pragma: no cover - proposal_id is a fresh uuid4 per call
-        return json.dumps({"error": "proposal_id collision; retry"})
-
     return json.dumps(proposal)
 
 
@@ -479,11 +458,12 @@ def _resolve_profile(ctx: Any) -> Optional[str]:
 def register(ctx: Any) -> None:
     """Wire the ``ergates_propose_agent`` tool and the approval-attention hooks into Hermes."""
     home = hermes_home()
-    proposals_journal = ProposalJournal(home / "ergates")
+    store = ControlStore(store_path(hermes_root()))
+    proposals = ProposalService(store)
     attention_journal = AttentionJournal(home / "ergates")
 
     def handle_propose(args: Dict[str, Any], **kwargs: Any) -> str:
-        return propose_handler(args, journal=proposals_journal, **kwargs)
+        return propose_handler(args, service=proposals, **kwargs)
 
     def handle_pre_approval(**kwargs: Any) -> None:
         on_approval_request(
