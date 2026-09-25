@@ -1,0 +1,50 @@
+[
+  {
+    "name": "apple-notes",
+    "description": "Manage Apple Notes via memo CLI: create, search, edit.",
+    "category": "apple",
+    "enabled": true,
+    "usage": 0,
+    "provenance": "bundled"
+  },
+  {
+    "name": "apple-reminders",
+    "description": "Apple Reminders via remindctl: add, list, complete.",
+    "category": "apple",
+    "enabled": true,
+    "usage": 0,
+    "provenance": "bundled"
+  },
+  {
+    "name": "findmy",
+    "description": "Track Apple devices/AirTags via FindMy.app on macOS.",
+    "category": "apple",
+    "enabled": true,
+    "usage": 0,
+    "provenance": "bundled"
+  },
+  {
+    "name": "imessage",
+    "description": "Send and receive iMessages/SMS via the imsg CLI on macOS.",
+    "category": "apple",
+    "enabled": true,
+    "usage": 0,
+    "provenance": "bundled"
+  },
+  {
+    "name": "claude-code",
+    "description": "Delegate coding to Claude Code CLI (features, PRs).",
+    "category": "autonomous-ai-agents",
+    "enabled": true,
+    "usage": 0,
+    "provenance": "bundled"
+  },
+  {
+    "name": "codex",
+    "description": "Delegate coding to OpenAI Codex CLI (features, PRs).",
+    "category": "autonomous-ai-agents",
+    "enabled": true,
+    "usage": 0,
+    "provenance": "bundled"
+  }
+]

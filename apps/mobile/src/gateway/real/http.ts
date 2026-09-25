@@ -1,0 +1,163 @@
+/**
+ * HTTP client for `hermes serve` REST. Two auth modes:
+ *  - token: loopback plain mode, header `X-Hermes-Session-Token`
+ *  - password: gated mode, cookies captured from `Set-Cookie` and replayed
+ *    explicitly as a `Cookie` header (the React Native jar is not relied on).
+ * Never logs headers, bodies or full URLs.
+ */
+
+import { GatewayError, mapHttpError } from '../errors'
+
+export type HttpAuthMode = 'none' | 'token' | 'password'
+
+export interface HttpAuthState {
+  mode: HttpAuthMode
+  token?: string | null
+  cookie?: string | null
+}
+
+export interface HttpClientOptions {
+  baseUrl: string
+  getAuth: () => HttpAuthState
+  onSetCookie?: (cookieHeader: string) => void
+  fetchImpl?: typeof fetch
+  timeoutMs?: number
+}
+
+export const SESSION_TOKEN_HEADER = 'X-Hermes-Session-Token'
+const DEFAULT_TIMEOUT_MS = 30_000
+
+export function normalizeBaseUrl(input: string): string {
+  const trimmed = input.trim().replace(/\/+$/, '')
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return `http://${trimmed}`
+  }
+  return trimmed
+}
+
+/** Merge `Set-Cookie` values into a `name=value; name2=value2` Cookie header string. */
+export function mergeCookieHeader(existing: string | null | undefined, setCookie: string[]): string {
+  const jar = new Map<string, string>()
+  for (const part of (existing ?? '').split(';')) {
+    const [name, ...rest] = part.trim().split('=')
+    if (name && rest.length) {
+      jar.set(name, rest.join('='))
+    }
+  }
+  for (const raw of setCookie) {
+    const first = raw.split(';')[0] ?? ''
+    const [name, ...rest] = first.trim().split('=')
+    if (!name) {
+      continue
+    }
+    const value = rest.join('=')
+    const attrs = raw.toLowerCase()
+    if (/max-age=0(;|$)/.test(attrs) || value === '' || value === '""') {
+      jar.delete(name)
+    } else {
+      jar.set(name, value)
+    }
+  }
+  return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ')
+}
+
+/** Split a combined `set-cookie` header (React Native and undici join them with commas). */
+export function splitSetCookie(header: string | null): string[] {
+  if (!header) {
+    return []
+  }
+  // Split on commas that start a new cookie (name=), not those inside Expires dates.
+  return header.split(/,(?=\s*[A-Za-z0-9_\-!#$%&'*+.^`|~]+=)/).map(s => s.trim()).filter(Boolean)
+}
+
+export class HttpClient {
+  readonly baseUrl: string
+  private readonly getAuth: () => HttpAuthState
+  private readonly onSetCookie?: (cookieHeader: string) => void
+  private readonly fetchImpl: typeof fetch
+  private readonly timeoutMs: number
+
+  constructor(options: HttpClientOptions) {
+    this.baseUrl = normalizeBaseUrl(options.baseUrl)
+    this.getAuth = options.getAuth
+    this.onSetCookie = options.onSetCookie
+    this.fetchImpl = options.fetchImpl ?? fetch
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  }
+
+  get<T>(path: string): Promise<T> {
+    return this.request<T>('GET', path)
+  }
+
+  post<T>(path: string, body?: unknown): Promise<T> {
+    return this.request<T>('POST', path, body)
+  }
+
+  put<T>(path: string, body?: unknown): Promise<T> {
+    return this.request<T>('PUT', path, body)
+  }
+
+  patch<T>(path: string, body?: unknown): Promise<T> {
+    return this.request<T>('PATCH', path, body)
+  }
+
+  delete<T>(path: string): Promise<T> {
+    return this.request<T>('DELETE', path)
+  }
+
+  async request<T>(method: string, path: string, body?: unknown, opts: { redirect?: RequestRedirect } = {}): Promise<T> {
+    const auth = this.getAuth()
+    const headers: Record<string, string> = { Accept: 'application/json' }
+    if (body !== undefined) {
+      headers['Content-Type'] = 'application/json'
+    }
+    if (auth.mode === 'token' && auth.token) {
+      headers[SESSION_TOKEN_HEADER] = auth.token
+    }
+    if (auth.mode === 'password' && auth.cookie) {
+      headers.Cookie = auth.cookie
+    }
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs)
+    let response: Response
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: controller.signal,
+        redirect: opts.redirect ?? 'manual'
+      })
+    } catch (err) {
+      clearTimeout(timer)
+      if ((err as { name?: string })?.name === 'AbortError') {
+        throw new GatewayError('timeout', 'The gateway did not answer in time.', { cause: err })
+      }
+      throw new GatewayError('network', 'No connection to the gateway.', { cause: err })
+    }
+    clearTimeout(timer)
+
+    const setCookie = splitSetCookie(response.headers.get('set-cookie'))
+    if (setCookie.length && this.onSetCookie) {
+      this.onSetCookie(mergeCookieHeader(auth.cookie, setCookie))
+    }
+
+    // A manual redirect (302 after logout) counts as success.
+    if (response.status >= 300 && response.status < 400) {
+      return undefined as T
+    }
+    const text = await response.text()
+    let parsed: unknown = undefined
+    if (text) {
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        parsed = text
+      }
+    }
+    if (!response.ok) {
+      throw mapHttpError(response.status, parsed)
+    }
+    return parsed as T
+  }
+}

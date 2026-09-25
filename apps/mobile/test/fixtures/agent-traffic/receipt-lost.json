@@ -1,0 +1,18 @@
+{
+  "shape": "lost",
+  "synthetic": true,
+  "text": "[IMPORTANT: Background process proc_b4c5d6e7f8a9 marked lost because the process backend disappeared (exit code ?).\nCommand: /opt/data/hermes/hermes-agent/venv/bin/python /opt/data/hermes/hermes-agent/tools/bot_mode_dm.py --run-delivery --author '{\"id\":\"bot:default\",\"name\":\"hermes\",\"is_bot\":true}' query-file /opt/data/tmp/hermes-dm-501/dm-fixture.txt --profile-home /opt/data/hermes/profiles/kevin hermes -p kevin chat --in '~' -c 'Bot Chat' --create-if-missing -Q\nOutput:\n]",
+  "result": {
+    "status": "sent",
+    "to": "@kevin",
+    "detail": "Message dispatched to @kevin. This is asynchronous — do NOT wait or poll. Finish your turn now; when the delivery completes, its notification carries the reply — relay it then, attributed to that agent.",
+    "process_id": "proc_b4c5d6e7f8a9",
+    "sent_at": 1789375767
+  },
+  "expect": {
+    "processId": "proc_b4c5d6e7f8a9",
+    "delivery": "unknown",
+    "reply": "none",
+    "worker": "lost"
+  }
+}

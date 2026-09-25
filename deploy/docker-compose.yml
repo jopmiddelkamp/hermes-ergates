@@ -1,0 +1,162 @@
+# Ergates single-VPS deployment -- VALIDATED-BY-REVIEW DRAFT, NOT A LIVE-TESTED DEPLOYMENT.
+#
+# This file is a compose-syntax and wiring-contract check, produced against
+# docs/03-technical-design.md section 9 and docs/11-implementation-readiness.md
+# section 4. It has not been run end-to-end on a VPS. See deploy/README.md
+# for what "validated" means here and the explicit list of unverified gates
+# (Docker-socket group access under s6's privilege drop, the ntfy event
+# source, iOS locked-phone delivery, and workspace path alignment).
+#
+# Required wiring this file implements (03 section 9):
+#   - hermes-serve and hermes-gateway share one /opt/data volume and both get
+#     the host Docker socket -- mounting it into only one is insufficient
+#     because both execute tools.
+#   - Shell sandboxes (spawned via terminal.backend: docker from a profile's
+#     config.yaml, not a compose service here) must never receive that
+#     socket -- see deploy/profiles/*/config.yaml.
+#   - Port 9119 (hermes-serve) and ntfy's HTTP port are published only on the
+#     VPS's Tailscale IP, never 0.0.0.0.
+#   - Images are pinned by tag placeholder with a TODO to replace by digest
+#     once this file has actually been validated (P0).
+#   - The integration plugin is bind-mounted read-only into BOTH controllers
+#     at /opt/data/plugins/ergates, the user-plugin directory Hermes scans
+#     (get_hermes_home()/plugins). Without it the attention bridge and the
+#     proposal tool simply do not exist in the deployed stack, however
+#     carefully their settings are provisioned.
+#   - Nothing in Hermes drives the plugin's retry/retention sweep, so
+#     deploy/README.md schedules `python -m ergates.flush` from host cron.
+#
+# No credentials live in this file or in .env.example -- every secret is a
+# required, unset-by-default variable resolved from a real .env you create
+# from .env.example (see deploy/README.md "First-run credential provisioning").
+
+services:
+  hermes-serve:
+    # TODO(P0): replace this tag with an immutable digest
+    # (nousresearch/hermes-agent@sha256:...) once this compose file has been
+    # run through P0 validation (03 section 9: "Pin image digests; do not use
+    # mutable ntfy/Caddy/Hermes tags."). Tag observed at draft time
+    # (2026-09-13): v2026.9.11 -> sha256:9469b3e78b9545b6d576eb8887a95352e9a0ea83730eaf31431cf862ca1010e1
+    # -- informational only, re-verify before pinning.
+    image: nousresearch/hermes-agent:v2026.9.11
+    container_name: ergates-hermes-serve
+    restart: unless-stopped
+    # Do not override the image's default entrypoint (s6-overlay's /init):
+    # it drops privileges to the non-root `hermes` user for every supervised
+    # service, including this command. Only the command (CMD) is overridden.
+    command: ["hermes", "serve", "--host", "${TAILSCALE_IP:?set TAILSCALE_IP in .env -- see .env.example}", "--port", "9119", "--skip-build"]
+    environment:
+      HERMES_HOME: /opt/data
+      HERMES_DASHBOARD_BASIC_AUTH_USERNAME: ${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:?set in .env -- never commit a real value}
+      # Hash, not plaintext (04 section 6: "password hash where supported").
+      # The stock provider prefers password_hash and only hashes a plaintext
+      # in memory as a fallback (plugins/dashboard_auth/basic/__init__.py).
+      # Escape every '$' in the .env value as '$$' -- Compose interpolates .env
+      # values, and an scrypt hash is full of them. See deploy/README.md.
+      HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH: ${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH:?set in .env -- never commit a real value}
+      # Fallback only, normally empty. A NON-EMPTY value here takes precedence
+      # over the hash above (the provider hashes it in memory and logs that it
+      # did), so leave it unset unless you are deliberately falling back.
+      HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: ${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:-}
+      HERMES_DASHBOARD_BASIC_AUTH_SECRET: ${HERMES_DASHBOARD_BASIC_AUTH_SECRET:?set in .env -- never commit a real value}
+    volumes:
+      - ${HERMES_DATA_DIR:-./data/hermes}:/opt/data
+      # The Ergates integration plugin, read-only. Hermes discovers user
+      # plugins at get_hermes_home()/plugins (hermes_cli/plugins_discovery.py),
+      # and HERMES_HOME is /opt/data here, so this path is what makes the
+      # plugin exist in the deployed stack at all. Read-only because Hermes
+      # only ever imports it; `hermes plugins doctor` copies it into a temp
+      # home to validate, so it never needs to write here.
+      - ../integrations/ergates:/opt/data/plugins/ergates:ro
+      # Host Docker daemon access, restricted to this trusted controller
+      # (03 section 9). This is NOT the same socket a shell sandbox gets --
+      # profiles must keep terminal.docker_network / socket access off; see
+      # deploy/profiles/*/config.yaml and 04 section 7.
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      # Bind only to the VPS's Tailscale IP -- never 0.0.0.0 (03 section 9).
+      - "${TAILSCALE_IP:?set TAILSCALE_IP in .env -- see .env.example}:9119:9119"
+    networks:
+      - ergates
+    # UNVERIFIED (P0 gate -- see deploy/README.md): the container's supervised
+    # services run as the non-root `hermes` user via s6-setuidgid, so that
+    # user also needs docker.sock's group. `group_add` applies to the
+    # container's PID 1 and may not survive that privilege drop (03 section 9:
+    # "Validate socket group access for the internal service user rather than
+    # relying on a group_add that may be lost on privilege drop."). Set
+    # DOCKER_SOCK_GID to the host's socket group (`stat -c '%g' /var/run/docker.sock`)
+    # as a starting point, then confirm with `docker compose exec hermes-serve id`
+    # and `docker compose exec hermes-serve docker ps` before relying on it.
+    group_add:
+      - "${DOCKER_SOCK_GID:?set DOCKER_SOCK_GID in .env -- see .env.example}"
+
+  hermes-gateway:
+    # Same pinned image and digest-pinning TODO as hermes-serve above --
+    # both controllers run from the identical image/data root (03 section 9).
+    image: nousresearch/hermes-agent:v2026.9.11
+    container_name: ergates-hermes-gateway
+    restart: unless-stopped
+    command: ["hermes", "gateway", "run"]
+    environment:
+      HERMES_HOME: /opt/data
+    volumes:
+      - ${HERMES_DATA_DIR:-./data/hermes}:/opt/data
+      # Same read-only plugin mount as hermes-serve: the gateway is where the
+      # approval hooks actually fire (tools/approval_gateway_wait.py), so the
+      # plugin has to be discoverable in this container too.
+      - ../integrations/ergates:/opt/data/plugins/ergates:ro
+      # Both serve and gateway execute tools; mounting the socket into only
+      # one of them is insufficient (03 section 9).
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - ergates
+    group_add:
+      - "${DOCKER_SOCK_GID:?set DOCKER_SOCK_GID in .env -- see .env.example}"
+
+  ntfy:
+    # TODO(P0): replace this tag with an immutable digest
+    # (binwiederhier/ntfy@sha256:...) once validated. Tag observed at draft
+    # time (2026-09-13): v2.28.0.
+    #
+    # NOTE: the task brief for this file named the image "binhs/ntfy"; no
+    # such repository exists on Docker Hub. binwiederhier/ntfy is the actual
+    # upstream ntfy server image (confirmed against hub.docker.com and
+    # docs.ntfy.sh at draft time) and is used here instead.
+    image: binwiederhier/ntfy:v2.28.0
+    container_name: ergates-ntfy
+    restart: unless-stopped
+    command: ["serve"]
+    environment:
+      # Self-hosted iOS instant delivery needs a public upstream wake-up
+      # service; the phone subsequently fetches the real message from this
+      # private server (11 section 4.2; docs.ntfy.sh/config/#ios-instant-notifications).
+      NTFY_UPSTREAM_BASE_URL: ${NTFY_UPSTREAM_BASE_URL:-https://ntfy.sh}
+      # Deny-by-default ACL: no topic is readable or writable until a token
+      # is granted access. Provision the publish token and per-device
+      # subscriptions during first-run credential provisioning (see README).
+      NTFY_AUTH_DEFAULT_ACCESS: deny-all
+      NTFY_AUTH_FILE: /var/lib/ntfy/auth.db
+      NTFY_CACHE_FILE: /var/lib/ntfy/cache.db
+      NTFY_BEHIND_PROXY: "false"
+    volumes:
+      # Persisted cache/auth stores (03 section 9), so tokens and the
+      # message cache survive a container recreation.
+      - ${NTFY_DATA_DIR:-./data/ntfy}:/var/lib/ntfy
+    ports:
+      # Private, Tailscale-reachable listener only -- never 0.0.0.0
+      # (03 section 9).
+      - "${TAILSCALE_IP:?set TAILSCALE_IP in .env -- see .env.example}:${NTFY_PORT:-8080}:80"
+    networks:
+      - ergates
+
+networks:
+  ergates:
+    driver: bridge
+
+# Deliberately out of scope for this draft (see deploy/README.md):
+#   - An outbound proxy container (provider/connector allowlisting). The
+#     wiring contract requires one; it is not modeled here yet.
+#   - A Tailscale container/sidecar. This file assumes Tailscale is already
+#     installed and connected on the host VPS, and that ${TAILSCALE_IP} is
+#     that host's Tailscale interface address.
+#   - The optional admin SPA / dashboard-only endpoint.

@@ -1,6 +1,6 @@
 # 08 - Architecture Decision Log
 
-Updated 2026-09-12 after Jop requested corrections and supplied mobile references. These are current design decisions, not claims of implementation or approval of purchases/deployment. Unverified extension mechanisms are gates in 11. Earlier own-platform records ADR-001–016 remain in the [archived decision log](archive/2026-09-12-own-platform-design/08-decision-log.md); do not build from them.
+Updated 2026-09-12 after Jop requested corrections and supplied mobile references; ADR-029 (app code shape) added 2026-09-13. These are current design decisions, not claims of implementation or approval of purchases/deployment. Unverified extension mechanisms are gates in 11. Earlier own-platform records ADR-001–016 remain in the [archived decision log](archive/2026-09-12-own-platform-design/08-decision-log.md); do not build from them.
 
 ## ADR-017 Hermes owns the backend domain
 
@@ -51,3 +51,16 @@ The pinned cron ticker defaults to 60 seconds. P1 ordinary reminders target meas
 ## ADR-028 Explicit local data and capacity
 
 Authoritative history remains on the VPS; encrypted off-host backups, device drafts and optional caches are documented in 05. Default history caching is memory-only; connection removal clears account data and warns about unsent work. The schedule is derived from effort and actual engineering availability; 07 replaces the earlier part-time label paired with effectively full-time dates.
+
+## ADR-029 App code shape: feature modules behind one gateway port
+
+Decided 2026-09-13 after Jop chose this option over full Clean Architecture and a flat screens/hooks/services layout. The app is organized as feature modules with a ports-and-adapters boundary at the Hermes edge and a strict split between server-owned and device-owned state. Details, the port contract and the state table are in [03 section 3.1](03-technical-design.md#31-code-architecture-rules-adr-029).
+
+Rules:
+
+1. Dependencies point inward. `app/` screens import features; features import the gateway port, the Query cache and the device store. The port contract, the pure session reducer and `vendor/hermes` import no React Native or Expo module.
+2. One home per data item. Hermes-owned data (profiles, sessions, history, routines, config, pending requests) lives only in the TanStack Query cache. Device-owned data from 05 (connections, pins, sections, collapsed state, watermarks, drafts) lives only in the Zustand store. Nothing is copied between the two.
+3. Live socket events pass through one pure reducer per session. It produces the rendered message list, the replay watermark and the delivery states. The fake gateway drives the same reducer as the real adapter.
+4. Every native capability (HTTP/cookies, WebSocket tickets, secure storage, file transfer, speech, notification registration) is a small interface with one real adapter and one fake. P0 gates run the real adapter; client behavior tests run the fake.
+
+Rejected: full Clean Architecture (domain, use-case and infrastructure layers with injection), because Hermes owns the domain and the app has little domain logic to isolate. Rejected: flat screens/hooks/services, because streaming, replay and uncertain-send handling do not survive being spread across screens. Zustand is the working choice for the device store because it is the smallest option; it is not itself a P0 gate. Package versions remain locked in P0 per 03.

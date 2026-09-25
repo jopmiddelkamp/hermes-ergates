@@ -1,6 +1,6 @@
 # 07 - Delivery Plan
 
-Version: 0.3. Date: 2026-09-12. Team assumption: one developer, initially 20 focused engineering hours/week. Dates are not commitments. Code, deployment and live evidence have not yet been produced.
+Version: 0.4. Date: 2026-09-13. Team assumption: one developer, initially 20 focused engineering hours/week. Dates are not commitments. Code, deployment and live evidence have not yet been produced.
 
 ## 1. Phase 0 - Prove the foundations
 
@@ -9,11 +9,11 @@ Start with a 3–5 person-day feasibility pass, included in the estimate below. 
 Deliverables:
 
 1. Validated deployment configuration following 03: pinned build, private port, working Docker access for both controllers, verified workspace paths, air-gapped shells, outbound allowlist, explicit gateway profile multiplexing.
-2. Expo development build with the Hermes client and palette sources vendored at the pin; basic auth, fresh socket tickets, secure credential handling and no automatic mutation retries.
-3. One chat screen in the clean layout and Nous System appearance: streaming, image byte attachment, approval/clarify cards, replay/history recovery and uncertain-send state.
+2. Expo development build with the Hermes client and palette sources vendored at the pin behind the `GatewayPort` contract and its real native adapter (03 section 3.1); basic auth, fresh socket tickets, secure credential handling and no automatic mutation retries.
+3. One chat screen in the clean layout and Nous System appearance: streaming, image byte attachment, approval/clarify cards, replay/history recovery and uncertain-send state. Streaming, replay and delivery state come from the pure session reducer, not from screen code.
 4. Two profiles and one ordinary reminder on each, proving that a specialist's cron store is actually scheduled. Verify cron/interactive concurrency and credential isolation under the chosen processes.
 5. Attention integration spike: approval-created event while the app is closed → private ntfy → locked iPhone → correct authenticated chat; iOS upstream and Tailscale behavior recorded.
-6. Sanitized real fixtures and a fake gateway; install/update/backup/restore runbook; restore onto empty storage and repeat the core smoke checks.
+6. Sanitized real fixtures and a fake `GatewayPort` adapter that passes the same chat, replay and uncertain-send scenarios as the real adapter; install/update/backup/restore runbook; restore onto empty storage and repeat the core smoke checks.
 
 Exit: the P0 gates in [11](11-implementation-readiness.md) pass with recorded evidence. A missing integration hook or permission-enforcement path produces an implementation decision and revised estimate, not a silently dropped requirement.
 
@@ -59,6 +59,7 @@ P0–P1 is 44–62 person-days, approximately 18–25 calendar weeks at this ass
 | Name | Ergates | Working name; no need to block technical work on branding |
 | Design | Supplied mobile layouts + Hermes theme system, Nous default, System appearance | Explicit user direction, 2026-09-12 |
 | Backend/client | Pinned Hermes + Expo React Native | Current architecture |
+| App code shape | Feature modules behind one gateway port; TanStack Query for Hermes data, Zustand for device data, pure session reducer for live events | ADR-029, explicit user direction, 2026-09-13 |
 | Model credentials | API-key path as engineering default; account/provider selected during setup | Actual provider/budget remains an operator choice; no purchase implied |
 | Private access | Basic provider over Tailscale, native cookie/ticket adapter | P0 integration gate |
 | Creation by chat | Typed proposal plus authenticated integration provisioning | Specified in 11; supersedes client-card-only assumption |
@@ -82,4 +83,4 @@ P0–P1 is 44–62 person-days, approximately 18–25 calendar weeks at this ass
 
 ## 8. Definition of done
 
-A feature has correct behavior, a focused client check where useful, the relevant real-backend/device acceptance gate, updated contracts and documentation, and a clear failure/recovery state. Sensitive data is absent from logs/fixtures. Validate phone-facing changes on the target iPhone and Android, in both Nous appearances and large text. Use tests for meaningful behavior rather than mandatory implementation-mirroring tests for every screen. Record what was actually run; unexecuted checks remain pending.
+A feature has correct behavior, a focused client check where useful, the relevant real-backend/device acceptance gate, updated contracts and documentation, and a clear failure/recovery state. A change that reads or writes Hermes data goes through the gateway port; a change that needs a native capability adds or extends an adapter together with its fake (ADR-029). Sensitive data is absent from logs/fixtures. Validate phone-facing changes on the target iPhone and Android, in both Nous appearances and large text. Use tests for meaningful behavior rather than mandatory implementation-mirroring tests for every screen. Record what was actually run; unexecuted checks remain pending.

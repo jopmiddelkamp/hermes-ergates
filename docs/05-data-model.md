@@ -34,7 +34,7 @@ Integration file journals are proposed interfaces in 11, not existing Hermes fil
 | Connection registry | App UUID, label, base URL, auth mode, primary flag, last profile | AsyncStorage; no secrets; delete on connection removal |
 | Credentials | Basic-provider session material or later native tokens | SecureStore/native cookie adapter; clear matching native cookie jar too on logout/removal |
 | Theme/preferences | Appearance, Hermes theme selection/cache, locale, haptics | AsyncStorage; can survive sign-out without retaining account data |
-| Roster organization | Pins/order, named sections/membership, reading watermarks/manual unread, collapsed state | Device-local, keyed by connection/profile; clear on sign-out/removal. Never write mobile-only organization into desktop metadata |
+| Roster organization | Pins/order, named sections/membership, reading watermarks/manual unread, collapsed state, exchange acknowledgements (bot-to-bot activity identities the reader has opened; no cap, never evicted) | Device-local, keyed by connection/profile; clear on sign-out/removal. Never write mobile-only organization into desktop metadata |
 | Query cache | Roster, history pages, jobs, tool lists | Memory-only by default. Optional “Keep recent chats offline” permits app-private cache with 24-hour TTL and explicit clear action |
 | Replay watermark | Owning connection/profile/session, `seq`, replay `epoch` | Memory; optionally persist with offline cache. Discard stale epoch and reconcile history |
 | Drafts/outbox | Text, local attachment references, local send id, state | Encrypted app-private storage with key in SecureStore; retained until sent/discarded; unsent items expire after seven days with a visible retention notice |

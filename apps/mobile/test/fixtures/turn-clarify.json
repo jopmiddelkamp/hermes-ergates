@@ -1,0 +1,91 @@
+[
+  {
+    "type": "message.start",
+    "session_id": "live0001",
+    "seq": 12
+  },
+  {
+    "type": "thinking.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "(\u00b4\uff65_\uff65`) reasoning..."
+    },
+    "seq": 13
+  },
+  {
+    "type": "sessions.changed",
+    "session_id": "",
+    "payload": {}
+  },
+  {
+    "type": "sessions.changed",
+    "session_id": "",
+    "payload": {}
+  },
+  {
+    "type": "thinking.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": ""
+    },
+    "seq": 14
+  },
+  {
+    "type": "tool.start",
+    "session_id": "live0001",
+    "payload": {
+      "tool_id": "call_WTL1i1rV0nfmZ0FtqslASZc8",
+      "name": "clarify",
+      "context": "",
+      "args": {
+        "questions": [
+          {
+            "question": "Which do you choose?",
+            "choices": [
+              "A) tea",
+              "B) coffee"
+            ]
+          }
+        ]
+      }
+    },
+    "seq": 15
+  },
+  {
+    "type": "clarify.request",
+    "session_id": "live0001",
+    "payload": {
+      "questions": [
+        {
+          "qid": "q0",
+          "question": "Which do you choose?",
+          "choices": [
+            "A) tea (Recommended)",
+            "B) coffee"
+          ],
+          "multi_select": false
+        }
+      ],
+      "request_id": "e75e6b23"
+    },
+    "seq": 16
+  },
+  {
+    "type": "message.complete",
+    "session_id": "live0001",
+    "seq": 17,
+    "payload": {
+      "text": "tea",
+      "usage": {
+        "model": "gpt-5.6-sol",
+        "input": 12065,
+        "output": 59,
+        "total": 23900,
+        "context_used": 11948,
+        "context_max": 272000,
+        "context_percent": 4
+      },
+      "status": "complete"
+    }
+  }
+]

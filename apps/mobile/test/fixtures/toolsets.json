@@ -1,0 +1,128 @@
+[
+  {
+    "name": "web",
+    "label": "Web Search & Scraping",
+    "description": "web_search, web_extract",
+    "platform": "cli",
+    "platform_label": "CLI",
+    "enabled": true,
+    "available": true,
+    "configured": true,
+    "tools": [
+      "web_extract",
+      "web_search"
+    ]
+  },
+  {
+    "name": "browser",
+    "label": "Browser Automation",
+    "description": "navigate, click, type, scroll",
+    "platform": "cli",
+    "platform_label": "CLI",
+    "enabled": true,
+    "available": true,
+    "configured": true,
+    "tools": [
+      "browser_back",
+      "browser_cdp",
+      "browser_click",
+      "browser_console",
+      "browser_dialog",
+      "browser_exec",
+      "browser_get_images",
+      "browser_navigate",
+      "browser_press",
+      "browser_scroll",
+      "browser_snapshot",
+      "browser_type",
+      "browser_vault_enter_code",
+      "browser_vault_fill",
+      "browser_vault_list",
+      "browser_vault_save_login",
+      "browser_vault_unlock",
+      "browser_vision"
+    ]
+  },
+  {
+    "name": "terminal",
+    "label": "Terminal & Processes",
+    "description": "terminal, process",
+    "platform": "cli",
+    "platform_label": "CLI",
+    "enabled": true,
+    "available": true,
+    "configured": true,
+    "tools": [
+      "process_manage",
+      "terminal"
+    ]
+  },
+  {
+    "name": "file",
+    "label": "File Operations",
+    "description": "read, write, patch, search",
+    "platform": "cli",
+    "platform_label": "CLI",
+    "enabled": true,
+    "available": true,
+    "configured": true,
+    "tools": [
+      "patch",
+      "read_file",
+      "search_files",
+      "write_file"
+    ]
+  },
+  {
+    "name": "code_execution",
+    "label": "Code Execution",
+    "description": "execute_code",
+    "platform": "cli",
+    "platform_label": "CLI",
+    "enabled": true,
+    "available": true,
+    "configured": true,
+    "tools": [
+      "execute_code"
+    ]
+  },
+  {
+    "name": "vision",
+    "label": "Vision / Image Analysis",
+    "description": "vision_analyze",
+    "platform": "cli",
+    "platform_label": "CLI",
+    "enabled": true,
+    "available": true,
+    "configured": true,
+    "tools": [
+      "vision_analyze"
+    ]
+  },
+  {
+    "name": "video",
+    "label": "Video Analysis",
+    "description": "video_analyze (requires video-capable model)",
+    "platform": "cli",
+    "platform_label": "CLI",
+    "enabled": false,
+    "available": false,
+    "configured": true,
+    "tools": [
+      "video_analyze"
+    ]
+  },
+  {
+    "name": "image_gen",
+    "label": "Image Generation",
+    "description": "image_generate",
+    "platform": "cli",
+    "platform_label": "CLI",
+    "enabled": true,
+    "available": true,
+    "configured": true,
+    "tools": [
+      "image_generate"
+    ]
+  }
+]

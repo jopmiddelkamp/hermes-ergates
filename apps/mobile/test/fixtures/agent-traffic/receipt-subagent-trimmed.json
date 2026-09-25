@@ -1,0 +1,18 @@
+{
+  "shape": "subagent-trimmed",
+  "synthetic": true,
+  "text": "[IMPORTANT: Background process proc_c9d0e1f2a3b4 completed normally (exit code 0).\nStarted by subagent sa-7f3e2d1c of delegation dlg-01. Task: \"Ask Kevin for a slot\"\nCommand: /opt/data/hermes/hermes-agent/venv/bin/python /opt/data/hermes/hermes-agent/tools/bot_mode_dm.py --run-delivery --author '{\"id\":\"bot:default\",\"name\":\"hermes\",\"is_bot\":true}' query-file /opt/data/tmp/hermes-dm-501/dm-fixture.txt --profile-home /opt/data/hermes/profiles/kevin hermes -p kevin chat --in '~' -c 'Bot Chat' --create-if-missing -Q\nOutput:\n...(output trimmed — subagent-owned process; see the delegation's live transcript for full output)\nesday at 18:00 works for me.\n↻ Resumed session 20260913_221338_79c894 \"Bot Chat\" (9 user messages, 28 total messages)\n\nsession_id: 20260913_221338_79c894\n]",
+  "result": {
+    "status": "sent",
+    "to": "@kevin",
+    "detail": "Message dispatched to @kevin. This is asynchronous — do NOT wait or poll. Finish your turn now; when the delivery completes, its notification carries the reply — relay it then, attributed to that agent.",
+    "process_id": "proc_c9d0e1f2a3b4",
+    "sent_at": 1789375767
+  },
+  "expect": {
+    "processId": "proc_c9d0e1f2a3b4",
+    "delivery": "settled",
+    "reply": "excerpt",
+    "worker": "exited"
+  }
+}

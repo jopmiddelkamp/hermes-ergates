@@ -1,0 +1,17 @@
+{
+  "session_id": "live0001",
+  "stored_session_id": "20260913_170000_fixture",
+  "message_count": 0,
+  "messages": [],
+  "info": {
+    "model": "gpt-5.6-sol",
+    "tools": {},
+    "skills": {},
+    "cwd": "/opt/data/workspace",
+    "branch": "",
+    "project": null,
+    "lazy": true,
+    "desktop_contract": 6,
+    "profile_name": "default"
+  }
+}

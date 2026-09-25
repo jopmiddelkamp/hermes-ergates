@@ -1,0 +1,18 @@
+{
+  "shape": "cli",
+  "synthetic": false,
+  "text": "[IMPORTANT: Background process proc_782bd84d7f2a completed normally (exit code 0).\nCommand: /opt/data/hermes/hermes-agent/venv/bin/python /opt/data/hermes/hermes-agent/tools/bot_mode_dm.py --run-delivery --author '{\"id\":\"bot:default\",\"name\":\"hermes\",\"is_bot\":true}' query-file /opt/data/tmp/hermes-dm-501/dm-ttwwivgo.txt --profile-home /opt/data/hermes/profiles/kevin hermes -p kevin chat --in '~' -c 'Bot Chat' --create-if-missing -Q\nOutput:\nIk ben beschikbaar op:\n\nDinsdag 15 september 2026:\n  07:00\n  12:00\n  18:00\n\nWoensdag 16 september 2026:\n  07:00\n  18:00\n\nTijdzone: UTC+7. Kies één tijd en laat weten of je 30, 45 of 60 minuten wilt trainen. Ik heb deze opties ook aan Hermes doorgegeven.\n↻ Resumed session 20260913_221338_79c894 \"Bot Chat\" (5 user messages, 10 total messages)\n\nsession_id: 20260913_221338_79c894\n]",
+  "result": {
+    "status": "sent",
+    "to": "@kevin",
+    "detail": "Message dispatched to @kevin. This is asynchronous — do NOT wait or poll. Finish your turn now; when the delivery completes, its notification carries the reply — relay it then, attributed to that agent.",
+    "process_id": "proc_782bd84d7f2a",
+    "sent_at": 1789375767
+  },
+  "expect": {
+    "processId": "proc_782bd84d7f2a",
+    "delivery": "settled",
+    "reply": "text",
+    "worker": "exited"
+  }
+}

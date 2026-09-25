@@ -1,0 +1,109 @@
+{
+  "providers": [
+    {
+      "slug": "moa",
+      "name": "Mixture of Agents",
+      "is_current": false,
+      "is_user_defined": false,
+      "models": [
+        "default"
+      ],
+      "total_models": 1,
+      "source": "virtual",
+      "authenticated": true,
+      "auth_type": "virtual",
+      "warning": "Aggregator acts as the selected model; references provide analysis before each call.",
+      "capabilities": {
+        "default": {
+          "fast": false,
+          "reasoning": true
+        }
+      },
+      "featured_models": []
+    },
+    {
+      "slug": "anthropic",
+      "name": "Anthropic",
+      "is_current": false,
+      "is_user_defined": false,
+      "models": [
+        "claude-fable-5.1",
+        "claude-fable-5",
+        "claude-opus-5",
+        "claude-sonnet-5"
+      ],
+      "total_models": 14,
+      "source": "hermes",
+      "authenticated": true,
+      "capabilities": {
+        "claude-fable-5.1": {
+          "fast": false,
+          "reasoning": true
+        },
+        "claude-fable-5": {
+          "fast": false,
+          "reasoning": true
+        },
+        "claude-opus-5": {
+          "fast": true,
+          "reasoning": true
+        },
+        "claude-sonnet-5": {
+          "fast": false,
+          "reasoning": true
+        }
+      },
+      "featured_models": []
+    },
+    {
+      "slug": "openai-codex",
+      "name": "ChatGPT or Codex Subscription",
+      "is_current": true,
+      "is_user_defined": false,
+      "models": [
+        "gpt-6-astra",
+        "gpt-6-astra-900k",
+        "gpt-5.6-sol",
+        "gpt-5.6-sol-900k"
+      ],
+      "total_models": 9,
+      "source": "hermes",
+      "authenticated": true,
+      "capabilities": {
+        "gpt-6-astra": {
+          "fast": true,
+          "reasoning": true
+        },
+        "gpt-6-astra-900k": {
+          "fast": true,
+          "reasoning": true
+        },
+        "gpt-5.6-sol": {
+          "fast": true,
+          "reasoning": true
+        },
+        "gpt-5.6-sol-900k": {
+          "fast": true,
+          "reasoning": true
+        }
+      },
+      "featured_models": []
+    },
+    {
+      "slug": "xai",
+      "name": "xAI",
+      "is_current": false,
+      "is_user_defined": false,
+      "authenticated": false,
+      "models": [
+        "grok-5"
+      ],
+      "total_models": 1,
+      "source": "hermes",
+      "capabilities": {},
+      "featured_models": []
+    }
+  ],
+  "model": "gpt-5.6-sol",
+  "provider": "openai-codex"
+}

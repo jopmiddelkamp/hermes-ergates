@@ -2,7 +2,7 @@
 
 A clean React Native messaging app for a team of Hermes assistants on a private VPS. Hermes owns the agent runtime and domain state; Ergates supplies the app, deployment and a small integration package for product-specific gaps.
 
-Updated 2026-09-12 after source review and Jop's mobile design references. **These are specifications, not an implemented or live-verified product.** Start with [the vision](01-vision-and-scope.md), [mobile design](10-mobile-design.md), and [implementation readiness](11-implementation-readiness.md).
+Updated 2026-09-12 after source review and Jop's mobile design references; app code shape (ADR-029) added 2026-09-13. **Build status (2026-09-13):** the mobile app in `apps/mobile/` implements the Phase 0/1 client surface and runs on the iOS simulator against a local `hermes serve` (see [the simulator run record](superpowers/research/2026-09-13-simulator-run.md)); the integration package in `integrations/ergates/` and the deployment draft in `deploy/` are unit-tested and reviewed but not yet run on a VPS. The gates in [11](11-implementation-readiness.md) section 6 list what is still pending. Start with [the vision](01-vision-and-scope.md), [mobile design](10-mobile-design.md), and [implementation readiness](11-implementation-readiness.md).
 
 | Document | Purpose |
 |---|---|
@@ -13,11 +13,14 @@ Updated 2026-09-12 after source review and Jop's mobile design references. **The
 | [05 - State ownership](05-data-model.md) | Hermes/integration/device data, retention, identifiers and uncertain-send behavior |
 | [06 - Client contract](06-hermes-api-contract.md) | Source-confirmed calls, examples, intended feature surface and live fixture gates |
 | [07 - Delivery plan](07-delivery-plan.md) | Feasibility-first phases, effort ranges and capacity-based calendar estimates |
-| [08 - Decision log](08-decision-log.md) | Current ADR-017–028; explicit amendments for integration and mobile design |
+| [08 - Decision log](08-decision-log.md) | Current ADR-017–029; explicit amendments for integration, mobile design and app code shape |
 | [09 - Glossary](09-glossary.md) | Terms |
 | [10 - Mobile design](10-mobile-design.md) | Clean layouts, desktop-equivalent mobile bot editor, action menus, Hermes themes and visual acceptance |
 | [11 - Implementation readiness](11-implementation-readiness.md) | Verified support → app/integration work → acceptance gates; custom integration contracts |
 | [Design summary](superpowers/specs/2026-09-12-ergates-hermes-design.md) | Compact statement of the current design |
+| [Build plan](superpowers/plans/2026-09-13-ergates-build.md) | Task-by-task implementation plan executed on 2026-09-13 |
+| [Recorded backend shapes](superpowers/research/2026-09-13-recorded-backend-shapes.md) | Live-probed request/response/event shapes behind the client contract |
+| [Simulator run record](superpowers/research/2026-09-13-simulator-run.md) | What was verified on the iOS simulator and what remains pending |
 | [Grok Bot research](research/00-research-summary.md) | Historical walkthrough, business rules and observed problems |
 | [Mobile references](research/notes-mobile-design.md) | Ten original iPhone screenshots, including Prive sections and retained membership while pinned |
 | [Hermes source notes](research/notes-hermes-facts.md) | Upstream sources, corrected handler facts and unverified implementation boundaries |

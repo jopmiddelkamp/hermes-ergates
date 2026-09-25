@@ -53,7 +53,7 @@ Source: `tui_gateway/methods_prompt.py`, `methods_session.py`, `methods_profiles
 | `session.steer`, `session.interrupt`, `session.compress` | `session_id`; text for steer | Explicit user intent; compression failure must remain visible |
 | `image.attach` | `session_id`, **`path`** | Server-visible existing path; rejects a bytes-only `data` call |
 | `image.attach_bytes` | `session_id`, **`content_base64`**; optional `filename`, `ext` | Remote bytes path; `data` is an alias; server validates type and its own byte cap |
-| `file.attach` | `session_id`, `path` | Existing gateway path, not a phone filesystem URI |
+| `file.attach` | `session_id`, `path` or `data_url` (+ `name`) | Verified at pin d76856cc: the handler accepts either an existing gateway path or a data URL that it stages under the session's `attachments/`; the phone sends `data_url` + `name` and puts the returned `ref_text` in the prompt. The REST upload route stays the path for large files |
 | `approval.respond` | `session_id`, `request_id`, `choice` | `once`, `session`, `always`, `deny`; include identity even when fallback lookup is possible |
 | `clarify.respond` | Owning session/request plus answer in the advertised single/batch shape | Capture actual variants before implementing multi-select; expiry is authoritative |
 | `profiles.list` | Gateway profile inventory | Includes `ui_meta`, `ui_meta_revisions`, `has_avatar` |
@@ -96,6 +96,10 @@ Attach a phone image, then submit only after the attachment response succeeds. T
 Do not replay the submit on timeout. Persist its uncertain state and reconcile history (05). Approval retries refetch the request's current state; an expired/resolved request must not become a new action.
 
 ## 4. REST feature surface
+
+### Session transcript (read-only, source-confirmed)
+
+`GET /api/sessions/{session_id}/messages?profile=<p>&limit=<1..500>&offset=<n>&order=latest|oldest[&include_compacted=true]` (`hermes_cli/web_routers/sessions.py:528-566`) returns `{session_id, profile, messages, pagination: {limit, offset, order, returned}}`. Rows carry `id`, `role`, `content`, `tool_calls` (assistant), `tool_call_id`/`tool_name` (tool rows), `timestamp`, `display_kind`, `display_metadata` and `display_content` for displayable compaction summaries. Row ids are a global autoincrement, so a session's ids are not contiguous. The app always sends `order` explicitly, reads the newest page first (`limit=500`), tails with `limit=50` after a turn or a process notification, and pages backward only while evidence that must be older is missing (a receipt without its send, a tool row without its assistant row; four automatic pages; "Older messages" pages manually). This is the only source of tool-call ids and tool results: `session.history` tool rows carry none (`tui_gateway/session_history.py:210-216`).
 
 ### Files and images (source-confirmed)
 
@@ -178,10 +182,10 @@ Read before editing, submit only changed sections and inspect each result. Metad
 | `message.start`, `message.delta`, `message.interim`, `message.complete` | Update one assistant message; reconcile durable rows on history refresh |
 | `session.info`, `session.usage` | Update session state and measured usage |
 | `tool.start`, `tool.progress`, `tool.complete`, `tool.generating` | Quiet Activity view; recognize only validated integration tool results as proposal candidates |
-| `status.update`, `todo.updated` | Working/status line or task detail |
+| `status.update`, `todo.updated` | Working/status line or task detail. `kind: "process"` carries a full background-process receipt (`tui_gateway/session_notifications.py:436`): the app routes it to the receipt pipeline and never to the working line |
 | `clarify.request`, `clarify.expire` | Request card; expire only matching request |
 | `approval.request`, `approval.pending`, `approval.received` | Request/current-state changes; query/reconcile after reconnect |
-| `background.complete` | Background/teammate completion with source attribution |
+| `background.complete` | Side-agent completion; payload is `{task_id, text}` only (`tui_gateway/methods_prompt.py:920-941`), no author or source field. The app renders it as a neutral notice and keeps `text` in Activity |
 | `notification.show`, `notification.clear` | In-app attention. They are not automatically mobile pushes |
 | `cron.changed` | Invalidate the owning routines list; refetch authoritative state |
 | `subagent.*` | Activity details; reconnect behavior checked separately |

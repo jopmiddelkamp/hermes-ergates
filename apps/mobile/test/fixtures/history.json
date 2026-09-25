@@ -1,0 +1,37 @@
+{
+  "count": 4,
+  "messages": [
+    {
+      "role": "user",
+      "text": "Hi, can you hear me?",
+      "timestamp": 1789203900.0,
+      "row_id": 1
+    },
+    {
+      "role": "assistant",
+      "text": "Yes. How can I help?",
+      "timestamp": 1789203905.0,
+      "row_id": 2
+    },
+    {
+      "role": "user",
+      "text": "Summarize this photo.",
+      "timestamp": 1789206800.0,
+      "row_id": 3
+    },
+    {
+      "role": "tool",
+      "name": "vision_analyze",
+      "context": "photo.jpg",
+      "args": {
+        "path": "photo.jpg"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "It shows a **receipt** for two coffees.",
+      "timestamp": 1789206862.0,
+      "row_id": 4
+    }
+  ]
+}

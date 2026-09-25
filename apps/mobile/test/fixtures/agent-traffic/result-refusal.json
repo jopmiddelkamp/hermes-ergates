@@ -1,0 +1,20 @@
+{
+  "shape": "refusal-result",
+  "synthetic": false,
+  "result": {
+    "error": "No teammate named 'zed' on this install, on a connected machine, or on a registered peer. Pick a name from the roster (roles are listed in your system prompt).",
+    "reason": "unknown",
+    "teammates": [
+      "kevin"
+    ],
+    "peers": []
+  },
+  "args": {
+    "message": "Hello!",
+    "target": "zed"
+  },
+  "expect": {
+    "delivery": "refused_or_unknown",
+    "reason": "unknown"
+  }
+}

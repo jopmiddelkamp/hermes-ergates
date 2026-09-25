@@ -1,0 +1,979 @@
+[
+  {
+    "type": "message.start",
+    "session_id": "live0001",
+    "seq": 114
+  },
+  {
+    "type": "tool.start",
+    "session_id": "live0001",
+    "payload": {
+      "tool_id": "call_W7BH7HW4zAEwvNbj4kNYzWUh",
+      "name": "message_agent",
+      "context": "",
+      "args": {
+        "target": "kevin",
+        "message": "the owner wants your own concrete availability for a training session. Please provide the dates and times when you are free, rather than asking him to propose a time."
+      }
+    },
+    "seq": 118
+  },
+  {
+    "type": "session.usage",
+    "session_id": "live0001",
+    "payload": {
+      "usage": {
+        "model": "gpt-5.6-sol",
+        "input": 45827,
+        "output": 355,
+        "reasoning": 133,
+        "prompt": 221571,
+        "completion": 355,
+        "total": 221926,
+        "calls": 5,
+        "context_used": 44679,
+        "context_max": 272000,
+        "context_percent": 16,
+        "context_source": "provider_usage",
+        "context_estimated": false,
+        "compressions": 0,
+        "cache_hit_pct": 79,
+        "avg_latency_s": 6,
+        "avg_tps": 11.9,
+        "active_subagents": 0
+      }
+    },
+    "seq": 119
+  },
+  {
+    "type": "tool.complete",
+    "session_id": "live0001",
+    "payload": {
+      "tool_id": "call_W7BH7HW4zAEwvNbj4kNYzWUh",
+      "name": "message_agent",
+      "args": {
+        "target": "kevin",
+        "message": "the owner wants your own concrete availability for a training session. Please provide the dates and times when you are free, rather than asking him to propose a time."
+      },
+      "duration_s": 0.2500579357147217,
+      "result": {
+        "status": "sent",
+        "to": "@kevin",
+        "detail": "Message dispatched to @kevin. This is asynchronous — do NOT wait or poll. Finish your turn now; when the delivery completes, its notification carries the reply — relay it then, attributed to that agent.",
+        "process_id": "proc_782bd84d7f2a",
+        "sent_at": 1789375767
+      }
+    },
+    "seq": 120
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "\n\nI"
+    },
+    "seq": 123
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " asked"
+    },
+    "seq": 124
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " Kevin"
+    },
+    "seq": 125
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " for"
+    },
+    "seq": 126
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " concrete"
+    },
+    "seq": 127
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " dates"
+    },
+    "seq": 128
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " and"
+    },
+    "seq": 129
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " times"
+    },
+    "seq": 130
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "."
+    },
+    "seq": 131
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " I"
+    },
+    "seq": 132
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "’ll"
+    },
+    "seq": 133
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " relay"
+    },
+    "seq": 134
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " his"
+    },
+    "seq": 135
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " answer"
+    },
+    "seq": 136
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " when"
+    },
+    "seq": 137
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " it"
+    },
+    "seq": 138
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " arrives"
+    },
+    "seq": 139
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "."
+    },
+    "seq": 140
+  },
+  {
+    "type": "message.complete",
+    "session_id": "live0001",
+    "payload": {
+      "text": "I asked Kevin for concrete dates and times. I’ll relay his answer when it arrives.",
+      "usage": {
+        "model": "gpt-5.6-sol",
+        "input": 46167,
+        "output": 377,
+        "reasoning": 133,
+        "prompt": 266455,
+        "completion": 377,
+        "total": 266832,
+        "calls": 6,
+        "context_used": 44884,
+        "context_max": 272000,
+        "context_percent": 17,
+        "context_source": "provider_usage",
+        "context_estimated": false,
+        "compressions": 0,
+        "cache_hit_pct": 83,
+        "avg_latency_s": 5.8,
+        "avg_tps": 10.8,
+        "active_subagents": 0
+      },
+      "status": "complete",
+      "reasoning": "**Clarifying user availability request**"
+    },
+    "seq": 143
+  },
+  {
+    "type": "status.update",
+    "session_id": "live0001",
+    "payload": {
+      "kind": "process",
+      "text": "[IMPORTANT: Background process proc_782bd84d7f2a completed normally (exit code 0).\nCommand: /opt/data/hermes/hermes-agent/venv/bin/python /opt/data/hermes/hermes-agent/tools/bot_mode_dm.py --run-delivery --author '{\"id\":\"bot:default\",\"name\":\"hermes\",\"is_bot\":true}' query-file /opt/data/tmp/hermes-dm-501/dm-ttwwivgo.txt --profile-home /opt/data/hermes/profiles/kevin hermes -p kevin chat --in '~' -c 'Bot Chat' --create-if-missing -Q\nOutput:\nIk ben beschikbaar op:\n\nDinsdag 15 september 2026:\n  07:00\n  12:00\n  18:00\n\nWoensdag 16 september 2026:\n  07:00\n  18:00\n\nTijdzone: UTC+7. Kies één tijd en laat weten of je 30, 45 of 60 minuten wilt trainen. Ik heb deze opties ook aan Hermes doorgegeven.\n↻ Resumed session 20260913_221338_79c894 \"Bot Chat\" (5 user messages, 10 total messages)\n\nsession_id: 20260913_221338_79c894\n]"
+    },
+    "seq": 146
+  },
+  {
+    "type": "message.start",
+    "session_id": "live0001",
+    "seq": 147
+  },
+  {
+    "type": "message.start",
+    "session_id": "live0001",
+    "seq": 148
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "Kevin"
+    },
+    "seq": 151
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " says"
+    },
+    "seq": 152
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " he"
+    },
+    "seq": 153
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "’s"
+    },
+    "seq": 154
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " available"
+    },
+    "seq": 155
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " at"
+    },
+    "seq": 156
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " these"
+    },
+    "seq": 157
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " times"
+    },
+    "seq": 158
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " (**"
+    },
+    "seq": 159
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "UTC"
+    },
+    "seq": 160
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "+"
+    },
+    "seq": 161
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "7"
+    },
+    "seq": 162
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "**"
+    },
+    "seq": 163
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "):\n\n"
+    },
+    "seq": 164
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "**"
+    },
+    "seq": 165
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "Tuesday"
+    },
+    "seq": 166
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": ","
+    },
+    "seq": 167
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " "
+    },
+    "seq": 168
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "15"
+    },
+    "seq": 169
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " September"
+    },
+    "seq": 170
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " "
+    },
+    "seq": 171
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "202"
+    },
+    "seq": 172
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "6"
+    },
+    "seq": 173
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "**\n"
+    },
+    "seq": 174
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "-"
+    },
+    "seq": 175
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " "
+    },
+    "seq": 176
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "07"
+    },
+    "seq": 177
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": ":"
+    },
+    "seq": 178
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "00"
+    },
+    "seq": 179
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "\n"
+    },
+    "seq": 180
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "-"
+    },
+    "seq": 181
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " "
+    },
+    "seq": 182
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "12"
+    },
+    "seq": 183
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": ":"
+    },
+    "seq": 184
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "00"
+    },
+    "seq": 185
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "\n"
+    },
+    "seq": 186
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "-"
+    },
+    "seq": 187
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " "
+    },
+    "seq": 188
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "18"
+    },
+    "seq": 189
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": ":"
+    },
+    "seq": 190
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "00"
+    },
+    "seq": 191
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "\n\n"
+    },
+    "seq": 192
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "**"
+    },
+    "seq": 193
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "Wednesday"
+    },
+    "seq": 194
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": ","
+    },
+    "seq": 195
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " "
+    },
+    "seq": 196
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "16"
+    },
+    "seq": 197
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " September"
+    },
+    "seq": 198
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " "
+    },
+    "seq": 199
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "202"
+    },
+    "seq": 200
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "6"
+    },
+    "seq": 201
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "**\n"
+    },
+    "seq": 202
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "-"
+    },
+    "seq": 203
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " "
+    },
+    "seq": 204
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "07"
+    },
+    "seq": 205
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": ":"
+    },
+    "seq": 206
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "00"
+    },
+    "seq": 207
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "\n"
+    },
+    "seq": 208
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "-"
+    },
+    "seq": 209
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " "
+    },
+    "seq": 210
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "18"
+    },
+    "seq": 211
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": ":"
+    },
+    "seq": 212
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "00"
+    },
+    "seq": 213
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "\n\n"
+    },
+    "seq": 214
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "Choose"
+    },
+    "seq": 215
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " a"
+    },
+    "seq": 216
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " time"
+    },
+    "seq": 217
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " and"
+    },
+    "seq": 218
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " whether"
+    },
+    "seq": 219
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " you"
+    },
+    "seq": 220
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " want"
+    },
+    "seq": 221
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " to"
+    },
+    "seq": 222
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " train"
+    },
+    "seq": 223
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " for"
+    },
+    "seq": 224
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " **"
+    },
+    "seq": 225
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "30"
+    },
+    "seq": 226
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": ","
+    },
+    "seq": 227
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " "
+    },
+    "seq": 228
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "45"
+    },
+    "seq": 229
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": ","
+    },
+    "seq": 230
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " or"
+    },
+    "seq": 231
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " "
+    },
+    "seq": 232
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "60"
+    },
+    "seq": 233
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": " minutes"
+    },
+    "seq": 234
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "**"
+    },
+    "seq": 235
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "."
+    },
+    "seq": 236
+  },
+  {
+    "type": "message.complete",
+    "session_id": "live0001",
+    "payload": {
+      "text": "Kevin says he’s available at these times (**UTC+7**):\n\n**Tuesday, 15 September 2026**\n- 07:00\n- 12:00\n- 18:00\n\n**Wednesday, 16 September 2026**\n- 07:00\n- 18:00\n\nChoose a time and whether you want to train for **30, 45, or 60 minutes**.",
+      "usage": {
+        "model": "gpt-5.6-sol",
+        "input": 46590,
+        "output": 489,
+        "reasoning": 153,
+        "prompt": 311678,
+        "completion": 489,
+        "total": 312167,
+        "calls": 7,
+        "context_used": 45223,
+        "context_max": 272000,
+        "context_percent": 17,
+        "context_source": "provider_usage",
+        "context_estimated": false,
+        "compressions": 0,
+        "cache_hit_pct": 85,
+        "avg_latency_s": 5.7,
+        "avg_tps": 12.2,
+        "active_subagents": 0
+      },
+      "status": "complete"
+    },
+    "seq": 239
+  }
+]

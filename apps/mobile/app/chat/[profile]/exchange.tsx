@@ -1,0 +1,161 @@
+import { useLocalSearchParams, useRouter } from 'expo-router'
+import React, { useCallback, useMemo } from 'react'
+import { FlatList, StyleSheet, Text, View, type ListRenderItemInfo } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+
+import { peerKey } from '@/features/chat/agent-traffic/peers'
+import { exchangeTranscript, type TranscriptEntry } from '@/features/chat/agent-traffic/timeline'
+import { useExchangeAcknowledgement } from '@/features/chat/agent-traffic/use-exchange-acknowledgement'
+import { useChatSession } from '@/features/chat/chat-session-context'
+import { useTheme } from '@/theme/provider'
+import { Avatar } from '@/ui/Avatar'
+import { Button } from '@/ui/Button'
+import { PeerAvatar } from '@/ui/chat/PeerAvatar'
+import { DateSeparator } from '@/ui/chat/Rows'
+import { IconButton } from '@/ui/IconButton'
+import { MarkdownText } from '@/ui/MarkdownText'
+
+const AVATAR_SIZE = 28
+
+/**
+ * The read-only record of the messages this bot exchanged with one peer
+ * (spec 6). Every body comes from the same timeline the chat renders — no
+ * second source, no composer, no actions (ADR-027), and no receipt, command or
+ * path text: those stay in Activity (docs/04).
+ */
+export default function ExchangeScreen() {
+  const { peer, anchorRowId, anchorToolCallId } = useLocalSearchParams<{ profile: string; peer: string; anchorRowId?: string; anchorToolCallId?: string }>()
+  if (!peer) {
+    return null
+  }
+  return <ExchangeTranscript peer={peer} anchorRowId={anchorRowId} anchorToolCallId={anchorToolCallId} />
+}
+
+function ExchangeTranscript({ peer, anchorRowId, anchorToolCallId }: { peer: string; anchorRowId?: string; anchorToolCallId?: string }) {
+  const theme = useTheme()
+  const router = useRouter()
+  const insets = useSafeAreaInsets()
+  const { connectionId, profile, bot, name, avatarUri, timeline, transcript } = useChatSession()
+
+  const anchor = useMemo(() => {
+    const value: { rowId?: number; toolCallId?: string } = {}
+    if (anchorRowId) {
+      value.rowId = Number(anchorRowId)
+    }
+    if (anchorToolCallId) {
+      value.toolCallId = anchorToolCallId
+    }
+    return value
+  }, [anchorRowId, anchorToolCallId])
+
+  const { entries, anchorKey } = useMemo(() => exchangeTranscript(timeline, { peerKey: peer, anchor }), [timeline, peer, anchor])
+  // The roster display name, never the profile id or the handle (5.4 copy).
+  const peerName = useMemo(() => timeline.exchanges.find(exchange => peerKey(exchange.peer) === peer)?.peer.display.name ?? peer, [timeline.exchanges, peer])
+
+  const anchorIndex = useMemo(() => (anchorKey === undefined ? -1 : entries.findIndex(entry => entry.key === anchorKey)), [anchorKey, entries])
+
+  // Acknowledgement (spec 12.1) and the reveal state machine live in the feature hook (ADR-029).
+  const { visibleEntries, firstVisible, revealEarlier, loadOlder } = useExchangeAcknowledgement({
+    entries,
+    anchorIndex,
+    connectionId,
+    profile,
+    loadOlder: transcript.loadOlder
+  })
+
+  const renderEntry = useCallback(
+    ({ item: entry }: ListRenderItemInfo<TranscriptEntry>) => {
+      if (entry.kind === 'time') {
+        return <DateSeparator label={entry.label} />
+      }
+      // `author` is `'self' | PeerRef`; keep the narrowed reference, a boolean would not narrow it.
+      const peerAuthor = entry.author === 'self' ? null : entry.author
+      const self = peerAuthor === null
+      const avatar = peerAuthor === null ? <Avatar name={name} color={bot?.color} imageUri={avatarUri} size={AVATAR_SIZE} /> : <PeerAvatar peer={peerAuthor} size={AVATAR_SIZE} connectionId={connectionId} />
+      return (
+        <View style={[styles.wrap, self ? styles.wrapSelf : styles.wrapPeer]} accessible accessibilityLabel={entry.label}>
+          <Text style={[styles.author, self ? styles.authorSelf : styles.authorPeer, { color: theme.colors.mutedForeground }]} numberOfLines={1}>
+            {entry.roleLabel}
+          </Text>
+          <View style={[styles.row, self ? styles.rowSelf : null]}>
+            {self ? null : avatar}
+            <View style={[styles.bubble, { backgroundColor: self ? theme.colors.userBubble : theme.colors.muted, borderRadius: theme.radius.bubble }]}>
+              <View style={styles.markdown}>
+                <MarkdownText>{entry.text}</MarkdownText>
+              </View>
+            </View>
+            {self ? avatar : null}
+          </View>
+          {entry.stateText ? <Text style={[styles.state, self ? styles.authorSelf : styles.authorPeer, { color: theme.colors.mutedForeground }]}>{entry.stateText}</Text> : null}
+        </View>
+      )
+    },
+    [name, bot?.color, avatarUri, connectionId, theme.colors.mutedForeground, theme.colors.userBubble, theme.colors.muted, theme.radius.bubble]
+  )
+
+  // One line at a time: a failed page says so, a complete window says so, and
+  // only a window that can still be paged offers the control.
+  const header = (
+    <View style={styles.listHeader}>
+      {firstVisible > 0 ? (
+        <Button label="Older messages" variant="secondary" onPress={revealEarlier} />
+      ) : transcript.status === 'error' ? (
+        <Text style={[styles.state, styles.stateCenter, { color: theme.colors.mutedForeground }]}>Older messages could not be loaded.</Text>
+      ) : transcript.window.reachedStart ? (
+        <Text style={[styles.state, styles.stateCenter, { color: theme.colors.mutedForeground }]}>This is the start of the recorded chat.</Text>
+      ) : (
+        <Button label="Older messages" variant="secondary" onPress={loadOlder} disabled={transcript.status === 'loading'} />
+      )}
+    </View>
+  )
+
+  return (
+    <View style={[styles.screen, { backgroundColor: theme.colors.background, paddingTop: insets.top }]}>
+      <View style={[styles.header, { paddingHorizontal: theme.pagePadding, borderBottomColor: theme.colors.border, backgroundColor: theme.colors.background }]}>
+        <IconButton name="chevron-left" accessibilityLabel="Back" outlined onPress={() => router.back()} />
+        <View style={styles.titleBlock}>
+          <Text style={[styles.title, { color: theme.colors.foreground }]} numberOfLines={1}>
+            {`Messages with ${peerName}`}
+          </Text>
+          <Text style={[styles.subtitle, { color: theme.colors.mutedForeground }]} numberOfLines={2}>
+            {`Recorded in ${name}'s chat · grouped by exchange`}
+          </Text>
+        </View>
+        <View style={[styles.pill, { backgroundColor: theme.colors.muted }]}>
+          <Text style={[styles.pillText, { color: theme.colors.mutedForeground }]}>Read-only</Text>
+        </View>
+      </View>
+      <FlatList
+        data={visibleEntries}
+        keyExtractor={entry => entry.key}
+        renderItem={renderEntry}
+        ListHeaderComponent={header}
+        contentContainerStyle={{ paddingHorizontal: theme.pagePadding, paddingVertical: 20 }}
+        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+      />
+    </View>
+  )
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  titleBlock: { flex: 1, gap: 2 },
+  title: { fontSize: 17, fontWeight: '500' },
+  subtitle: { fontSize: 13 },
+  pill: { borderRadius: 12, paddingVertical: 4, paddingHorizontal: 10 },
+  pillText: { fontSize: 13 },
+  listHeader: { paddingBottom: 12, gap: 8 },
+  wrap: { maxWidth: '88%', marginVertical: 4 },
+  wrapPeer: { alignSelf: 'flex-start' },
+  wrapSelf: { alignSelf: 'flex-end' },
+  author: { fontSize: 13, marginBottom: 4 },
+  authorPeer: { marginLeft: AVATAR_SIZE + 8 },
+  authorSelf: { marginRight: AVATAR_SIZE + 8, textAlign: 'right' },
+  row: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  rowSelf: { justifyContent: 'flex-end' },
+  bubble: { paddingVertical: 12, paddingHorizontal: 16, flexShrink: 1 },
+  markdown: { marginBottom: -10 },
+  state: { fontSize: 13, lineHeight: 18, marginTop: 4 },
+  stateCenter: { textAlign: 'center' }
+})

@@ -1,0 +1,18 @@
+{
+  "shape": "cli",
+  "synthetic": false,
+  "text": "[IMPORTANT: Background process proc_69dec248dc4e completed normally (exit code 0).\nCommand: /opt/data/hermes/hermes-agent/venv/bin/python /opt/data/hermes/hermes-agent/tools/bot_mode_dm.py --run-delivery --author '{\"id\":\"bot:default\",\"name\":\"hermes\",\"is_bot\":true}' query-file /opt/data/tmp/hermes-dm-501/dm-afhtz0oj.txt --profile-home /opt/data/hermes/profiles/kevin hermes -p kevin chat --in '~' -c 'Bot Chat' --create-if-missing -Q\nOutput:\nMijn favoriete kleur is blauw.\n↻ Resumed session 20260913_221338_79c894 \"Bot Chat\" (7 user messages, 20 total messages)\n\nsession_id: 20260913_221338_79c894\n]",
+  "result": {
+    "status": "sent",
+    "to": "@kevin",
+    "detail": "Message dispatched to @kevin. This is asynchronous — do NOT wait or poll. Finish your turn now; when the delivery completes, its notification carries the reply — relay it then, attributed to that agent.",
+    "process_id": "proc_69dec248dc4e",
+    "sent_at": 1789375867
+  },
+  "expect": {
+    "processId": "proc_69dec248dc4e",
+    "delivery": "settled",
+    "reply": "text",
+    "worker": "exited"
+  }
+}

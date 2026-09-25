@@ -1,0 +1,66 @@
+/**
+ * Row classification for bot-to-bot traffic in chat (spec 5.1, 5.6,
+ * docs/superpowers/specs/2026-09-14-agent-traffic-design.md).
+ * Pure: no React or React Native imports (ADR-029 rule 1).
+ */
+
+import { parseReceiptRow, type ParsedReceipt } from './receipt'
+
+export const A2A_DISPLAY_KIND = 'a2a_message'
+
+/** Desktop's accepted inbound shapes (apps/desktop/.../user-message.tsx:88-89), verbatim. */
+export const AGENT_MESSAGE_RE =
+  /^(?:Message from (?:🤖\s*)?([^:\n(]{1,64}?)(?:\s*\(@([a-z0-9][a-z0-9_-]{0,63})\))?:\s*|\[Message from agent '([^']{1,64})'\]\s*)([\s\S]*)$/u
+
+export type RowClass =
+  | { kind: 'bot_message'; handle: string; name: string; text: string; provenance: 'structured' | 'inferred'; senderId?: string; deliveryId?: string }
+  | { kind: 'receipts'; receipts: ParsedReceipt[] }
+  | { kind: 'notice'; noticeKind: 'process' | 'batch' | 'unknown'; detail: string }
+  | { kind: 'plain' }
+
+type BotMessage = Extract<RowClass, { kind: 'bot_message' }>
+
+/**
+ * Step 1a: a validated `a2a_message` stamp. Returns undefined when the metadata does not carry a
+ * `sender_handle`. The backend keeps the human-facing "Message from ..." prefix on the content even
+ * when a stamp exists (spec section 2, `tools/bot_mode_dm.py:215`), so the prefix is stripped here
+ * when present; the raw text is used otherwise.
+ */
+function structuredBotMessage(text: string, metadata: unknown): BotMessage | undefined {
+  if (typeof metadata !== 'object' || metadata === null) return undefined
+  const m = metadata as Record<string, unknown>
+  if (typeof m.sender_handle !== 'string') return undefined
+
+  const match = AGENT_MESSAGE_RE.exec(text)
+  const body = match ? (match[4] ?? '') : text
+
+  const message: BotMessage = { kind: 'bot_message', handle: m.sender_handle, name: m.sender_handle, text: body, provenance: 'structured' }
+  if (typeof m.sender_id === 'string') message.senderId = m.sender_id
+  if (typeof m.delivery_id === 'string') message.deliveryId = m.delivery_id
+  return message
+}
+
+/** Step 3: the legacy inferred shapes, matched only on rows without a `localId`. */
+function inferredBotMessage(text: string): BotMessage | undefined {
+  const match = AGENT_MESSAGE_RE.exec(text)
+  if (!match) return undefined
+  const name = (match[1] ?? match[3])!.trim()
+  const handle = (match[2] ?? name).trim().toLowerCase()
+  return { kind: 'bot_message', handle, name, text: match[4] ?? '', provenance: 'inferred' }
+}
+
+/** Classifies a `user`-role chat row per the ordered rules of spec 5.1/5.6. */
+export function classifyUserRow(row: { text: string; displayKind?: string; displayMetadata?: unknown; localId?: string }): RowClass {
+  if (row.displayKind !== undefined) {
+    if (row.displayKind === A2A_DISPLAY_KIND) return structuredBotMessage(row.text, row.displayMetadata) ?? { kind: 'plain' }
+    return { kind: 'plain' } // any other known display kind is today's projection: plain.
+  }
+
+  const receiptParse = parseReceiptRow(row.text)
+  if (receiptParse.kind === 'receipts') return { kind: 'receipts', receipts: receiptParse.receipts }
+  if (receiptParse.kind === 'notice') return { kind: 'notice', noticeKind: receiptParse.noticeKind, detail: row.text }
+
+  if (row.localId !== undefined) return { kind: 'plain' }
+
+  return inferredBotMessage(row.text) ?? { kind: 'plain' }
+}

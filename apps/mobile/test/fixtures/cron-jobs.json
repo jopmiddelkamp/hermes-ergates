@@ -1,0 +1,14 @@
+[
+  {
+    "id": "job-1",
+    "name": "[bot:kevin] Weekly check-in",
+    "schedule": "0 9 * * 1",
+    "prompt": "Ask how training went this week.",
+    "enabled": true,
+    "paused": false,
+    "next_run": "2026-09-15T09:00:00+02:00",
+    "last_run": null,
+    "timezone": "Europe/Amsterdam",
+    "profile": "kevin"
+  }
+]

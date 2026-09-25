@@ -1,0 +1,10 @@
+{
+  "version": "0.21.2",
+  "release_date": "2026.9.11",
+  "auth_required": false,
+  "auth_providers": [],
+  "auth_flows": [],
+  "install_id": "install-fixture",
+  "active_sessions": 0,
+  "gateway_running": false
+}

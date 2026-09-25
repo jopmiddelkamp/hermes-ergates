@@ -1,0 +1,95 @@
+/**
+ * Scenario: the socket drops mid-chat and comes back.
+ *
+ * The backend parks a disconnected session's transport on a drop sink, so a
+ * reconnect that only replays leaves the socket open and permanently silent.
+ * Every reconnect must call `session.activate` FIRST (the transport rebind),
+ * and it is also the only call that reports the pending approval/clarify cards.
+ */
+import { describe, expect, it } from 'vitest'
+
+import type { GatewayEventFrame } from '@/gateway/types'
+
+import { flush } from '@test/fake-gateway/fake-websocket'
+
+import { FakeGateway, type FakeScript } from '../fake-gateway/fake-gateway'
+import { runSession } from '../fake-gateway/scenarios'
+
+describe('reconnect rebind (scenario b)', () => {
+  it('activates before replaying and restores the pending approval card', async () => {
+    const script: FakeScript = {
+      activate: {
+        pending_approval: { request_id: 'ap1', command: 'rm -rf build', description: 'dangerous command', choices: ['once', 'session', 'always', 'deny'] }
+      }
+    }
+    const gateway = new FakeGateway(script)
+    const driver = await runSession(gateway, 'thijs')
+    const conn = gateway.connectionFor('thijs')
+    expect(driver.getState().items.some(i => i.kind === 'approval')).toBe(false)
+
+    conn.simulateDrop()
+    await driver.settled()
+
+    const rebind = conn.methods().indexOf('session.activate')
+    const replay = conn.methods().indexOf('session.events.since')
+    expect(rebind).toBeGreaterThanOrEqual(0)
+    expect(replay).toBeGreaterThan(rebind)
+    expect(gateway.calls.activate).toBe(1)
+    expect(driver.getState().items.find(i => i.kind === 'approval')).toMatchObject({ requestId: 'ap1', state: 'pending' })
+  })
+
+  it('retries a 4009 "settling" activate once, then rebinds', async () => {
+    const gateway = new FakeGateway({ activateSettling: 1 })
+    const driver = await runSession(gateway, 'thijs')
+    const conn = gateway.connectionFor('thijs')
+
+    conn.simulateDrop()
+    await driver.settled()
+
+    expect(gateway.calls.activate).toBe(2)
+    expect(conn.methods().filter(m => m === 'session.activate')).toHaveLength(2)
+    expect(conn.methods().indexOf('session.events.since')).toBeGreaterThan(conn.methods().lastIndexOf('session.activate'))
+  })
+
+  it('restores the streaming buffer from the inflight turn instead of losing the answer', async () => {
+    const script: FakeScript = {
+      onSubmit: () => [
+        { type: 'message.start', seq: 1 },
+        { type: 'message.delta', seq: 2, payload: { text: 'half ' } }
+      ] as GatewayEventFrame[],
+      activate: { running: true, status: 'streaming', inflight: { user: 'ping', assistant: 'half an answer', streaming: true } }
+    }
+    const gateway = new FakeGateway(script)
+    const driver = await runSession(gateway, 'thijs')
+    await driver.send('ping')
+    await flush(20)
+    expect(driver.getState().live).toMatchObject({ streaming: true, assistantText: 'half ' })
+
+    gateway.connectionFor('thijs').simulateDrop()
+    await driver.settled()
+
+    expect(driver.getState().live).toMatchObject({ streaming: true, assistantText: 'half an answer' })
+    expect(driver.getState().replay.needsHistoryRefetch).toBe(false)
+  })
+
+  it('asks for durable history when the turn ended while the socket was down', async () => {
+    const script: FakeScript = {
+      onSubmit: () => [
+        { type: 'message.start', seq: 1 },
+        { type: 'message.delta', seq: 2, payload: { text: 'half ' } }
+      ] as GatewayEventFrame[]
+    }
+    const gateway = new FakeGateway(script)
+    const driver = await runSession(gateway, 'thijs')
+    await driver.send('ping')
+    await flush(20)
+
+    gateway.connectionFor('thijs').simulateDrop()
+    await driver.settled()
+
+    // activate reports running:false: the completion frame was lost with the
+    // socket, so the durable transcript is the only place the answer exists.
+    expect(driver.getState().live.streaming).toBe(false)
+    expect(driver.getState().replay.needsHistoryRefetch).toBe(true)
+  })
+})

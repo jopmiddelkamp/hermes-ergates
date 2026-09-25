@@ -1,6 +1,6 @@
 # 03 - Technical Design
 
-Version: 0.3. Date: 2026-09-12. Depends on [02](02-functional-design.md), [10](10-mobile-design.md) and [11](11-implementation-readiness.md). Hermes pin: `d76856cc6971b6e0e1903b5369498bcc4bb83a60`, version 0.21.2. This is a design, not an executed deployment.
+Version: 0.4. Date: 2026-09-13. Depends on [02](02-functional-design.md), [10](10-mobile-design.md), [11](11-implementation-readiness.md) and [08 ADR-029](08-decision-log.md#adr-029-app-code-shape-feature-modules-behind-one-gateway-port). Hermes pin: `d76856cc6971b6e0e1903b5369498bcc4bb83a60`, version 0.21.2. This is a design, not an executed deployment.
 
 ## 1. Boundaries
 
@@ -36,9 +36,10 @@ flowchart TB
 | Concern | Choice | Boundary |
 |---|---|---|
 | Mobile runtime | React Native, Expo development builds, TypeScript strict | Verify required native modules and OS settings in P0; do not assume Expo Go compatibility |
+| Code shape | Feature modules behind one `GatewayPort` contract with a real native adapter and a fake (ADR-029) | Rules, port sketch and state table in 3.1; every P0 gate runs through the real adapter |
 | Navigation | expo-router stack/sheets | Home and chat are primary; details/settings are secondary (10) |
 | Transport | Vendored `JsonRpcGatewayClient`, native HTTP/cookie/ticket adapter | Exact contract in 06; native cookie persistence is a P0 gate |
-| State | TanStack Query for remote data; small client state store | In-memory history by default; local data rules in 05 |
+| State | TanStack Query for Hermes-owned data; Zustand for device-owned data; one pure session reducer for live events | One home per data item (3.1); in-memory history by default; local data rules in 05 |
 | Theme | Vendored Hermes palette data, semantic types and pure skin converter | Nous default, system appearance; React Native application/persistence adapter (10) |
 | Secure storage | expo-secure-store for credentials and draft encryption key | Do not claim a particular hardware enclave without verifying the platform |
 | Rendering | Native message list, Markdown renderer, native system font | Validate table fallback, large text, safe areas and keyboard behavior |
@@ -48,12 +49,13 @@ flowchart TB
 
 ```text
 apps/mobile/
-  app/                     # home, chat, agent details, settings and sheets
-  src/gateway/             # connections, cookies/tickets, replay, error handling
-  src/features/            # chat, agents, routines, files, settings; rooms/board later
+  app/                     # expo-router screens and sheets: layout and wiring only, no data calls
+  src/gateway/             # GatewayPort contract; native adapters for HTTP/cookies, tickets, sockets; replay; error mapping
+  src/features/            # chat, agents, routines, files, settings; rooms/board later; one public index per feature
+  src/state/               # Zustand device store: connections, pins, sections, collapsed state, watermarks, drafts
   src/theme/               # native semantic tokens, palette resolution, preferences
   vendor/hermes/           # minimal upstream client + pure theme files, license, pin
-  test/fake-gateway/       # sanitized fixtures and client behavior scenarios
+  test/fake-gateway/       # fake GatewayPort adapter over sanitized fixtures; client behavior scenarios
 integrations/ergates/      # external Hermes plugin and permitted server extension points
   # proposal/provisioning, attention delivery and reminder-create contracts from 11
 deploy/                   # deployment configuration
@@ -63,6 +65,45 @@ deploy/                   # deployment configuration
 ```
 
 These are planned paths; they do not exist yet. Package versions and native build compatibility are chosen and locked during P0 rather than implied by this document.
+
+### 3.1 Code architecture rules (ADR-029)
+
+Screens import features. Features import the gateway port, the Query cache and the device store. The port contract, the session reducer and the vendored client import no React Native or Expo module, so they run unchanged in Node tests. The session reducer lives in the chat feature (`src/features/chat/session-reducer.ts`).
+
+```mermaid
+flowchart TB
+  APP[app/ screens: layout and wiring] --> FEAT[src/features/*]
+  FEAT --> QRY[TanStack Query cache: Hermes-owned data]
+  FEAT --> STORE[Zustand store: device-owned data]
+  FEAT --> RED[Pure session reducer, one per open session]
+  QRY --> PORT[GatewayPort contract]
+  RED --> PORT
+  PORT --> REAL[Native adapters]
+  PORT --> FAKE[test/fake-gateway adapter]
+  REAL --> VEND[vendor/hermes JsonRpcGatewayClient]
+```
+
+| Data | Home | Never |
+|---|---|---|
+| Profiles, sessions, history pages, routines, config, pending approvals and clarifies | TanStack Query cache keyed by connection, profile and durable session id | Copied into the device store |
+| Connections, pins, sections, collapsed state, reading watermarks, drafts/outbox, appearance preference | Zustand store with the persistence and clearing rules of 05 | Written into Hermes metadata |
+| Live turn: streaming text, tool events, delivery state, replay watermark and epoch | Session reducer state, one instance per open session | Written into the Query cache while streaming; history is refetched once the turn settles |
+
+The port is the one seam to Hermes. This is the P0 starting shape; the exact call list follows 06 and grows with the phases.
+
+```ts
+// src/gateway/port.ts
+export interface GatewayPort {
+  status(): Promise<BackendStatus>;                          // GET /api/status
+  login(creds: BasicCredentials): Promise<void>;             // POST /auth/password-login; cookies stay in the adapter
+  connect(profile: string): Promise<GatewayConnection>;      // fresh ws-ticket, /api/ws, wait for gateway.ready
+  submit(sessionId: string, text: string): Promise<SubmitResult>;        // prompt.submit, once per attempt
+  replay(sessionId: string, lastSeen: number): Promise<ReplayResult>;    // session.events.since; exposes truncated and epoch
+  events(sessionId: string): AsyncIterable<GatewayEvent>;   // live events for the reducer
+}
+```
+
+The real adapter wraps the vendored `JsonRpcGatewayClient` plus the native HTTP, cookie and ticket modules. The fake adapter replays sanitized fixtures. Every client behavior test and every P0 gate uses the same contract; only the adapter differs. Native capabilities outside the gateway (secure storage, file transfer, speech, notification registration) follow the same pattern: one small interface, one real adapter, one fake.
 
 ## 4. Connection, auth and replay
 

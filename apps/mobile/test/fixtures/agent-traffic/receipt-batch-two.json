@@ -1,0 +1,9 @@
+{
+  "shape": "batch",
+  "synthetic": true,
+  "text": "[IMPORTANT: 2 background processes completed. Treat these results as one batch and give one consolidated response; preserve failures and actionable results.]\n\n[IMPORTANT: Background process proc_69dec248dc4e completed normally (exit code 0).\nCommand: /opt/data/hermes/hermes-agent/venv/bin/python /opt/data/hermes/hermes-agent/tools/bot_mode_dm.py --run-delivery --author '{\"id\":\"bot:default\",\"name\":\"hermes\",\"is_bot\":true}' query-file /opt/data/tmp/hermes-dm-501/dm-afhtz0oj.txt --profile-home /opt/data/hermes/profiles/kevin hermes -p kevin chat --in '~' -c 'Bot Chat' --create-if-missing -Q\nOutput:\nMijn favoriete kleur is blauw.\n↻ Resumed session 20260913_221338_79c894 \"Bot Chat\" (7 user messages, 20 total messages)\n\nsession_id: 20260913_221338_79c894\n]\n\n[IMPORTANT: Background process proc_8a312511b81e completed normally (exit code 0).\nCommand: /opt/data/hermes/hermes-agent/venv/bin/python /opt/data/hermes/hermes-agent/tools/bot_mode_dm.py --run-delivery --author '{\"id\":\"bot:default\",\"name\":\"hermes\",\"is_bot\":true}' query-file /opt/data/tmp/hermes-dm-501/dm-xw2k4x35.txt --profile-home /opt/data/hermes/profiles/kevin hermes -p kevin chat --in '~' -c 'Bot Chat' --create-if-missing -Q\nOutput:\nMijn favoriete eten is sushi.\n↻ Resumed session 20260913_221338_79c894 \"Bot Chat\" (8 user messages, 24 total messages)\n\nsession_id: 20260913_221338_79c894\n]",
+  "result": null,
+  "expect": {
+    "count": 2
+  }
+}

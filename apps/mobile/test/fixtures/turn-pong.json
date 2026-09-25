@@ -1,0 +1,467 @@
+[
+  {
+    "type": "sessions.changed",
+    "session_id": "",
+    "payload": {}
+  },
+  {
+    "type": "session.info",
+    "session_id": "live0001",
+    "payload": {
+      "model": "gpt-5.6-sol",
+      "provider": "openai-codex",
+      "reasoning_effort": "medium",
+      "service_tier": "",
+      "fast": false,
+      "yolo": false,
+      "approval_mode": "smart",
+      "tools": {
+        "browser-use": [
+          "browser_exec"
+        ],
+        "browser": [
+          "browser_vault_enter_code",
+          "browser_vault_fill",
+          "browser_vault_list",
+          "browser_vault_save_login",
+          "browser_vault_unlock"
+        ],
+        "clarify": [
+          "clarify"
+        ],
+        "delegation": [
+          "delegate_task"
+        ],
+        "code_execution": [
+          "execute_code"
+        ],
+        "memory": [
+          "memory"
+        ],
+        "file": [
+          "patch",
+          "read_file",
+          "search_files",
+          "write_file"
+        ],
+        "skills": [
+          "skill_manage",
+          "skill_view",
+          "skills_list"
+        ],
+        "terminal": [
+          "terminal"
+        ],
+        "tts": [
+          "text_to_speech"
+        ],
+        "vision": [
+          "vision_analyze"
+        ],
+        "web": [
+          "web_extract",
+          "web_search"
+        ],
+        "other": [
+          "tool_search",
+          "tool_describe",
+          "tool_call"
+        ]
+      },
+      "skills": {
+        "apple": [
+          "apple-notes",
+          "apple-reminders",
+          "findmy",
+          "imessage"
+        ],
+        "autonomous-ai-agents": [
+          "claude-code",
+          "codex",
+          "computer-use",
+          "hermes-agent",
+          "opencode"
+        ],
+        "creative": [
+          "architecture-diagram",
+          "ascii-video",
+          "baoyu-infographic",
+          "claude-design",
+          "design-md",
+          "humanizer",
+          "manim-video",
+          "p5js",
+          "popular-web-designs",
+          "songwriting-and-ai-music"
+        ],
+        "email": [
+          "email-inbox-triage",
+          "himalaya"
+        ],
+        "media": [
+          "gif-search",
+          "songsee",
+          "youtube-content"
+        ],
+        "note-taking": [
+          "obsidian"
+        ],
+        "productivity": [
+          "airtable",
+          "box",
+          "document-to-action-items",
+          "docx",
+          "google-workspace",
+          "maps",
+          "meeting-action-items",
+          "notion",
+          "pdf",
+          "powerpoint",
+          "product-price-monitor",
+          "teams-meeting-pipeline",
+          "weekly-review-planning",
+          "xlsx"
+        ],
+        "research": [
+          "arxiv",
+          "competitor-news-monitor",
+          "grounded-citations",
+          "llm-wiki"
+        ],
+        "social-media": [
+          "xurl"
+        ],
+        "software-development": [
+          "codebase-inspection",
+          "dogfood",
+          "github",
+          "hermes-agent-skill-authoring",
+          "inspecting-hermes-desktop-dom",
+          "node-inspect-debugger",
+          "python-debugpy",
+          "requesting-code-review",
+          "simplify-code",
+          "spike",
+          "systematic-debugging",
+          "test-driven-development"
+        ],
+        "web": [
+          "blocked-page-recovery"
+        ]
+      },
+      "cwd": "/opt/data/workspace",
+      "branch": "",
+      "project": null,
+      "terminal_backend": "local",
+      "personality": "",
+      "running": true,
+      "turn_started_at": 1789294807.324183,
+      "title": "Ergates probe",
+      "stored_session_id": "20260913_172006_c3c950",
+      "desktop_contract": 6,
+      "version": "0.21.2",
+      "release_date": "2026.9.11",
+      "update_behind": 303,
+      "update_command": "hermes update",
+      "usage": {
+        "model": "gpt-5.6-sol",
+        "input": 0,
+        "output": 0,
+        "reasoning": 0,
+        "prompt": 0,
+        "completion": 0,
+        "total": 0,
+        "calls": 0,
+        "compressions": 0,
+        "active_subagents": 0
+      },
+      "profile_name": "default",
+      "mcp_servers": []
+    },
+    "seq": 1
+  },
+  {
+    "type": "message.start",
+    "session_id": "live0001",
+    "seq": 2
+  },
+  {
+    "type": "session.title",
+    "session_id": "live0001",
+    "payload": {
+      "session_id": "20260913_170000_fixture",
+      "title": "Reply with exactly the single word: pong"
+    },
+    "seq": 3
+  },
+  {
+    "type": "thinking.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "ಠ_ಠ formulating..."
+    },
+    "seq": 4
+  },
+  {
+    "type": "sessions.changed",
+    "session_id": "",
+    "payload": {}
+  },
+  {
+    "type": "thinking.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": ""
+    },
+    "seq": 5
+  },
+  {
+    "type": "message.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": "pong"
+    },
+    "seq": 6
+  },
+  {
+    "type": "session.title",
+    "session_id": "live0001",
+    "payload": {
+      "session_id": "20260913_170000_fixture",
+      "title": "Reply with pong"
+    },
+    "seq": 7
+  },
+  {
+    "type": "sessions.changed",
+    "session_id": "",
+    "payload": {}
+  },
+  {
+    "type": "thinking.delta",
+    "session_id": "live0001",
+    "payload": {
+      "text": ""
+    },
+    "seq": 8
+  },
+  {
+    "type": "reasoning.available",
+    "session_id": "live0001",
+    "payload": {
+      "text": "pong"
+    },
+    "seq": 9
+  },
+  {
+    "type": "message.complete",
+    "session_id": "live0001",
+    "payload": {
+      "text": "pong",
+      "usage": {
+        "model": "gpt-5.6-sol",
+        "input": 11893,
+        "output": 5,
+        "reasoning": 0,
+        "prompt": 11893,
+        "completion": 5,
+        "total": 11898,
+        "calls": 1,
+        "context_used": 11893,
+        "context_max": 272000,
+        "context_percent": 4,
+        "context_source": "provider_usage",
+        "context_estimated": false,
+        "compressions": 0,
+        "avg_latency_s": 8.2,
+        "avg_tps": 0.6,
+        "active_subagents": 0
+      },
+      "status": "complete"
+    },
+    "seq": 10
+  },
+  {
+    "type": "session.info",
+    "session_id": "live0001",
+    "payload": {
+      "model": "gpt-5.6-sol",
+      "provider": "openai-codex",
+      "reasoning_effort": "medium",
+      "service_tier": "",
+      "fast": false,
+      "yolo": false,
+      "approval_mode": "smart",
+      "tools": {
+        "browser-use": [
+          "browser_exec"
+        ],
+        "browser": [
+          "browser_vault_enter_code",
+          "browser_vault_fill",
+          "browser_vault_list",
+          "browser_vault_save_login",
+          "browser_vault_unlock"
+        ],
+        "clarify": [
+          "clarify"
+        ],
+        "delegation": [
+          "delegate_task"
+        ],
+        "code_execution": [
+          "execute_code"
+        ],
+        "memory": [
+          "memory"
+        ],
+        "file": [
+          "patch",
+          "read_file",
+          "search_files",
+          "write_file"
+        ],
+        "skills": [
+          "skill_manage",
+          "skill_view",
+          "skills_list"
+        ],
+        "terminal": [
+          "terminal"
+        ],
+        "tts": [
+          "text_to_speech"
+        ],
+        "vision": [
+          "vision_analyze"
+        ],
+        "web": [
+          "web_extract",
+          "web_search"
+        ],
+        "other": [
+          "tool_search",
+          "tool_describe",
+          "tool_call"
+        ]
+      },
+      "skills": {
+        "apple": [
+          "apple-notes",
+          "apple-reminders",
+          "findmy",
+          "imessage"
+        ],
+        "autonomous-ai-agents": [
+          "claude-code",
+          "codex",
+          "computer-use",
+          "hermes-agent",
+          "opencode"
+        ],
+        "creative": [
+          "architecture-diagram",
+          "ascii-video",
+          "baoyu-infographic",
+          "claude-design",
+          "design-md",
+          "humanizer",
+          "manim-video",
+          "p5js",
+          "popular-web-designs",
+          "songwriting-and-ai-music"
+        ],
+        "email": [
+          "email-inbox-triage",
+          "himalaya"
+        ],
+        "media": [
+          "gif-search",
+          "songsee",
+          "youtube-content"
+        ],
+        "note-taking": [
+          "obsidian"
+        ],
+        "productivity": [
+          "airtable",
+          "box",
+          "document-to-action-items",
+          "docx",
+          "google-workspace",
+          "maps",
+          "meeting-action-items",
+          "notion",
+          "pdf",
+          "powerpoint",
+          "product-price-monitor",
+          "teams-meeting-pipeline",
+          "weekly-review-planning",
+          "xlsx"
+        ],
+        "research": [
+          "arxiv",
+          "competitor-news-monitor",
+          "grounded-citations",
+          "llm-wiki"
+        ],
+        "social-media": [
+          "xurl"
+        ],
+        "software-development": [
+          "codebase-inspection",
+          "dogfood",
+          "github",
+          "hermes-agent-skill-authoring",
+          "inspecting-hermes-desktop-dom",
+          "node-inspect-debugger",
+          "python-debugpy",
+          "requesting-code-review",
+          "simplify-code",
+          "spike",
+          "systematic-debugging",
+          "test-driven-development"
+        ],
+        "web": [
+          "blocked-page-recovery"
+        ]
+      },
+      "cwd": "/opt/data/workspace",
+      "branch": "",
+      "project": null,
+      "terminal_backend": "local",
+      "personality": "",
+      "running": false,
+      "turn_started_at": null,
+      "title": "Ergates probe",
+      "stored_session_id": "20260913_172006_c3c950",
+      "desktop_contract": 6,
+      "version": "0.21.2",
+      "release_date": "2026.9.11",
+      "update_behind": 303,
+      "update_command": "hermes update",
+      "usage": {
+        "model": "gpt-5.6-sol",
+        "input": 11893,
+        "output": 5,
+        "reasoning": 0,
+        "prompt": 11893,
+        "completion": 5,
+        "total": 11898,
+        "calls": 1,
+        "context_used": 11893,
+        "context_max": 272000,
+        "context_percent": 4,
+        "context_source": "provider_usage",
+        "context_estimated": false,
+        "compressions": 0,
+        "avg_latency_s": 8.2,
+        "avg_tps": 0.6,
+        "active_subagents": 0
+      },
+      "profile_name": "default",
+      "mcp_servers": []
+    },
+    "seq": 11
+  }
+]

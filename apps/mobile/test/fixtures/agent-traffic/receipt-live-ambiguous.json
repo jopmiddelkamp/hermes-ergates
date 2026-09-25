@@ -1,0 +1,18 @@
+{
+  "shape": "live-json",
+  "synthetic": true,
+  "text": "[IMPORTANT: Background process proc_c3d4e5f6a7b8 exited (exit code 1).\nCommand: /opt/data/hermes/hermes-agent/venv/bin/python /opt/data/hermes/hermes-agent/tools/bot_mode_dm.py --run-delivery --author '{\"id\":\"bot:default\",\"name\":\"hermes\",\"is_bot\":true}' query-file /opt/data/tmp/hermes-dm-501/dm-fixture.txt --profile-home /opt/data/hermes/profiles/kevin hermes -p kevin chat --in '~' -c 'Bot Chat' --create-if-missing -Q\nOutput:\n{\"status\": \"ambiguous\", \"delivery_id\": \"3f9c1d2e4b5a69788796a5b4c3d2e1f00112233445566778899aabbccddeeff0\", \"detail\": \"Delivery remains pending or its outcome is unknown. Do not resend; receipt is retained.\"}]",
+  "result": {
+    "status": "claimed",
+    "delivery_id": "3f9c1d2e4b5a69788796a5b4c3d2e1f00112233445566778899aabbccddeeff0",
+    "to": "@kevin",
+    "detail": "Durably queued for the live Bot Chat owner. Do NOT wait or resend; finish your turn.",
+    "process_id": "proc_c3d4e5f6a7b8"
+  },
+  "expect": {
+    "processId": "proc_c3d4e5f6a7b8",
+    "delivery": "unknown",
+    "reply": "none",
+    "worker": "exited"
+  }
+}

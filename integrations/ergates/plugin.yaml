@@ -1,0 +1,12 @@
+name: ergates
+label: Ergates
+version: 0.1.0
+description: >-
+  Agent proposal tooling and background attention/push notifications for the
+  Ergates mobile companion: validates and journals agent proposals, and
+  journals plus publishes approval-attention events to ntfy.
+provides_tools:
+  - ergates_propose_agent
+provides_hooks:
+  - pre_approval_request
+  - post_approval_response

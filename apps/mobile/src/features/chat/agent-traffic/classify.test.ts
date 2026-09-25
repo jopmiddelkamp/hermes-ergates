@@ -1,0 +1,72 @@
+import { describe, expect, it } from 'vitest'
+
+import { classifyUserRow } from './classify'
+
+import liveJson from '@test/fixtures/agent-traffic/receipt-live-json.json'
+
+describe('classifyUserRow', () => {
+  it('prefers a validated a2a_message stamp, falling through to plain when metadata is invalid', () => {
+    expect(
+      classifyUserRow({
+        text: 'Message from 🤖 kevin (@kevin): hi',
+        displayKind: 'a2a_message',
+        displayMetadata: { sender_handle: 'kevin', sender_id: 'bot:kevin', delivery_id: 'd1' },
+      })
+    ).toMatchObject({ kind: 'bot_message', handle: 'kevin', text: 'hi', provenance: 'structured', senderId: 'bot:kevin', deliveryId: 'd1' })
+    expect(classifyUserRow({ text: 'x', displayKind: 'a2a_message', displayMetadata: { nope: 1 } })).toEqual({ kind: 'plain' })
+  })
+
+  it('strips the human-facing "Message from" prefix from a structured stamp, and leaves an unprefixed body untouched', () => {
+    expect(
+      classifyUserRow({
+        text: 'Message from 🤖 kevin (@kevin): hi',
+        displayKind: 'a2a_message',
+        displayMetadata: { sender_handle: 'kevin' },
+      })
+    ).toMatchObject({ kind: 'bot_message', text: 'hi' })
+    expect(
+      classifyUserRow({ text: 'plain body', displayKind: 'a2a_message', displayMetadata: { sender_handle: 'kevin' } })
+    ).toMatchObject({ kind: 'bot_message', text: 'plain body' })
+  })
+
+  it('omits senderId and deliveryId when the stamp does not carry them', () => {
+    expect(classifyUserRow({ text: 'hi', displayKind: 'a2a_message', displayMetadata: { sender_handle: 'kevin' } })).toEqual({
+      kind: 'bot_message',
+      handle: 'kevin',
+      name: 'kevin',
+      text: 'hi',
+      provenance: 'structured',
+    })
+  })
+
+  it('classifies receipts before legacy shapes and keeps other known display kinds plain', () => {
+    expect(classifyUserRow({ text: liveJson.text }).kind).toBe('receipts')
+    expect(classifyUserRow({ text: 'Message from 🤖 kevin (@kevin): hi', displayKind: 'model_switch' })).toEqual({ kind: 'plain' })
+  })
+
+  it('classifies malformed receipt-shaped text as a notice carrying the raw text as detail', () => {
+    const text = '[IMPORTANT: Background process proc_deadbeef0000 not a real receipt'
+    expect(classifyUserRow({ text })).toEqual({ kind: 'notice', noticeKind: 'process', detail: text })
+  })
+
+  it('accepts exactly the three legacy shapes on rows without a localId', () => {
+    expect(classifyUserRow({ text: 'Message from 🤖 hermes (@hermes): When are you free?' })).toMatchObject({
+      kind: 'bot_message',
+      handle: 'hermes',
+      name: 'hermes',
+      text: 'When are you free?',
+      provenance: 'inferred',
+    })
+    expect(classifyUserRow({ text: 'Message from Kevin: hi' })).toMatchObject({ kind: 'bot_message', handle: 'kevin', name: 'Kevin', text: 'hi' })
+    expect(classifyUserRow({ text: "[Message from agent 'Kevin'] hi" })).toMatchObject({ kind: 'bot_message', handle: 'kevin', text: 'hi' })
+    expect(classifyUserRow({ text: 'Message from 🤖 kevin (@kevin): hi', localId: 'l1' })).toEqual({ kind: 'plain' })
+    expect(classifyUserRow({ text: 'Tell me about Message from Kevin: no' })).toEqual({ kind: 'plain' })
+  })
+
+  it('treats near-miss legacy shapes as plain under the verbatim regex', () => {
+    // Uppercase inside the (@handle) group: AGENT_MESSAGE_RE's handle class is [a-z0-9] only.
+    expect(classifyUserRow({ text: 'Message from 🤖 Kevin (@KEVIN): hi' })).toEqual({ kind: 'plain' })
+    // A name containing a literal '(' that isn't the (@handle) form.
+    expect(classifyUserRow({ text: 'Message from Kevin (Ops): hi' })).toEqual({ kind: 'plain' })
+  })
+})

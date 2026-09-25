@@ -1,0 +1,15 @@
+{
+  "version": "0.21.2",
+  "release_date": "2026.9.11",
+  "auth_required": true,
+  "auth_providers": [
+    "basic"
+  ],
+  "auth_flows": [
+    "cookie",
+    "native_pkce"
+  ],
+  "install_id": "install-fixture",
+  "active_sessions": 0,
+  "gateway_running": false
+}

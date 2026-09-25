@@ -1,0 +1,19 @@
+{
+  "shape": "relay-timeout",
+  "synthetic": true,
+  "text": "[IMPORTANT: Background process proc_b8c9d0e1f2a3 exited (exit code 1).\nCommand: /opt/data/hermes/hermes-agent/venv/bin/python -c 'import json,os,sys,time ...'\nOutput:\nNo reply from @kevin on laptop within 600s. The message may still be delivered when the Desktop reconnects; do not resend blindly.]",
+  "result": {
+    "status": "sent",
+    "to": "@kevin",
+    "detail": "Message dispatched to @kevin. This is asynchronous — do NOT wait or poll. Finish your turn now; when the delivery completes, its notification carries the reply — relay it then, attributed to that agent.",
+    "process_id": "proc_b8c9d0e1f2a3",
+    "sent_at": 1789375767
+  },
+  "expect": {
+    "processId": "proc_b8c9d0e1f2a3",
+    "delivery": "unknown",
+    "reply": "none",
+    "worker": "exited",
+    "latestOutcomeUnavailable": true
+  }
+}

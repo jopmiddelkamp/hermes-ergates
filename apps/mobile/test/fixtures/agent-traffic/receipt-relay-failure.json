@@ -1,0 +1,18 @@
+{
+  "shape": "relay-failure",
+  "synthetic": true,
+  "text": "[IMPORTANT: Background process proc_a7b8c9d0e1f2 exited (exit code 1).\nCommand: /opt/data/hermes/hermes-agent/venv/bin/python -c 'import json,os,sys,time ...'\nOutput:\nDelivery to @kevin on laptop failed [reason: runtime_offline]: the Desktop is not connected]",
+  "result": {
+    "status": "sent",
+    "to": "@kevin",
+    "detail": "Message dispatched to @kevin. This is asynchronous — do NOT wait or poll. Finish your turn now; when the delivery completes, its notification carries the reply — relay it then, attributed to that agent.",
+    "process_id": "proc_a7b8c9d0e1f2",
+    "sent_at": 1789375767
+  },
+  "expect": {
+    "processId": "proc_a7b8c9d0e1f2",
+    "delivery": "refused",
+    "reply": "none",
+    "worker": "exited"
+  }
+}

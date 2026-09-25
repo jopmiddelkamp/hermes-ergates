@@ -1,0 +1,18 @@
+{
+  "shape": "relay-reply",
+  "synthetic": true,
+  "text": "[IMPORTANT: Background process proc_f6a7b8c9d0e1 completed normally (exit code 0).\nCommand: /opt/data/hermes/hermes-agent/venv/bin/python -c 'import json,os,sys,time ...'\nOutput:\nReply from @kevin on laptop:\n(empty reply)]",
+  "result": {
+    "status": "sent",
+    "to": "@kevin",
+    "detail": "Message dispatched to @kevin. This is asynchronous — do NOT wait or poll. Finish your turn now; when the delivery completes, its notification carries the reply — relay it then, attributed to that agent.",
+    "process_id": "proc_f6a7b8c9d0e1",
+    "sent_at": 1789375767
+  },
+  "expect": {
+    "processId": "proc_f6a7b8c9d0e1",
+    "delivery": "settled",
+    "reply": "empty",
+    "worker": "exited"
+  }
+}

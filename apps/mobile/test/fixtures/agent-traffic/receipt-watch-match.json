@@ -1,0 +1,9 @@
+{
+  "shape": "watch-match",
+  "synthetic": true,
+  "text": "[IMPORTANT: Background process proc_c5d6e7f8a9b0 matched watch pattern \"ERROR\".\nCommand: tail -f /opt/data/log.txt\nMatched output:\nERROR: disk full]",
+  "result": null,
+  "expect": {
+    "notice": "process"
+  }
+}

@@ -3,3 +3,31 @@
 
 # Local generated previews and temporary work products
 /work/
+
+# Local agent workspaces and Python virtualenvs
+.superpowers/
+integrations/ergates/.venv/
+**/__pycache__/
+**/.pytest_cache/
+
+# Python build and coverage output
+**/.venv/
+**/*.egg-info/
+**/.coverage
+**/coverage.xml
+**/htmlcov/
+
+# Mobile coverage output
+apps/mobile/coverage/
+
+# Pinned Hermes source for the contract tests (scripts/ci-local.sh)
+/.cache/
+
+# Real environment files and signing material; *.env.example stays committed
+.env
+*.env
+*.p8
+*.p12
+*.key
+*.jks
+*.mobileprovision

@@ -1,0 +1,111 @@
+{
+  "profiles": [
+    {
+      "name": "default",
+      "path": "/opt/data",
+      "is_default": true,
+      "model": "gpt-5.6-sol",
+      "provider": "openai-codex",
+      "description": "Concierge for the household. Creates and briefs specialist assistants.",
+      "display_name": "",
+      "skill_count": 58,
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "20260912_160448_44e00d",
+        "resolved_id": "20260912_160448_44e00d",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "I checked the archive and found three photos.",
+        "started_at": 1789203889.126525,
+        "last_active": 1789206862.456762,
+        "message_count": 42
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 7
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "shape": "squircle",
+          "color": "#0053fd",
+          "imageKind": "photo",
+          "title": "Linh",
+          "custom": true,
+          "hidden": false,
+          "pinned": true
+        }
+      },
+      "has_avatar": true
+    },
+    {
+      "name": "kevin",
+      "path": "/opt/data/profiles/kevin",
+      "is_default": false,
+      "model": "gpt-5.6-sol",
+      "provider": "openai-codex",
+      "description": "Personal trainer. Plans workouts and tracks progress.",
+      "display_name": "",
+      "skill_count": 3,
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "20260912_170000_aaaaaa",
+        "resolved_id": "20260912_170000_aaaaaa",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "Leg day is planned for Tuesday.",
+        "started_at": 1789207000.0,
+        "last_active": 1789208000.0,
+        "message_count": 12
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2,
+        "ergates": 1
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "shape": "circle",
+          "color": "#4a84fe",
+          "imageKind": "initials",
+          "title": "Kevin",
+          "custom": true,
+          "hidden": false,
+          "pinned": false
+        },
+        "ergates": {
+          "role": "Trainer"
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "thijs",
+      "path": "/opt/data/profiles/thijs",
+      "is_default": false,
+      "model": "gpt-5.6-sol",
+      "provider": "openai-codex",
+      "description": "Bookkeeper. Reads invoices.",
+      "display_name": "",
+      "skill_count": 3,
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 1
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "shape": "circle",
+          "color": "#cf222e",
+          "imageKind": "initials",
+          "title": "Thijs",
+          "custom": true,
+          "hidden": true,
+          "pinned": false
+        }
+      },
+      "has_avatar": false
+    }
+  ],
+  "bot_mode_protocol": true
+}

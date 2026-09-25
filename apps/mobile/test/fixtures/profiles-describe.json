@@ -1,0 +1,95 @@
+{
+  "name": "default",
+  "description": "Concierge for the household. Creates and briefs specialist assistants.",
+  "soul": "You are Linh, the concierge. Keep replies short. Ask before building or spending money.\n",
+  "model": {
+    "provider": "openai-codex",
+    "default": "gpt-5.6-sol"
+  },
+  "skills": [
+    {
+      "name": "apple-notes",
+      "enabled": true
+    },
+    {
+      "name": "apple-reminders",
+      "enabled": true
+    },
+    {
+      "name": "findmy",
+      "enabled": true
+    },
+    {
+      "name": "imessage",
+      "enabled": true
+    },
+    {
+      "name": "claude-code",
+      "enabled": true
+    },
+    {
+      "name": "codex",
+      "enabled": true
+    }
+  ],
+  "toolsets": [
+    {
+      "name": "web",
+      "label": "\ud83d\udd0d Web Search & Scraping",
+      "description": "web_search, web_extract",
+      "tool_count": 2,
+      "enabled": true
+    },
+    {
+      "name": "browser",
+      "label": "\ud83c\udf10 Browser Automation",
+      "description": "navigate, click, type, scroll",
+      "tool_count": 18,
+      "enabled": true
+    },
+    {
+      "name": "terminal",
+      "label": "\ud83d\udcbb Terminal & Processes",
+      "description": "terminal, process",
+      "tool_count": 2,
+      "enabled": true
+    },
+    {
+      "name": "file",
+      "label": "\ud83d\udcc1 File Operations",
+      "description": "read, write, patch, search",
+      "tool_count": 4,
+      "enabled": true
+    },
+    {
+      "name": "code_execution",
+      "label": "\u26a1 Code Execution",
+      "description": "execute_code",
+      "tool_count": 1,
+      "enabled": true
+    },
+    {
+      "name": "vision",
+      "label": "\ud83d\udc41\ufe0f  Vision / Image Analysis",
+      "description": "vision_analyze",
+      "tool_count": 1,
+      "enabled": true
+    },
+    {
+      "name": "image_gen",
+      "label": "\ud83c\udfa8 Image Generation",
+      "description": "image_generate",
+      "tool_count": 1,
+      "enabled": true
+    },
+    {
+      "name": "tts",
+      "label": "\ud83d\udd0a Text-to-Speech",
+      "description": "text_to_speech",
+      "tool_count": 1,
+      "enabled": true
+    }
+  ],
+  "toolsets_pinned": false,
+  "mcp_servers": []
+}
