@@ -3,10 +3,27 @@
 from __future__ import annotations
 
 import ast
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 HERMES_PIN = "d76856cc6971b6e0e1903b5369498bcc4bb83a60"
+
+
+def check_pin(root: Path, pin: str) -> str | None:
+    """None if `root` is a git checkout at `pin` with no local edits, else an
+    error message naming `root`. Mirrors `check_pin()` in scripts/ci-local.sh
+    so the guarantee holds for every way the contract tests get invoked, not
+    only the one that goes through that script.
+    """
+    head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, check=False)
+    if head.returncode != 0 or head.stdout.strip() != pin:
+        found = head.stdout.strip() or head.stderr.strip()
+        return f"{root} is not a Hermes checkout at {pin} (found: {found})"
+    diff = subprocess.run(["git", "-C", str(root), "diff", "--quiet", "HEAD"], capture_output=True, text=True, check=False)
+    if diff.returncode != 0:
+        return f"{root} is a Hermes checkout at {pin} but has local edits; the contract tests need the pinned files as committed"
+    return None
 
 
 @dataclass(frozen=True)
