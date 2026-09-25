@@ -36,7 +36,7 @@ Use the basic provider over Tailscale through JSON password login, a tested cook
 
 ## ADR-025 Small Ergates integration package
 
-The previous app/config-only assumption did not cover typed creation actions, failure-safe provisioning, reminder deduplication or server-to-phone attention. Define these as new extension work with small atomic file journals and authenticated operator operations in 11. Prefer supported external plugin hooks; prove event-source and authenticated-route registration in P0. If absent, scope the upstream extension explicitly. Never give agents the authenticated accept operation or control-plane credentials. This amends ADR-017, 019 and 023 without creating a second agent runtime.
+The previous app/config-only assumption did not cover typed creation actions, failure-safe provisioning, reminder deduplication or server-to-phone attention. Define these as new extension work with small atomic file journals and authenticated operator operations in 11. Prefer supported external plugin hooks; prove event-source and authenticated-route registration in P0. If absent, scope the upstream extension explicitly. Never give agents the authenticated accept operation or control-plane credentials. This amends ADR-017, 019 and 023 without creating a second agent runtime. Amended by ADR-030: one transactional SQLite control store replaces the file journals.
 
 ## ADR-026 Mobile layout from references, colors from Hermes
 
@@ -64,3 +64,9 @@ Rules:
 4. Every native capability (HTTP/cookies, WebSocket tickets, secure storage, file transfer, speech, notification registration) is a small interface with one real adapter and one fake. P0 gates run the real adapter; client behavior tests run the fake.
 
 Rejected: full Clean Architecture (domain, use-case and infrastructure layers with injection), because Hermes owns the domain and the app has little domain logic to isolate. Rejected: flat screens/hooks/services, because streaming, replay and uncertain-send handling do not survive being spread across screens. Zustand is the working choice for the device store because it is the smallest option; it is not itself a P0 gate. Package versions remain locked in P0 per 03.
+
+## ADR-030 One transactional control store for the integration
+
+Decided 2026-09-25 with the Fable upgrade roadmap (decision D2). The integration keeps every record -- reminder and proposal receipts, attention events, their push outbox and attention preferences -- in one SQLite file, `<hermes root>/ergates/control.sqlite3`, shared by every profile and process of the install. Writes use `BEGIN IMMEDIATE`; every receipt change is a versioned compare-and-set; an attention event and its outbox row commit in one transaction; the schema is versioned with `PRAGMA user_version`. The store keeps identifiers and sha256 hashes, never prompt, command, briefing or description text. Hermes databases are never written.
+
+Rejected: the per-kind JSON file journals of ADR-025, because a lock per directory could not make a check and a write atomic: two concurrent reminder retries could create two cron jobs, the retention sweep could delete a receipt that had just been claimed again, and a crash during the first push lost it. The old journals are not migrated; they were never installed on a live gateway. This amends ADR-025.

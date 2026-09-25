@@ -30,11 +30,10 @@ from typing import Any, Callable, Dict, Mapping, Optional
 
 from .attention import AttentionService
 from .delivery import DeliveryWorker, ntfy_settings, send_ntfy
-from .paths import store_path
+from .paths import hermes_root, store_path
 from .proposals import ProposalService
 from .reminders import CronPort, ReminderService, UnavailableCron
 from .store import ControlStore
-from .tool import hermes_home
 
 logger = logging.getLogger("ergates.flush")
 
@@ -53,6 +52,18 @@ def profile_home(base: Path, profile: Optional[str] = None) -> Path:
     if not profile or profile.strip().lower() == "default":
         return Path(base)
     return Path(base) / "profiles" / profile.strip()
+
+
+def settings_home(root: Path, profile: Optional[str]) -> Path:
+    """The home whose ``config.yaml`` holds the push settings for this sweep.
+
+    ``--profile``'s home when given; else the ``HERMES_HOME`` this process
+    runs with; else the Hermes root (the default profile).
+    """
+    if profile:
+        return profile_home(root, profile)
+    env_home = os.environ.get("HERMES_HOME", "").strip()
+    return Path(env_home).expanduser() if env_home else Path(root)
 
 
 def settings_from_config(config: Any, plugin_id: str = PLUGIN_ID) -> Dict[str, str]:
@@ -166,11 +177,13 @@ def main(argv: Optional[list] = None) -> int:
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
-    home = profile_home(hermes_home(), args.profile)
-    if not home.exists():
-        print(f"ergates.flush: no Hermes home at {home}", file=sys.stderr)
-        return 2
-    counts = flush_once(home, load_settings(home))
+    root = hermes_root()
+    home = settings_home(root, args.profile)
+    for required in (root, home):
+        if not required.exists():
+            print(f"ergates.flush: no Hermes home at {required}", file=sys.stderr)
+            return 2
+    counts = flush_once(root, load_settings(home))
     if not args.quiet:
         print(
             "ergates.flush: retried={retried} expired_notifications={expired_notifications} "

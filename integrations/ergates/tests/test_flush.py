@@ -5,13 +5,14 @@ deployment schedules (see ``deploy/README.md``). No network: every test
 injects its own publisher.
 """
 
+import sys
 import time
 
 import pytest
 
 from conftest import raw_bytes, rows
 from ergates.attention import APPROVAL_TTL_SECONDS, RETENTION_SECONDS, AttentionService
-from ergates.flush import flush_once, load_settings, main, profile_home, settings_from_config
+from ergates.flush import flush_once, load_settings, main, profile_home, settings_from_config, settings_home
 from ergates.proposals import ProposalService, validate_proposal
 from ergates.reminders import REMINDER_MAX_IDLE_SECONDS, ReminderService
 
@@ -57,6 +58,15 @@ def test_profile_home_is_the_hermes_root_for_the_default_profile(tmp_path):
 
 def test_profile_home_of_a_named_profile(tmp_path):
     assert profile_home(tmp_path, "thijs") == tmp_path / "profiles" / "thijs"
+
+
+def test_settings_home_is_the_named_profile_else_hermes_home_else_the_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "profiles" / "thijs"))
+    assert settings_home(tmp_path, "nora") == tmp_path / "profiles" / "nora"
+    assert settings_home(tmp_path, None) == tmp_path / "profiles" / "thijs"
+
+    monkeypatch.delenv("HERMES_HOME")
+    assert settings_home(tmp_path, None) == tmp_path
 
 
 # --- settings resolution (no secrets on the command line) -------------------
@@ -192,6 +202,7 @@ def test_the_store_never_carries_content_after_a_flush(tmp_path, store):
 
 
 def test_main_reports_counts_and_never_prints_a_secret(tmp_path, capsys, monkeypatch, store):
+    monkeypatch.setitem(sys.modules, "hermes_constants", None)
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     _write_config(tmp_path)
     _approval(store, time.time() - RETENTION_SECONDS - APPROVAL_TTL_SECONDS - 60)
@@ -204,7 +215,40 @@ def test_main_reports_counts_and_never_prints_a_secret(tmp_path, capsys, monkeyp
     assert SETTINGS["token"] not in out
 
 
+def test_bug8_main_sweeps_the_shared_store_from_a_profile_process(tmp_path, capsys, monkeypatch, store):
+    """Roadmap bug 8: with HERMES_HOME=<root>/profiles/<name> the sweep opened the
+    profile's own journals. It now sweeps the one store under the Hermes root and
+    still reads the push settings of the profile it runs as."""
+    monkeypatch.setitem(sys.modules, "hermes_constants", None)
+    profile = tmp_path / "profiles" / "thijs"
+    _write_config(profile)
+    monkeypatch.setenv("HERMES_HOME", str(profile))
+    _approval(store, time.time() - RETENTION_SECONDS - APPROVAL_TTL_SECONDS - 60)
+
+    assert main([]) == 0
+
+    assert "pruned_notifications=1" in capsys.readouterr().out
+    assert sorted(path.name for path in profile.iterdir()) == ["config.yaml"]
+
+
+def test_bug8_main_with_the_profile_flag_still_sweeps_the_shared_store(tmp_path, capsys, monkeypatch, store):
+    """Roadmap bug 8, the other half: today's code passes profile_home(...) itself
+    as the sweep's root, so --profile <name> opens <root>/profiles/<name>/ergates/
+    control.sqlite3 instead of the store the hooks write to. --profile must only
+    steer where the push settings are read from, never where the store opens."""
+    monkeypatch.setitem(sys.modules, "hermes_constants", None)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    _write_config(tmp_path / "profiles" / "thijs")
+    _approval(store, time.time() - RETENTION_SECONDS - APPROVAL_TTL_SECONDS - 60)
+
+    assert main(["--profile", "thijs"]) == 0
+
+    assert "pruned_notifications=1" in capsys.readouterr().out
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["ergates", "profiles"]
+
+
 def test_main_fails_cleanly_on_a_missing_hermes_home(tmp_path, monkeypatch, capsys):
+    monkeypatch.setitem(sys.modules, "hermes_constants", None)
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "nope"))
 
     assert main([]) == 2

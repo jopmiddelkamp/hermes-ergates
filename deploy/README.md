@@ -180,17 +180,19 @@ already done above, before first start.
 
 4. **Schedule the plugin's retry/retention sweep** (below). A failed push is
    scheduled for a retry that nothing in Hermes runs, so without this step
-   the retry machinery and every journal retention rule are dead code.
+   the retry machinery and every retention rule are dead code.
 
-## Periodic sweep: ntfy retries and journal retention
+## Periodic sweep: ntfy retries and retention
 
-The plugin's approval hooks fire only on an approval event -- there is no
-periodic-timer hook in that surface -- so `flush_retries` and the three
-journals' `prune` need an external driver. `python -m ergates.flush` is that
-driver: it re-publishes due ntfy retries and applies retention to
-`ergates/notifications/`, `ergates/proposals/` and `ergates/reminders/`.
+The plugin's hooks fire only on an approval or a finished turn -- there is
+no periodic-timer hook in that surface -- so the push outbox and the
+retention rules need an external driver. `python -m ergates.flush` is that
+driver: it sends every due push from the outbox of the control store
+(`/opt/data/ergates/control.sqlite3`), expires approvals older than the
+approval timeout, and applies retention to attention events, proposal
+receipts and reminder receipts.
 
-It reads the ntfy server/topic/token from the profile's own `config.yaml`
+It reads the ntfy server, topic, token and connection id from the profile's own `config.yaml`
 (the same `plugins.entries.ergates.settings.ntfy.*` keys the plugin reads),
 so **no credential is ever passed as an argument** and none appears in a
 process listing or in the log line it prints (04 section 6). The only
@@ -242,8 +244,7 @@ off-host snapshots**, covering:
 
 - `${HERMES_DATA_DIR}` (`/opt/data`): profile workspaces, `config.yaml`,
   `.env`, `SOUL.md`, sessions, cron jobs, state database, and this
-  package's integration journals (`ergates/proposals/`, `ergates/reminders/`,
-  `ergates/notifications/`).
+  package's control store (`ergates/control.sqlite3` with its `-wal` file).
 - `${NTFY_DATA_DIR}`: the ntfy auth and cache databases.
 
 A consistency-aware procedure is required, not a raw `cp` of a live SQLite

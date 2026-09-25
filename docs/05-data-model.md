@@ -21,11 +21,11 @@ Hermes owns agent domain state. The phone owns preferences, unsent drafts and re
 | Kanban | Hermes shared `kanban.db` | Agent tools P1, board UI P2; shared across profiles, not a tenant boundary |
 | Files | Explicit host-managed paths and owning sandbox workspace | A server upload path is not automatically a sandbox path; record transfer/mount mapping |
 | Rooms | Hermes room metadata/log | Same-gateway driver first; peer/relay and sharing semantics need separate verification |
-| Agent proposal / acceptance receipt | Integration `ergates/proposals/` | Payload hash, origin, expiry, reserved name, completed steps, briefing delivery state; atomic write and lock |
-| Reminder-create receipt | Integration `ergates/reminders/` | Idempotency key, normalized request hash, owning profile, resulting job id; reconcile uncertain writes |
-| Notification/subscription state | Integration `ergates/notifications/` | Per-device destinations, per-agent preferences, event ids, attempts, resolution/expiry; seven-day terminal metadata retention |
+| Agent proposal / acceptance receipt | Integration control store, tables `proposal_receipts` and `proposal_steps` | Payload hash, origin, expiry, reserved name, completed steps, briefing delivery state; atomic write and lock |
+| Reminder-create receipt | Integration control store, table `reminder_receipts` | Idempotency key, normalized request hash, owning profile, resulting job id; reconcile uncertain writes |
+| Notification/subscription state | Integration control store, tables `attention_events`, `attention_outbox` and `attention_prefs` | Per-device destinations, per-agent preferences, event ids, attempts, resolution/expiry; seven-day terminal metadata retention |
 
-Integration file journals are proposed interfaces in 11, not existing Hermes files. Include them in backup/restore. Secrets are referenced from the credential store, not embedded in proposal payloads or notification records. On profile deletion, cancel subscriptions/pending events and retain only the minimum receipt needed to prevent replay, according to an explicit retention rule.
+The integration control store (`<hermes root>/ergates/control.sqlite3`, ADR-030) is not a Hermes file. Include it in backup/restore with a SQLite-consistent copy. Secrets are referenced from the credential store, not embedded in proposal payloads or notification records. On profile deletion, cancel subscriptions/pending events and retain only the minimum receipt needed to prevent replay, according to an explicit retention rule.
 
 ## 3. Phone state and retention
 

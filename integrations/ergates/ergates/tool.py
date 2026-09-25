@@ -1,4 +1,4 @@
-"""Hermes plugin wiring: the ``ergates_propose_agent`` tool and the approval-attention hooks.
+"""Hermes plugin wiring: the ``ergates_propose_agent`` tool and the attention hooks.
 
 Registered by ``register(ctx)`` in the top-level ``__init__.py`` (the Hermes
 plugin entry point). Kept separate from ``ctx`` so every function here stays
@@ -14,9 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .attention import AttentionService
@@ -129,6 +127,20 @@ def propose_handler(
 
 NTFY_KEYS = ("server", "topic", "token", "connection_id")
 
+# Decision D9: by default only routine (cron) turns push when they finish.
+DEFAULT_COMPLETED_PLATFORMS = frozenset({"cron"})
+
+
+def completed_platforms(value: Any) -> frozenset[str]:
+    """The ``attention.completed_platforms`` setting as a set of platform names.
+
+    Unset or malformed means routines only. An empty list turns completion
+    pushes off.
+    """
+    if not isinstance(value, (list, tuple)):
+        return DEFAULT_COMPLETED_PLATFORMS
+    return frozenset(item.strip() for item in value if isinstance(item, str) and item.strip())
+
 
 def _deliver_in_background(worker: DeliveryWorker, event_id: str) -> threading.Thread:
     """Send the push of ``event_id`` off the caller's thread. Never raises.
@@ -204,9 +216,30 @@ def on_approval_response(attention: AttentionService, **hook_kwargs: Any) -> Opt
     )
 
 
-def hermes_home() -> Path:
-    """The Hermes data root: ``$HERMES_HOME``, defaulting to ``~/.hermes``."""
-    return Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
+def on_turn_completed(
+    attention: AttentionService,
+    *,
+    worker: Optional[DeliveryWorker] = None,
+    profile: Optional[str] = None,
+    platforms: frozenset[str] = DEFAULT_COMPLETED_PLATFORMS,
+    **hook_kwargs: Any,
+) -> Optional[threading.Thread]:
+    """``post_llm_call`` hook: record a finished turn from one of ``platforms`` and push it.
+
+    Hermes fires this hook once per finished turn with the user message, the
+    reply and the history (``agent/turn_finalizer.py`` at the pin). Only
+    ``session_id`` and ``platform`` are read; nothing else is stored. A turn
+    from any other platform returns at once without touching the store.
+    """
+    event_id = attention.turn_completed(
+        session_id=hook_kwargs.get("session_id") or "",
+        profile=profile,
+        platform=hook_kwargs.get("platform"),
+        platforms=platforms,
+    )
+    if event_id is None or worker is None:
+        return None
+    return _deliver_in_background(worker, event_id)
 
 
 def _resolve_profile(ctx: Any) -> Optional[str]:
@@ -237,7 +270,7 @@ def _delivery_worker(ctx: Any, store: ControlStore) -> Optional[DeliveryWorker]:
 
 
 def register(ctx: Any) -> None:
-    """Wire the ``ergates_propose_agent`` tool and the approval-attention hooks into Hermes."""
+    """Wire the ``ergates_propose_agent`` tool and the attention hooks into Hermes."""
     store = ControlStore(store_path(hermes_root()))
     proposals = ProposalService(store)
     attention = AttentionService(store)
@@ -253,6 +286,15 @@ def register(ctx: Any) -> None:
     def handle_post_approval(**kwargs: Any) -> None:
         on_approval_response(attention, **kwargs)
 
+    def handle_turn_completed(**kwargs: Any) -> None:
+        platforms = completed_platforms(ctx.get_config("attention.completed_platforms", None))
+        if kwargs.get("platform") not in platforms:
+            return
+        on_turn_completed(
+            attention, worker=_delivery_worker(ctx, store), profile=_resolve_profile(ctx),
+            platforms=platforms, **kwargs,
+        )
+
     ctx.register_tool(
         name=PROPOSE_TOOL_NAME,
         toolset="ergates",
@@ -263,3 +305,4 @@ def register(ctx: Any) -> None:
     )
     ctx.register_hook("pre_approval_request", handle_pre_approval)
     ctx.register_hook("post_approval_response", handle_post_approval)
+    ctx.register_hook("post_llm_call", handle_turn_completed)

@@ -10,8 +10,10 @@ import json
 import sys
 import threading
 import time
+from pathlib import Path
 
 import pytest
+import yaml
 
 from conftest import raw_bytes, rows
 from ergates import tool
@@ -20,7 +22,14 @@ from ergates.delivery import DeliveryWorker, NtfySettings
 from ergates.paths import store_path
 from ergates.proposals import ProposalService, payload_hash, validate_proposal
 from ergates.store import ControlStore
-from ergates.tool import _resolve_profile, on_approval_request, on_approval_response, propose_handler
+from ergates.tool import (
+    _resolve_profile,
+    completed_platforms,
+    on_approval_request,
+    on_approval_response,
+    on_turn_completed,
+    propose_handler,
+)
 
 _THREAD_TIMEOUT = 5.0
 SETTINGS = NtfySettings(server="https://ntfy.example.internal", topic="hermes-alerts", token="tok",
@@ -331,6 +340,39 @@ def test_on_approval_response_ignores_a_coalesced_follower_response(attention, s
     assert rows(store, "attention_events")[0]["state"] == "pending"
 
 
+# --- finished turns (decision D9) --------------------------------------------
+
+
+def test_completed_platforms_default_to_routines_only():
+    assert completed_platforms(None) == frozenset({"cron"})
+    assert completed_platforms(["cron", " telegram "]) == frozenset({"cron", "telegram"})
+    assert completed_platforms([]) == frozenset()
+    assert completed_platforms("cron") == frozenset({"cron"})
+    assert completed_platforms(["cron", 7]) == frozenset({"cron"})
+
+
+def test_a_finished_routine_turn_is_pushed_without_its_text(attention, store):
+    """post_llm_call carries the user message and the reply; neither is stored."""
+    published = []
+
+    _join(on_turn_completed(
+        attention, worker=_worker(store, published.append), profile="thijs", platforms=frozenset({"cron"}),
+        session_id="cron-session-1", platform="cron", task_id="t", turn_id="u", model="m",
+        user_message="Summarize the secret ledger", assistant_response="The secret ledger says",
+        conversation_history=[{"role": "user", "content": "Summarize the secret ledger"}],
+    ))
+
+    assert published[0]["headers"]["Title"] == "A routine finished"
+    assert published[0]["headers"]["Click"] == "ergates://chat/cron-session-1?connection=conn-1&profile=thijs"
+    assert b"secret ledger" not in raw_bytes(store)
+
+
+def test_a_finished_turn_on_another_platform_writes_nothing(attention, store):
+    assert on_turn_completed(attention, worker=None, profile="thijs", platforms=frozenset({"cron"}),
+                             session_id="s", platform="cli") is None
+    assert rows(store, "attention_events") == []
+
+
 # --- register(): one store under the Hermes root ----------------------------
 
 
@@ -377,7 +419,7 @@ def test_bug8_register_opens_the_store_under_the_hermes_root_not_the_profile_hom
     assert list(profile_process.iterdir()) == []
 
 
-def test_register_wires_the_tool_and_both_hooks_end_to_end(tmp_path, profile_process, monkeypatch):
+def test_register_wires_the_tool_and_every_hook_end_to_end(tmp_path, profile_process, monkeypatch):
     published = []
     monkeypatch.setattr(tool, "send_ntfy", published.append)
     ctx = _RecordingCtx({"ntfy.server": "https://ntfy.example.internal", "ntfy.topic": "alerts",
@@ -392,8 +434,35 @@ def test_register_wires_the_tool_and_both_hooks_end_to_end(tmp_path, profile_pro
         time.sleep(0.01)
     ctx.hooks["post_approval_response"](command="cmd", session_key="s-1", surface="gateway", choice="once",
                                         decided_by="user")
+    ctx.hooks["post_llm_call"](session_id="cron-1", platform="cron", user_message="hi", assistant_response="done")
+    ctx.hooks["post_llm_call"](session_id="chat-1", platform="cli", user_message="hi", assistant_response="done")
 
     store = ControlStore(store_path(tmp_path))
     assert rows(store, "proposal_receipts")[0]["id"] == proposal["proposal_id"]
-    assert rows(store, "attention_events")[0]["state"] == "resolved"
+    events = {row["kind"]: row for row in rows(store, "attention_events")}
+    assert set(events) == {"approval", "completion"}
+    assert events["approval"]["state"] == "resolved"
+    assert events["completion"]["session_id"] == "cron-1"
     assert published[0]["headers"]["Click"] == "ergates://chat/s-1?connection=conn-1&profile=thijs"
+
+
+def test_plugin_yaml_declares_exactly_what_register_registers(profile_process):
+    """`hermes plugins doctor` fails on an undeclared hook; this is the same check in the suite."""
+    manifest = yaml.safe_load((Path(__file__).resolve().parents[1] / "plugin.yaml").read_text(encoding="utf-8"))
+    ctx = _RecordingCtx()
+
+    tool.register(ctx)
+
+    assert sorted(manifest["provides_tools"]) == sorted(ctx.tools)
+    assert sorted(manifest["provides_hooks"]) == sorted(ctx.hooks)
+
+
+def test_register_reads_the_completed_platforms_setting(tmp_path, profile_process):
+    ctx = _RecordingCtx({"attention.completed_platforms": ["cli"]})
+    tool.register(ctx)
+
+    ctx.hooks["post_llm_call"](session_id="cron-1", platform="cron")
+    ctx.hooks["post_llm_call"](session_id="chat-1", platform="cli")
+
+    store = ControlStore(store_path(tmp_path))
+    assert [row["session_id"] for row in rows(store, "attention_events")] == ["chat-1"]

@@ -23,7 +23,7 @@ flowchart TB
   EDGE --> PROVIDERS[Model and connector services]
   SERVE -.->|server event source: P0 integration gate| INT[Ergates integration package]
   GW --> INT
-  INT --> RECEIPTS[Small durable integration journals]
+  INT --> RECEIPTS[One SQLite control store with a push outbox]
   INT --> NTFY[Private ntfy with iOS upstream wake-up]
   NTFY --> PHONE[ntfy mobile app]
   PHONE -->|authenticated chat deep link| APP
@@ -222,6 +222,6 @@ Deployment setup provisions credentials once, then starting the completed stack 
 | Routine failed | Show history and delivery error separately; no false “delivered” based on job success |
 | Auth expires | Follow the chosen provider's session renewal; clear on failure, preserve draft until user chooses sign-out |
 
-Nightly backup covers all profile stores, workspace data and integration journals plus ntfy state. Use Hermes backup with a consistency-aware SQLite/WAL and file snapshot procedure, encrypt off-server copies, define retention (initially seven daily and four weekly), and test restoration onto empty storage. Do not describe live rsync alone as a consistent database backup. Before an upgrade, take a restorable snapshot; rollback restores a compatible state snapshot if schema/data changes are not backward-compatible.
+Nightly backup covers all profile stores, workspace data and the integration control store plus ntfy state. Use Hermes backup with a consistency-aware SQLite/WAL and file snapshot procedure, encrypt off-server copies, define retention (initially seven daily and four weekly), and test restoration onto empty storage. Do not describe live rsync alone as a consistent database backup. Before an upgrade, take a restorable snapshot; rollback restores a compatible state snapshot if schema/data changes are not backward-compatible.
 
 Observability: `/api/health`, `hermes doctor`, per-profile logs, cron run history, integration delivery records and the optional dashboard. `/health/detailed` exists on the optional API server, not the mobile `serve` endpoint. Local app logs contain error categories/connection state, not prompts, secrets or full authenticated URLs. Redact before sharing any debug bundle.

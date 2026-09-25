@@ -92,7 +92,7 @@ Provision profiles with `mirror_credentials: false` and an approved role templat
 
 Hermes retains session data until deletion. Its transcript is an operational record, not an immutable audit ledger. Determine approval and tool-result coverage using real fixtures. Local app debug logs hold connection/error categories only; sanitize exception messages before recording them. Opt-in debug export must preview what leaves the device.
 
-Initial backup policy: seven daily and four weekly encrypted off-host snapshots, with a consistency-aware database/WAL/file procedure and a restore drill. Include profile workspaces and integration journals; notification terminal metadata is retained seven days. Record backup encryption-key recovery separately from the server. Define session deletion and backup expiry behavior before business use.
+Initial backup policy: seven daily and four weekly encrypted off-host snapshots, with a consistency-aware database/WAL/file procedure and a restore drill. Include profile workspaces and the integration control store (`ergates/control.sqlite3` with its WAL file); notification terminal metadata is retained seven days. Record backup encryption-key recovery separately from the server. Define session deletion and backup expiry behavior before business use.
 
 ## 9. Privacy and device state
 
