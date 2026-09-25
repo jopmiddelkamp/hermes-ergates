@@ -13,7 +13,7 @@ import turnPong from '@test/fixtures/turn-pong.json'
 
 import { parseReceiptRow } from './agent-traffic/receipt'
 import { historyToItems, mergeHistory, type ChatItem } from './history'
-import { initialSessionState, sessionReducer, type SessionAction, type SessionState } from './session-reducer'
+import { initialSessionState, localTurnPending, sessionReducer, type SessionAction, type SessionState } from './session-reducer'
 
 const liveReceiptParse = parseReceiptRow(liveJson.text)
 if (liveReceiptParse.kind !== 'receipts') throw new Error('receipt-live-json fixture did not parse as a receipt')
@@ -214,6 +214,32 @@ describe('busy sends', () => {
     expect(s.items[0]).toMatchObject({ kind: 'user', delivery: 'queued' })
     const started = sessionReducer(s, ev({ type: 'message.start', seq: 1 }))
     expect(started.items[0]).toMatchObject({ kind: 'user', delivery: 'acknowledged' })
+  })
+
+  it('keeps a send queued while the turn that starts is an earlier acknowledged one', () => {
+    // An offline flush: both submits are answered before the first turn's first event.
+    const s = run(bound(), [
+      { type: 'submit/started', localId: 'l1', text: 'first', at: 1 },
+      { type: 'submit/acknowledged', localId: 'l1' },
+      { type: 'submit/started', localId: 'l2', text: 'second', at: 2 },
+      { type: 'submit/queued', localId: 'l2' }
+    ])
+    expect(localTurnPending(s)).toBe(true)
+    const started = sessionReducer(s, ev({ type: 'message.start', seq: 1 }))
+    expect(started.items.filter(i => i.kind === 'user')).toMatchObject([{ localId: 'l1', delivery: 'acknowledged' }, { localId: 'l2', delivery: 'queued' }])
+
+    const next = run(started, [ev({ type: 'message.complete', seq: 2, payload: { text: 'done', status: 'complete' } }), ev({ type: 'message.start', seq: 3 })])
+    expect(next.items.filter(i => i.kind === 'user').at(-1)).toMatchObject({ localId: 'l2', delivery: 'acknowledged' })
+  })
+
+  it('reports no pending turn once every local send has ended', () => {
+    const s = run(bound(), [
+      { type: 'submit/started', localId: 'l1', text: 'first', at: 1 },
+      { type: 'submit/acknowledged', localId: 'l1' },
+      ev({ type: 'message.start', seq: 1 }),
+      ev({ type: 'message.complete', seq: 2, payload: { text: 'done', status: 'complete' } })
+    ])
+    expect(localTurnPending(s)).toBe(false)
   })
 
   it('renders a redirected submit as a course correction, not a user turn', () => {

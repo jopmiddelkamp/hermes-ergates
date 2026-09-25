@@ -169,6 +169,18 @@ const INVALIDATING_EVENTS = new Set([
 let counter = 0
 const nextId = (prefix: string) => `${prefix}-${++counter}`
 
+/**
+ * A send of ours that the gateway accepted and whose turn has not ended:
+ * `acknowledged` (its turn is starting or running) or `queued` (parked behind
+ * the running turn). The gateway marks the session running before it answers
+ * `prompt.submit` (tui_gateway/methods_prompt.py:531 at the pin), so this is
+ * true before the turn's first event arrives. A turn's end drops the local id
+ * (`sealUserTurns`).
+ */
+export function localTurnPending(state: SessionState): boolean {
+  return state.items.some(i => i.kind === 'user' && Boolean(i.localId) && (i.delivery === 'acknowledged' || i.delivery === 'queued'))
+}
+
 export function sessionReducer(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
     case 'session/bound':
@@ -441,6 +453,11 @@ function applyProcessNotification(state: SessionState, text: string, at: number 
  * keep theirs — they belong to a turn that has not run yet.
  */
 function promoteOldestQueued(items: ChatItem[]): ChatItem[] {
+  // An acknowledged send of ours still holds its local id until its turn ends
+  // (`sealUserTurns`), so the turn starting now is that send's, not a queued one's.
+  if (items.some(i => i.kind === 'user' && Boolean(i.localId) && i.delivery === 'acknowledged')) {
+    return items
+  }
   const index = items.findIndex(i => i.kind === 'user' && i.delivery === 'queued')
   if (index < 0) {
     return items

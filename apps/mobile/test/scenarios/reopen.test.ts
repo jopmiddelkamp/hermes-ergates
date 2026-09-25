@@ -138,6 +138,38 @@ describe('re-opening the chat', () => {
     expect(outbox.list()).toHaveLength(0)
   })
 
+  it('shows a send that was in flight when the chat was re-created as submitting, and delivers its answer there', async () => {
+    const answer = held()
+    const gateway = new FakeGateway({ onSubmit: () => answer.promise })
+    const outbox = memoryOutbox()
+    const first = createSessionController({ port: gateway, profile: 'thijs', connectionId: 'c-test', outbox })
+    await first.open()
+    const sending = first.send('while the screen remounts')
+    await flush(1)
+    const localId = outbox.list()[0]!.localId
+
+    // The screen remounts: the binding drops this controller and builds a new one.
+    first.close()
+    const second = createSessionController({ port: gateway, profile: 'thijs', connectionId: 'c-test', outbox })
+    await second.open()
+    expect(second.getView().state.items.filter(i => i.kind === 'user')).toMatchObject([{ localId, delivery: 'submitting' }])
+
+    // Nothing to retry while the first attempt is still in flight.
+    await second.retry(localId)
+    answer.release(turnPong as GatewayEventFrame[])
+    await sending
+    await flush(20)
+
+    const conn = gateway.connectionFor('thijs')
+    expect(submittedTexts(conn)).toEqual(['while the screen remounts'])
+    expect(outbox.list()).toHaveLength(0)
+    expect(second.getView().state.items.filter(i => i.kind === 'user')).toMatchObject([{ text: 'while the screen remounts' }])
+    expect(second.getView().state.items.filter(i => i.kind === 'user' && i.delivery === 'unconfirmed')).toEqual([])
+    // An acknowledged send is never sent again, even by a deliberate retry.
+    await second.retry(localId)
+    expect(submittedTexts(conn)).toHaveLength(1)
+  })
+
   it('keeps the reducer state across re-opens', async () => {
     // A busy send the gateway parked: history does not show it yet, so only the reducer holds it.
     const gateway = new FakeGateway({ onSubmit: () => ({ status: 'queued' }) })

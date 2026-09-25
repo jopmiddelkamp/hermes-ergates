@@ -47,6 +47,30 @@ describe('the durable outbox', () => {
     expect(conn.submitCalls).toBe(1)
   })
 
+  it('sends the second offline message queued behind the first, never as a redirect of it', async () => {
+    // The gateway marks the session running before it answers the first submit
+    // (tui_gateway/methods_prompt.py:531 at the pin), and the first turn's events
+    // land later. Without `queued: true` the second submit would go through
+    // `display.busy_input_mode` (default `interrupt`) and redirect the first turn.
+    const gateway = new FakeGateway({
+      onSubmit: text => (text === 'first' ? [{ type: 'message.start', seq: 1 }] : { status: 'queued' as const })
+    })
+    const controller = createSessionController({ port: gateway, profile: 'thijs', connectionId: 'c-test', outbox: memoryOutbox() })
+    await controller.open()
+    const conn = gateway.connectionFor('thijs')
+
+    conn.simulateOffline()
+    await controller.send('first')
+    await controller.send('second')
+    conn.simulateOnline()
+    await flush(20)
+
+    const submits = conn.requests.filter(r => r.method === 'prompt.submit').map(r => [r.params.text, r.params.queued])
+    expect(submits).toEqual([['first', undefined], ['second', true]])
+    const users = controller.getView().state.items.filter(i => i.kind === 'user')
+    expect(users).toMatchObject([{ text: 'first', delivery: 'acknowledged' }, { text: 'second', delivery: 'queued' }])
+  })
+
   it('keeps an uncertain send in the outbox and never resends it automatically', async () => {
     const gateway = new FakeGateway({ onSubmit: () => 'timeout' })
     const outbox = memoryOutbox()

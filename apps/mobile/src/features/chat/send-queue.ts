@@ -12,6 +12,9 @@
  *  - The gateway's `prompt.submit` status decides what the bubble is: a busy
  *    send comes back `queued` (parked), or `redirected`/`steered` (it became a
  *    live correction, not a user turn).
+ *  - A submit still in flight belongs to the process, not to one queue: a chat
+ *    screen that remounts builds a new queue, which shows the item as
+ *    `submitting` and applies its answer when it lands (`inFlight`).
  *
  * No React or React Native imports: the caller passes the store adapter in.
  */
@@ -60,6 +63,22 @@ const RESTORED_DELIVERY: Record<OutboxStatus, DeliveryState> = {
 let counter = 0
 const defaultLocalId = (): string => `${Date.now().toString(36)}-${++counter}`
 
+/** How one `prompt.submit` attempt ended; every queue that shows the item applies it. */
+type DeliveryOutcome =
+  | { kind: 'acknowledged' }
+  | { kind: 'queued' }
+  | { kind: 'correction'; status: 'redirected' | 'steered' }
+  | { kind: 'unconfirmed' }
+  | { kind: 'failed'; message: string }
+
+/**
+ * The submits of this process still waiting for their answer, by local id.
+ * The outbox says an item is `submitting`, but only this map says whether its
+ * answer can still arrive: after an app restart it cannot, and the item is
+ * unconfirmed (`recoverAfterRestart`).
+ */
+const inFlight = new Map<string, Promise<DeliveryOutcome>>()
+
 export class SendQueue {
   private readonly options: SendQueueOptions
   private flushing = false
@@ -80,13 +99,25 @@ export class SendQueue {
       .sort((a, b) => a.createdAt - b.createdAt)
   }
 
-  /** Re-render the durable outbox as bubbles (app restart, chat re-open). */
+  /**
+   * Re-render the durable outbox as bubbles (app restart, chat re-open). A
+   * submit another queue of this process still has in flight stays
+   * `submitting`, and its answer is applied here too when it lands.
+   */
   restore(): void {
-    const items = this.mine()
-      .filter(isUnsent)
-      .map(i => ({ localId: i.localId, text: i.text, at: i.createdAt, delivery: RESTORED_DELIVERY[i.status] }))
+    const unsent = this.mine().filter(isUnsent)
+    const pending = unsent.filter(i => i.status === 'submitting' && inFlight.has(i.localId))
+    const items = unsent.map(i => ({
+      localId: i.localId,
+      text: i.text,
+      at: i.createdAt,
+      delivery: pending.includes(i) ? ('submitting' as const) : RESTORED_DELIVERY[i.status]
+    }))
     if (items.length > 0) {
       this.options.dispatch({ type: 'outbox/restored', items })
+    }
+    for (const item of pending) {
+      void inFlight.get(item.localId)?.then(outcome => this.apply(item.localId, outcome))
     }
   }
 
@@ -183,29 +214,60 @@ export class SendQueue {
     }
   }
 
-  /** One `prompt.submit`, then classify. */
+  /** One `prompt.submit`, then show how it ended. */
   private async deliver(item: OutboxItem): Promise<void> {
-    const localId = item.localId
+    const attempt = this.submitOnce(item)
+    inFlight.set(item.localId, attempt)
+    try {
+      this.apply(item.localId, await attempt)
+    } finally {
+      if (inFlight.get(item.localId) === attempt) {
+        inFlight.delete(item.localId)
+      }
+    }
+  }
+
+  /** Sends, records the outcome in the outbox once, and never throws. */
+  private async submitOnce(item: OutboxItem): Promise<DeliveryOutcome> {
     try {
       // A second message while a turn is running must never interrupt it:
       // `display.busy_input_mode` defaults to `interrupt`, which hard-kills the
       // live turn. `queued: true` forces the server's queue mode instead.
       const result = await this.options.submit(item.text, { queued: Boolean(this.options.isBusy?.()) })
       const status = String(result?.status ?? 'streaming')
-      this.options.outbox.remove(localId)
+      this.options.outbox.remove(item.localId)
       if (status === 'queued') {
-        this.options.dispatch({ type: 'submit/queued', localId })
-      } else if (status === 'redirected' || status === 'steered') {
-        this.options.dispatch({ type: 'submit/correction', localId, status, at: this.now })
-      } else {
-        this.options.dispatch({ type: 'submit/acknowledged', localId })
+        return { kind: 'queued' }
       }
+      if (status === 'redirected' || status === 'steered') {
+        return { kind: 'correction', status }
+      }
+      return { kind: 'acknowledged' }
     } catch (err) {
       const uncertain = isGatewayError(err) && (err.kind === 'timeout' || err.kind === 'network')
       const message = userMessage(err)
       const next = submitResult({ ...item, status: 'submitting' }, { ok: false, definite: !uncertain, error: message })
-      this.options.outbox.update(localId, { status: next.status, error: next.error })
-      this.options.dispatch(uncertain ? { type: 'submit/unconfirmed', localId } : { type: 'submit/failed', localId, message })
+      this.options.outbox.update(item.localId, { status: next.status, error: next.error })
+      return uncertain ? { kind: 'unconfirmed' } : { kind: 'failed', message }
+    }
+  }
+
+  private apply(localId: string, outcome: DeliveryOutcome): void {
+    switch (outcome.kind) {
+      case 'queued':
+        this.options.dispatch({ type: 'submit/queued', localId })
+        return
+      case 'correction':
+        this.options.dispatch({ type: 'submit/correction', localId, status: outcome.status, at: this.now })
+        return
+      case 'unconfirmed':
+        this.options.dispatch({ type: 'submit/unconfirmed', localId })
+        return
+      case 'failed':
+        this.options.dispatch({ type: 'submit/failed', localId, message: outcome.message })
+        return
+      default:
+        this.options.dispatch({ type: 'submit/acknowledged', localId })
     }
   }
 }

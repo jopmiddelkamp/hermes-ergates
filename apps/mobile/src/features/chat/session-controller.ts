@@ -21,7 +21,7 @@ import type { ApprovalChoice, GatewayEventFrame, ProfileSummary } from '@/gatewa
 
 import { openCanonicalChat } from './canonical-chat'
 import { SendQueue, type OutboxStore } from './send-queue'
-import { initialSessionState, sessionReducer, type SessionAction, type SessionState } from './session-reducer'
+import { initialSessionState, localTurnPending, sessionReducer, type SessionAction, type SessionState } from './session-reducer'
 import { HISTORY_STALE_ROUNDS, historyRetryDelayMs, pendingCardActions, resyncSession } from './session-sync'
 
 export type { OutboxStore } from './send-queue'
@@ -298,7 +298,12 @@ export function createSessionController(options: SessionControllerOptions): Sess
         // re-open sets that again, and a queue left from the previous attempt
         // must stop flushing instead of sending on the new attempt's behalf.
         isOnline: () => !run.cancelled && opened.state === 'open',
-        isBusy: () => state.live.streaming,
+        // `queued: true` while any turn may run, not only once its events stream:
+        // a plain submit to a running session goes through `busy_input_mode`
+        // (default `interrupt`) and redirects that turn
+        // (tui_gateway/session_auto_continue.py:240-246 at the pin). On an idle
+        // session the flag changes nothing (methods_prompt.py:610-619).
+        isBusy: () => state.live.streaming || localTurnPending(state),
         now,
         newLocalId: options.newLocalId ?? defaultLocalId
       })
@@ -414,7 +419,12 @@ export function createSessionController(options: SessionControllerOptions): Sess
 
   async function retry(localId: string): Promise<void> {
     const item = state.items.find(i => i.kind === 'user' && i.localId === localId)
-    await queue?.retry(localId, item?.kind === 'user' ? item.text : undefined)
+    // Only an unconfirmed or failed send may go out again (ADR-027). One that is
+    // still in flight, or that the gateway acknowledged, never does.
+    if (item?.kind !== 'user' || (item.delivery !== 'unconfirmed' && item.delivery !== 'failed')) {
+      return
+    }
+    await queue?.retry(localId, item.text)
   }
 
   async function stop(): Promise<void> {

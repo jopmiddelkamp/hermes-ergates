@@ -120,6 +120,11 @@ export class FakeConnection implements GatewayConnection {
   }
 
   async request<R>(method: string, params: Record<string, unknown> = {}): Promise<R> {
+    // Like the vendored client (vendor/hermes/shared/json-rpc-gateway.ts, `request`):
+    // a socket that is not open rejects at once and nothing reaches the server.
+    if (this.stateValue !== 'open') {
+      throw new GatewayError('network', 'No connection to the gateway.')
+    }
     this.requests.push({ method, params })
     if (method === 'prompt.submit') {
       return this.track(this.submit(params)) as unknown as R
