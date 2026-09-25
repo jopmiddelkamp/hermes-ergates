@@ -48,7 +48,8 @@ app/            expo-router screens (layout and wiring only)
 src/gateway/    GatewayPort contract (port.ts: ConnectedGateway, BOT_CHAT_TITLE), wire types, error mapping,
                 transcript normalizer, secret-store contract, real adapter (HTTP, auth, socket), registry
 src/features/   one folder per feature, each with a public index.ts: chat (reducer, session controller,
-                canonical chat, send queue), agents, routines, files, voice, settings
+                canonical chat, send queue), agents (roster, editor, agent proposals and their
+                provisioning), routines, files, voice, settings
 src/state/      Zustand device store: connections, pins, sections, unread, drafts, outbox, prefs
 src/theme/      vendored Hermes palettes resolved for React Native; skin sync
 src/ui/         shared components

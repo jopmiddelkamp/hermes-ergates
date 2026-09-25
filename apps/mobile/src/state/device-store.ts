@@ -1,6 +1,6 @@
 /**
  * The device-local store (docs/05 section 3): connections, per-connection roster
- * organization, prefs, drafts and outbox. Everything here is device-local and is
+ * organization, prefs, drafts, outbox and unfinished agent setups. Everything here is device-local and is
  * never written back to Hermes.
  *
  * `createDeviceStore(storage, secrets)` takes its dependencies as arguments so this
@@ -17,6 +17,7 @@ import type { SecretStore } from '@/gateway/secrets'
 
 import { orgActions, type Organization, type Section } from './organization'
 import { expired, recoverAfterRestart, type OutboxItem } from './outbox'
+import type { ProvisioningRun } from './provisioning'
 import { createAsyncStorageJson, DEVICE_STORAGE_KEY, secretKey, secureSecretStore } from './persistence'
 
 export interface Connection {
@@ -64,12 +65,14 @@ export interface PersistedDeviceState {
   prefs: Prefs
   drafts: Record<string, string>
   outbox: OutboxItem[]
+  /** Accepted agents whose setup has not finished (docs/11 section 4.1). */
+  provisioning: ProvisioningRun[]
 }
 
 export interface DeviceState extends PersistedDeviceState {
   addConnection(connection: Connection): void
   updateConnection(id: string, patch: Partial<Omit<Connection, 'id'>>): void
-  /** Removes the connection and everything device-local that is scoped to it: organization, drafts, outbox and its three SecureStore entries. Prefs and other connections are untouched. */
+  /** Removes the connection and everything device-local that is scoped to it: organization, drafts, outbox, agent setups and its three SecureStore entries. Prefs and other connections are untouched. */
   removeConnection(id: string): Promise<void>
   setPrimaryConnection(id: string): void
 
@@ -81,6 +84,10 @@ export interface DeviceState extends PersistedDeviceState {
   addOutboxItem(item: OutboxItem): void
   updateOutboxItem(localId: string, patch: Partial<OutboxItem>): void
   removeOutboxItem(localId: string): void
+
+  /** Adds the run, or replaces the one with the same proposal id. */
+  saveProvisioningRun(run: ProvisioningRun): void
+  removeProvisioningRun(proposalId: string): void
 
   // orgActions, wrapped and scoped per connection id (docs/10 "Home sections and pinned members").
   pin(connectionId: string, profile: string): void
@@ -115,7 +122,8 @@ function mergeDeviceState(persistedState: unknown, currentState: DeviceState): D
     organization: withExchangeAcks(persisted.organization ?? currentState.organization),
     prefs: { ...currentState.prefs, ...persisted.prefs },
     drafts: persisted.drafts ?? currentState.drafts,
-    outbox
+    outbox,
+    provisioning: persisted.provisioning ?? currentState.provisioning
   }
 }
 
@@ -137,6 +145,7 @@ export function createDeviceStore(storage: PersistStorage<PersistedDeviceState>,
           prefs: { ...defaultPrefs },
           drafts: {},
           outbox: [],
+          provisioning: [],
 
           addConnection: connection => set(state => ({ connections: [...state.connections, connection] })),
 
@@ -160,7 +169,8 @@ export function createDeviceStore(storage: PersistStorage<PersistedDeviceState>,
                 connections: state.connections.filter(c => c.id !== id),
                 organization,
                 drafts,
-                outbox: state.outbox.filter(item => item.connectionId !== id)
+                outbox: state.outbox.filter(item => item.connectionId !== id),
+                provisioning: state.provisioning.filter(run => run.connectionId !== id)
               }
             })
             await Promise.all([
@@ -189,6 +199,11 @@ export function createDeviceStore(storage: PersistStorage<PersistedDeviceState>,
 
           removeOutboxItem: localId => set(state => ({ outbox: state.outbox.filter(i => i.localId !== localId) })),
 
+          saveProvisioningRun: run =>
+            set(state => ({ provisioning: [...state.provisioning.filter(r => r.proposalId !== run.proposalId), run] })),
+
+          removeProvisioningRun: proposalId => set(state => ({ provisioning: state.provisioning.filter(r => r.proposalId !== proposalId) })),
+
           pin: (connectionId, profile) => updateOrg(connectionId, org => orgActions.pin(org, profile)),
           unpin: (connectionId, profile) => updateOrg(connectionId, org => orgActions.unpin(org, profile)),
           moveToSection: (connectionId, profile, sectionId) => updateOrg(connectionId, org => orgActions.moveToSection(org, profile, sectionId)),
@@ -216,7 +231,8 @@ export function createDeviceStore(storage: PersistStorage<PersistedDeviceState>,
           organization: state.organization,
           prefs: state.prefs,
           drafts: state.drafts,
-          outbox: state.outbox
+          outbox: state.outbox,
+          provisioning: state.provisioning
         }),
         merge: mergeDeviceState
       }

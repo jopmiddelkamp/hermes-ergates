@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createDeviceStore, defaultPrefs, draftKey, waitForHydration, type Connection, type PersistedDeviceState } from './device-store'
 import { UNSENT_RETENTION_MS, type OutboxItem } from './outbox'
+import type { ProvisioningRun } from './provisioning'
 import { MemorySecretStore, createMemoryStorageJson, secretKey } from './persistence'
 
 function newStore() {
@@ -154,7 +155,8 @@ describe('persistence', () => {
       organization: {},
       prefs: defaultPrefs,
       drafts: {},
-      outbox: [submitting, expiredUnsent, freshDraft]
+      outbox: [submitting, expiredUnsent, freshDraft],
+      provisioning: []
     }
     await storage.setItem('ergates-device-v1', { state: seeded, version: 0 })
 
@@ -190,7 +192,8 @@ describe('exchange acknowledgements (spec 12.1, ADR-028)', () => {
         organization: { c1: { pins: ['kevin'], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {} } as never },
         prefs: defaultPrefs,
         drafts: {},
-        outbox: []
+        outbox: [],
+        provisioning: []
       },
       version: 1
     })
@@ -206,6 +209,48 @@ describe('exchange acknowledgements (spec 12.1, ADR-028)', () => {
     store.getState().acknowledgeExchanges('c1', 'kevin', ['send:call_1'])
     await store.getState().removeConnection('c1')
     expect(store.getState().organization.c1).toBeUndefined()
+  })
+})
+
+describe('agent setup runs (docs/11 section 4.1)', () => {
+  const run = (proposalId: string, connectionId = 'c1'): ProvisioningRun => ({
+    proposalId,
+    connectionId,
+    sourceProfile: 'concierge',
+    proposal: { proposal_id: proposalId, briefing: 'Seed facts.' },
+    startedAt: 1
+  })
+
+  it('keeps an accepted agent setup across a restart until it is removed', async () => {
+    const storage = createMemoryStorageJson<PersistedDeviceState>()
+    const a = createDeviceStore(storage, new MemorySecretStore())
+    await waitForHydration(a)
+    a.getState().saveProvisioningRun(run('p-1'))
+    a.getState().saveProvisioningRun({ ...run('p-1'), startedAt: 2 })
+
+    const b = createDeviceStore(storage, new MemorySecretStore())
+    await waitForHydration(b)
+    expect(b.getState().provisioning).toEqual([{ ...run('p-1'), startedAt: 2 }])
+
+    b.getState().removeProvisioningRun('p-1')
+    expect(b.getState().provisioning).toEqual([])
+  })
+
+  it('reads a blob from before agent setups as having none', async () => {
+    const storage = createMemoryStorageJson<PersistedDeviceState>()
+    await storage.setItem('ergates-device-v1', { state: { connections: [conn1], organization: {}, prefs: defaultPrefs, drafts: {}, outbox: [] } as never, version: 1 })
+    const store = createDeviceStore(storage, new MemorySecretStore())
+    await waitForHydration(store)
+    expect(store.getState().provisioning).toEqual([])
+  })
+
+  it('drops a connection agent setups with the connection', async () => {
+    const store = newStore()
+    store.getState().addConnection(conn1)
+    store.getState().saveProvisioningRun(run('p-1', 'c1'))
+    store.getState().saveProvisioningRun(run('p-2', 'c2'))
+    await store.getState().removeConnection('c1')
+    expect(store.getState().provisioning.map(r => r.proposalId)).toEqual(['p-2'])
   })
 })
 
