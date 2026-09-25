@@ -1,0 +1,242 @@
+"""The Ergates control store: one SQLite file for every integration record.
+
+``<hermes root>/ergates/control.sqlite3`` (see :mod:`ergates.paths`) holds the
+reminder and proposal receipts, the attention events, their push outbox and
+the attention preferences of every profile and every process of one Hermes
+install (roadmap decision D2). Hermes's own databases are never opened here.
+
+Every write runs inside :meth:`ControlStore.transaction`, which starts with
+``BEGIN IMMEDIATE``: the write lock is taken before the first read, so two
+writers never interleave a read-modify-write, across threads or across
+processes. A writer that finds the lock taken waits up to the busy timeout.
+Each transaction and each read opens its own short-lived connection, so one
+store object is safe to share between Hermes's hook threads and the
+delivery threads.
+
+The schema is versioned with ``PRAGMA user_version``. :data:`MIGRATIONS` holds
+one tuple of statements per version; opening a store applies the missing
+versions inside one transaction, and a file written by a newer plugin is
+refused instead of guessed at.
+
+The schema has no column for prompt, command, briefing or description text:
+receipts and events keep identifiers and sha256 hashes only (docs/04
+sections 4 and 8).
+"""
+
+from __future__ import annotations
+
+import os
+import sqlite3
+import time
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Iterator
+
+SCHEMA_VERSION: int = 1
+
+_V1: tuple[str, ...] = (
+    # One row per reminder request. ``version`` grows on every change; every
+    # change names the version it read (compare-and-set).
+    """
+    CREATE TABLE reminder_receipts (
+        id TEXT PRIMARY KEY,
+        request_id TEXT,
+        profile TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('creating', 'created', 'uncertain')),
+        job_id TEXT,
+        job_name TEXT NOT NULL,
+        timezone_advisory TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        prompt_hash TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE proposal_receipts (
+        id TEXT PRIMARY KEY,
+        state TEXT NOT NULL CHECK (state IN ('proposed', 'accepted', 'complete', 'rejected')),
+        proposal_hash TEXT NOT NULL,
+        reserved_profile_name TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        expires_at_epoch REAL NOT NULL,
+        source_session_id TEXT,
+        version INTEGER NOT NULL DEFAULT 1,
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL
+    )
+    """,
+    # At most one accepted (still provisioning) proposal per profile name.
+    "CREATE UNIQUE INDEX proposal_reservations ON proposal_receipts (reserved_profile_name) "
+    "WHERE state = 'accepted'",
+    """
+    CREATE TABLE proposal_steps (
+        proposal_id TEXT NOT NULL REFERENCES proposal_receipts (id) ON DELETE CASCADE,
+        step TEXT NOT NULL CHECK (step IN ('profile_created', 'plugin_enabled', 'configured', 'bot_chat', 'briefing')),
+        status TEXT NOT NULL CHECK (status IN ('done', 'uncertain', 'failed')),
+        updated_at REAL NOT NULL,
+        PRIMARY KEY (proposal_id, step)
+    ) WITHOUT ROWID
+    """,
+    """
+    CREATE TABLE attention_events (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('approval', 'completion')),
+        state TEXT NOT NULL CHECK (state IN ('pending', 'resolved', 'expired')),
+        profile TEXT,
+        session_id TEXT,
+        surface TEXT,
+        correlation TEXT,
+        request_id TEXT,
+        choice TEXT,
+        created_at REAL NOT NULL,
+        expires_at REAL,
+        resolved_at REAL
+    )
+    """,
+    "CREATE INDEX attention_events_open ON attention_events (kind, state, created_at)",
+    "CREATE INDEX attention_events_terminal ON attention_events (state, resolved_at)",
+    # One push per event. Delivery bookkeeping lives here, never on the event.
+    """
+    CREATE TABLE attention_outbox (
+        event_id TEXT PRIMARY KEY REFERENCES attention_events (id) ON DELETE CASCADE,
+        state TEXT NOT NULL CHECK (state IN ('due', 'sent', 'cancelled', 'gave_up')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at REAL NOT NULL,
+        lease_owner TEXT,
+        lease_until REAL,
+        last_error TEXT,
+        updated_at REAL NOT NULL
+    )
+    """,
+    "CREATE INDEX attention_outbox_due ON attention_outbox (state, next_attempt_at)",
+    # Per-profile push preferences; the profile "*" holds the default.
+    """
+    CREATE TABLE attention_prefs (
+        profile TEXT PRIMARY KEY,
+        muted INTEGER NOT NULL CHECK (muted IN (0, 1)),
+        quiet_start TEXT,
+        quiet_end TEXT,
+        updated_at REAL NOT NULL
+    )
+    """,
+)
+
+MIGRATIONS: tuple[tuple[str, ...], ...] = (_V1,)
+
+
+class StoreError(Exception):
+    """The store cannot be used: it is closed, or a newer plugin wrote its schema."""
+
+
+class ControlStore:
+    """Transactional SQLite store for receipts, attention events and the push outbox."""
+
+    def __init__(self, path: Path | str, *, busy_timeout_ms: int = 5000) -> None:
+        self._path = Path(path)
+        self._timeout = busy_timeout_ms / 1000.0
+        self._closed = False
+        self._path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        try:
+            # Create the file ourselves so it is private from the first byte;
+            # SQLite gives the -wal and -shm files the same permissions.
+            fd = os.open(self._path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+        except FileExistsError:
+            pass
+        else:
+            os.close(fd)
+        self._migrate()
+
+    @property
+    def path(self) -> Path:
+        """The database file."""
+        return self._path
+
+    @property
+    def schema_version(self) -> int:
+        """``PRAGMA user_version`` of the database file."""
+        with self.read() as conn:
+            return int(conn.execute("PRAGMA user_version").fetchone()[0])
+
+    @contextmanager
+    def transaction(self) -> Iterator[sqlite3.Connection]:
+        """``BEGIN IMMEDIATE`` on a fresh connection; commit on success, roll back on any error."""
+        conn = self._connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield conn
+            except BaseException:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                raise
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+
+    @contextmanager
+    def read(self) -> Iterator[sqlite3.Connection]:
+        """A read-only snapshot: every statement inside sees the same committed state."""
+        conn = self._connect()
+        try:
+            conn.execute("PRAGMA query_only = ON")
+            conn.execute("BEGIN")
+            try:
+                yield conn
+            finally:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+        finally:
+            conn.close()
+
+    def close(self) -> None:
+        """Refuse further use. Connections live for one operation, so none stays open."""
+        self._closed = True
+
+    def _connect(self) -> sqlite3.Connection:
+        if self._closed:
+            raise StoreError("the control store is closed")
+        conn = sqlite3.connect(self._path, timeout=self._timeout, isolation_level=None, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA synchronous = FULL")
+        return conn
+
+    def _migrate(self) -> None:
+        conn = self._connect()
+        try:
+            self._use_wal(conn)
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                current = int(conn.execute("PRAGMA user_version").fetchone()[0])
+                if current > len(MIGRATIONS):
+                    raise StoreError(
+                        f"{self._path.name} has schema version {current}, but this plugin knows "
+                        f"versions up to {len(MIGRATIONS)}; upgrade the plugin"
+                    )
+                for version in range(current + 1, len(MIGRATIONS) + 1):
+                    for statement in MIGRATIONS[version - 1]:
+                        conn.execute(statement)
+                    conn.execute(f"PRAGMA user_version = {version}")
+            except BaseException:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                raise
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+
+    def _use_wal(self, conn: sqlite3.Connection) -> None:
+        """Switch the file to WAL. Retried until the busy timeout: SQLite answers
+        "database is locked" at once, without waiting, while another process
+        holds the lock on a brand-new file."""
+        deadline = time.monotonic() + self._timeout
+        while True:
+            try:
+                conn.execute("PRAGMA journal_mode = WAL")
+                return
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc) or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.01)
