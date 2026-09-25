@@ -115,7 +115,17 @@ def main(argv: Optional[list] = None) -> int:
     if not root.exists():
         print(f"ergates.flush: no Hermes home at {root}", file=sys.stderr)
         return 2
-    counts = flush_once(root, load_settings(root), cron=HermesCron())
+    try:
+        settings = load_settings(root)
+    except Exception as exc:
+        # A config.yaml a YAML parser refuses must not stop expiry, retention
+        # or pruning (settings.py's own invariant, mirrored from
+        # tool.py's _delivery_worker): push is off for this run, everything
+        # else still runs, and only the exception class name is logged --
+        # a YAML parser error can quote the offending line.
+        logger.warning("ergates.flush: config.yaml unreadable (%s); push skipped this run", type(exc).__name__)
+        settings = {}
+    counts = flush_once(root, settings, cron=HermesCron())
     if not args.quiet:
         print(
             "ergates.flush: retried={retried} expired_notifications={expired_notifications} "

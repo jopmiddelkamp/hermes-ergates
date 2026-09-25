@@ -5,6 +5,7 @@ deployment schedules (see ``deploy/README.md``). No network: every test
 injects its own publisher.
 """
 
+import logging
 import sys
 import time
 
@@ -179,6 +180,28 @@ def test_main_reports_counts_and_never_prints_a_secret(tmp_path, capsys, monkeyp
     assert exit_code == 0
     assert "expired_notifications=1 pruned_notifications=1" in out
     assert SETTINGS["token"] not in out
+
+
+def test_main_survives_a_malformed_root_config_and_still_prunes(tmp_path, capsys, monkeypatch, store, caplog):
+    """settings.py's own invariant -- "a sweep or a hook must not die on a
+    config typo" -- must hold for main() too, not only for the hooks
+    (tool.py's _delivery_worker already catches this the same way). A
+    config.yaml a YAML parser refuses must not stop expiry, retention or
+    pruning; main() still exits 0, and the log names the exception class
+    only, never the file's content."""
+    monkeypatch.setitem(sys.modules, "hermes_constants", None)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    (tmp_path / "config.yaml").write_text("plugins: [unclosed\n", encoding="utf-8")
+    _approval(store, time.time() - RETENTION_SECONDS - APPROVAL_TTL_SECONDS - 60)
+
+    with caplog.at_level(logging.WARNING, logger="ergates.flush"):
+        exit_code = main([])
+
+    out = capsys.readouterr().out
+    assert exit_code == 0
+    assert "expired_notifications=1 pruned_notifications=1" in out
+    assert "ParserError" in caplog.text
+    assert "unclosed" not in caplog.text
 
 
 def test_bug8_main_sweeps_the_shared_store_with_the_install_settings_from_a_profile_process(
