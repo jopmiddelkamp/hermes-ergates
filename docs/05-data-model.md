@@ -31,9 +31,9 @@ The integration control store (`<hermes root>/ergates/control.sqlite3`, ADR-030)
 
 | Store | Content | Initial policy |
 |---|---|---|
-| Connection registry | App UUID, label, base URL, auth mode, primary flag, last profile | AsyncStorage; no secrets; delete on connection removal |
+| Connection registry | App UUID, label, base URL, auth mode, primary flag, last profile | The encrypted device blob (below); no secrets; delete on connection removal |
 | Credentials | Basic-provider session material or later native tokens | SecureStore/native cookie adapter; clear matching native cookie jar too on logout/removal |
-| Theme/preferences | Appearance, Hermes theme selection/cache, locale, haptics | AsyncStorage; can survive sign-out without retaining account data |
+| Theme/preferences | Appearance, Hermes theme selection/cache, locale, haptics | The encrypted device blob (below); can survive sign-out without retaining account data |
 | Roster organization | Pins/order, named sections/membership, reading watermarks/manual unread, collapsed state, exchange acknowledgements (bot-to-bot activity identities the reader has opened; no cap, never evicted) | Device-local, keyed by connection/profile; clear on sign-out/removal. Never write mobile-only organization into desktop metadata |
 | Query cache | Roster, history pages, jobs, tool lists | Memory-only by default. Optional “Keep recent chats offline” permits app-private cache with 24-hour TTL and explicit clear action |
 | Replay watermark | Owning connection/profile/session, `seq`, replay `epoch` | Memory; optionally persist with offline cache. Discard stale epoch and reconcile history |
@@ -42,6 +42,8 @@ The integration control store (`<hermes root>/ergates/control.sqlite3`, ADR-030)
 | Downloaded/preview files | Temporary attachments | App-private cache; clear within 24 hours and on sign-out/removal. Explicit user exports belong to the chosen external destination |
 | Push registration | Device token and registered connection | Server registration plus secure local reference; revoke subscription on logout/removal |
 | Debug buffer | Sanitized connection/error categories | Bounded local cache, no bodies/tokens; opt-in share with preview |
+
+Connections, roster organization, preferences, drafts, the outbox and unfinished agent setups are one JSON blob in AsyncStorage, sealed with AES-256-GCM from expo-crypto (ADR-033). Its key is created on the first write and kept in SecureStore with `WHEN_UNLOCKED_THIS_DEVICE_ONLY`: readable only while the phone is unlocked, and never restored onto another device, so app data restored onto a new phone starts with an empty device store (Hermes-owned history stays on the server). A plaintext blob from an earlier app version is read once and rewritten sealed at once; a sealed blob that cannot be opened now is kept for the next launch, not overwritten.
 
 The optional chat cache is sensitive device data even when the OS protects app storage. Do not claim it exists only on the VPS or is protected by SecureStore merely because credentials are. Decide platform backup exclusions and device protection settings during P0. Removing a connection clears all its drafts, outbox, cached content, files, watermarks and credentials; warn specifically about losing unsent work. Exported files are outside the app's clearing authority.
 

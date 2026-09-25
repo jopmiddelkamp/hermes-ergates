@@ -51,7 +51,8 @@ src/features/   one folder per feature, each with a public index.ts: chat (reduc
                 canonical chat, send queue), agents (roster, editor, agent proposals and their
                 provisioning), routines, files, voice, settings, attention (push deep link,
                 notification settings); `app/+native-intent.tsx` sends a push link to `app/open.tsx`
-src/state/      Zustand device store: connections, pins, sections, unread, drafts, outbox, prefs
+src/state/      Zustand device store: connections, pins, sections, unread, drafts, outbox, prefs,
+                agent setups; persisted as one AES-GCM-sealed blob (sealed-storage.ts, persistence.ts)
 src/theme/      vendored Hermes palettes resolved for React Native; skin sync
 src/ui/         shared components
 test/fixtures/  sanitized recorded backend shapes
@@ -67,7 +68,7 @@ Rules (ADR-029), enforced by `npm run depcruise`:
 - The port, the session reducer, the session controller and `vendor/hermes` import no React, React Native or Expo module.
 - The device store holds no Hermes data: it imports neither TanStack Query nor the gateway (except the secret-store contract).
 - `use-session.ts` is a thin React binding of `createSessionController` (`session-controller.ts`); the scenario tests drive that same controller.
-- Each native module (cookies, secure storage, AsyncStorage, file pickers, speech) is imported by its one adapter.
+- Each native module (cookies, secure storage, crypto, AsyncStorage, file pickers, speech) is imported by its one adapter.
 - No import cycles, and every import resolves to a file.
 
 Development-only hooks (compiled out of release bundles): `EXPO_PUBLIC_DEV_GATEWAY_URL`/`EXPO_PUBLIC_DEV_GATEWAY_TOKEN` (auto-connect), `EXPO_PUBLIC_DEV_INITIAL_ROUTE` and `EXPO_PUBLIC_DEV_ROUTE_URL` (navigate on launch), and the chat route params `?devSend=<prompt>`, `?devFocus=1`, `?devInject=refused|waiting|sending|mixed` (synthetic `message_agent` frames through the normal reducer path). `npm run typecheck` passes on a fresh checkout without `.expo/types` (CI runs it that way); `expo start` regenerates `.expo/types/router.d.ts`.

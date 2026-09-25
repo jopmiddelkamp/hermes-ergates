@@ -118,7 +118,7 @@ module.exports = {
       comment: 'Each native capability is imported only by its one real adapter module.',
       severity: 'error',
       from: { pathNot: `(^src/gateway/real/|^src/state/persistence\\.ts$|^src/features/files/attach\\.ts$|^src/features/voice/speech-port\\.ts$|${TEST})` },
-      to: { path: '^node_modules/(@react-native-cookies/cookies|expo-secure-store|@react-native-async-storage/async-storage|expo-file-system|expo-document-picker|expo-image-picker|expo-image-manipulator|expo-speech-recognition)/' }
+      to: { path: '^node_modules/(@react-native-cookies/cookies|expo-secure-store|expo-crypto|@react-native-async-storage/async-storage|expo-file-system|expo-document-picker|expo-image-picker|expo-image-manipulator|expo-speech-recognition)/' }
     }
   ],
   required: [

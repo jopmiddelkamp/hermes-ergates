@@ -1,40 +1,120 @@
 /**
  * Device storage adapters (docs/05 section 3).
  *
- * - `asyncStorageJson` persists connections/organization/prefs/drafts/outbox as one
- *   JSON blob in AsyncStorage under `DEVICE_STORAGE_KEY` (docs/05: "AsyncStorage;
- *   no secrets").
+ * - `createDeviceBlobStorage` persists connections, organization, prefs, drafts,
+ *   outbox and unfinished agent setups as one JSON blob in AsyncStorage under
+ *   `DEVICE_STORAGE_KEY`, sealed with AES-GCM (`sealed-storage.ts`). The AES key
+ *   lives in SecureStore as `BLOB_KEY_NAME`, readable only while the phone is
+ *   unlocked and never restored onto another device.
  * - `secureSecretStore` persists auth secrets only (token/cookie/mode), one entry per
  *   key, in expo-secure-store. Callers build keys with `secretKey`, matching the
  *   `ergates.<connectionId>.<token|cookie|mode>` names `RealGateway` already uses
  *   (src/gateway/real/real-gateway.ts).
  *
- * `expo-secure-store` is loaded lazily (dynamic import inside each method) rather
- * than imported at module scope: it transitively pulls in react-native, which a
- * plain Node/vitest run cannot parse. Loading it only when a method actually runs
- * keeps this module — and anything that imports it, like device-store.ts — safe to
- * import in Node tests. AsyncStorage has no such issue and is imported normally.
+ * `expo-secure-store` and `expo-crypto` are loaded lazily (dynamic import inside
+ * each method) rather than imported at module scope: they pull in react-native,
+ * which a plain Node/vitest run cannot parse. Loading them only when a method
+ * actually runs keeps this module, and anything that imports it like
+ * device-store.ts, safe to import in Node tests. AsyncStorage has no such issue
+ * and is imported normally.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import type { AESEncryptionKey } from 'expo-crypto'
 import { createJSONStorage, type PersistStorage, type StateStorage } from 'zustand/middleware'
 
 import type { SecretStore } from '@/gateway/secrets'
+
+import { createSealedStateStorage, type BlobCipher } from './sealed-storage'
+
 export { MemorySecretStore } from '@/gateway/secrets'
 
 export const DEVICE_STORAGE_KEY = 'ergates-device-v1'
+
+/** The SecureStore entry that holds the device blob's AES key (base64). */
+export const BLOB_KEY_NAME = 'ergates.device-blob-key'
 
 /** The three SecureStore entries a connection owns; RealGateway reads/writes the same names (`ergates.<connectionId>.<kind>`). */
 export function secretKey(connectionId: string, kind: 'token' | 'cookie' | 'mode'): string {
   return `ergates.${connectionId}.${kind}`
 }
 
-/** Zustand `persist` storage over AsyncStorage. Safe to call at module scope: it only holds a reference to AsyncStorage, never invokes it. */
-export function createAsyncStorageJson<S>(): PersistStorage<S> {
-  const storage = createJSONStorage<S>(() => AsyncStorage)
+/** Zustand `persist` storage whose one value is sealed by `cipher` before it reaches `inner`. */
+export function createSealedStorageJson<S>(inner: StateStorage, cipher: BlobCipher, onError?: (error: unknown) => void): PersistStorage<S> {
+  const storage = createJSONStorage<S>(() => createSealedStateStorage(inner, cipher, { onError }))
   if (!storage) {
-    throw new Error('Failed to create the AsyncStorage-backed persist storage.')
+    throw new Error('Failed to create the sealed persist storage.')
   }
   return storage
+}
+
+/** The device blob's storage on the phone: AsyncStorage, sealed with AES-GCM. Safe at module scope: nothing is read or created before hydration. */
+export function createDeviceBlobStorage<S>(): PersistStorage<S> {
+  return createSealedStorageJson<S>(AsyncStorage, createAesBlobCipher(), reportBlobError)
+}
+
+function reportBlobError(error: unknown): void {
+  // The error class only: a message could quote stored text.
+  console.warn(`ergates: device storage failed (${error instanceof Error ? error.name : typeof error})`)
+}
+
+/**
+ * AES-256-GCM from expo-crypto; the key is created on the first seal and kept in
+ * SecureStore with `WHEN_UNLOCKED_THIS_DEVICE_ONLY`. Once read, the key stays in
+ * memory, so a write while the phone is locked still seals. Key lookups run one
+ * at a time, so two first writes never create two keys.
+ */
+export function createAesBlobCipher(): BlobCipher {
+  let key: AESEncryptionKey | null = null
+  let turn: Promise<unknown> = Promise.resolve()
+
+  async function keyStoreOptions() {
+    const SecureStore = await import('expo-secure-store')
+    return { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY }
+  }
+
+  async function loadKey(create: boolean): Promise<AESEncryptionKey | null> {
+    if (key) {
+      return key
+    }
+    const SecureStore = await import('expo-secure-store')
+    const { AESEncryptionKey, AESKeySize } = await import('expo-crypto')
+    const stored = await SecureStore.getItemAsync(BLOB_KEY_NAME, await keyStoreOptions())
+    if (stored !== null) {
+      key = await AESEncryptionKey.import(stored, 'base64')
+    } else if (create) {
+      const fresh = await AESEncryptionKey.generate(AESKeySize.AES256)
+      await SecureStore.setItemAsync(BLOB_KEY_NAME, await fresh.encoded('base64'), await keyStoreOptions())
+      key = fresh
+    }
+    return key
+  }
+
+  function withKey<T>(create: boolean, use: (current: AESEncryptionKey | null) => Promise<T>): Promise<T> {
+    const run = turn.then(async () => use(await loadKey(create)))
+    turn = run.catch(() => undefined)
+    return run
+  }
+
+  return {
+    seal: plaintext =>
+      withKey(true, async current => {
+        if (!current) {
+          throw new Error('The device blob key could not be created.')
+        }
+        const { aesEncryptAsync } = await import('expo-crypto')
+        const sealed = await aesEncryptAsync(new TextEncoder().encode(plaintext), current)
+        return sealed.combined('base64')
+      }),
+    open: sealed =>
+      withKey(false, async current => {
+        if (!current) {
+          return null
+        }
+        const { aesDecryptAsync, AESSealedData } = await import('expo-crypto')
+        const bytes = await aesDecryptAsync(AESSealedData.fromCombined(sealed), current)
+        return new TextDecoder().decode(bytes)
+      })
+  }
 }
 
 /** SecureStore-backed SecretStore. `key` is the full `ergates.<connectionId>.<kind>` string. */
@@ -53,7 +133,7 @@ export const secureSecretStore: SecretStore = {
   }
 }
 
-/** In-memory `StateStorage`, e.g. for `createAsyncStorageJsonFake`; never touches AsyncStorage. */
+/** In-memory `StateStorage` for tests; never touches AsyncStorage. */
 export function createMemoryStateStorage(): StateStorage {
   const map = new Map<string, string>()
   return {
@@ -67,7 +147,7 @@ export function createMemoryStateStorage(): StateStorage {
   }
 }
 
-/** In-memory `persist` storage with the same JSON shape as `createAsyncStorageJson`, for tests. */
+/** In-memory `persist` storage with the same JSON shape as the device blob, unsealed, for tests. */
 export function createMemoryStorageJson<S>(): PersistStorage<S> {
   const storage = createJSONStorage<S>(() => createMemoryStateStorage())
   if (!storage) {

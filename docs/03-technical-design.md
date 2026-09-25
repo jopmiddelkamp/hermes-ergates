@@ -41,7 +41,7 @@ flowchart TB
 | Transport | Vendored `JsonRpcGatewayClient`, native HTTP/cookie/ticket adapter | Exact contract in 06; native cookie persistence is a P0 gate |
 | State | TanStack Query for Hermes-owned data; Zustand for device-owned data; one pure session reducer for live events | One home per data item (3.1); in-memory history by default; local data rules in 05 |
 | Theme | Vendored Hermes palette data, semantic types and pure skin converter | Nous default, system appearance; React Native application/persistence adapter (10) |
-| Secure storage | expo-secure-store for credentials and draft encryption key | Do not claim a particular hardware enclave without verifying the platform |
+| Secure storage | expo-secure-store for credentials and the device-blob key; expo-crypto AES-GCM seals the whole device blob (ADR-033) | Do not claim a particular hardware enclave without verifying the platform |
 | Rendering | Native message list, Markdown renderer, native system font | Validate table fallback, large text, safe areas and keyboard behavior |
 | Voice | Native speech-recognition module in a development build | Prefer on-device support; disclose any remote transcription path |
 | Notifications | ntfy app in P1; Expo transport in P2 | Server attention source, receipts and deep links are integration work |

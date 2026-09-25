@@ -6,7 +6,7 @@
  * `createDeviceStore(storage, secrets)` takes its dependencies as arguments so this
  * module stays importable under plain Node (unit tests inject in-memory fakes from
  * `persistence.ts`). The default `useDeviceStore` export wires up the real
- * AsyncStorage/SecureStore adapters but is created with `skipHydration: true`, so
+ * sealed AsyncStorage blob and SecureStore adapters but is created with `skipHydration: true`, so
  * merely importing this module never reads AsyncStorage; the app calls
  * `useDeviceStore.persist.rehydrate()` once it is actually running on device.
  */
@@ -18,7 +18,7 @@ import type { SecretStore } from '@/gateway/secrets'
 import { orgActions, type Organization, type Section } from './organization'
 import { expired, recoverAfterRestart, type OutboxItem } from './outbox'
 import type { ProvisioningRun } from './provisioning'
-import { createAsyncStorageJson, DEVICE_STORAGE_KEY, secretKey, secureSecretStore } from './persistence'
+import { createDeviceBlobStorage, DEVICE_STORAGE_KEY, secretKey, secureSecretStore } from './persistence'
 
 export interface Connection {
   id: string
@@ -58,7 +58,7 @@ function emptyOrganization(): Organization {
   return { pins: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {} }
 }
 
-/** The subset of DeviceState that is written to AsyncStorage; actions are excluded. */
+/** The subset of DeviceState that is sealed into AsyncStorage; actions are excluded. */
 export interface PersistedDeviceState {
   connections: Connection[]
   organization: Record<string, Organization>
@@ -261,4 +261,4 @@ export function waitForHydration(store: PersistCapable): Promise<void> {
  * app's real runtime entry point, then `waitForHydration(useDeviceStore)` if you need
  * to know when it's done.
  */
-export const useDeviceStore = createDeviceStore(createAsyncStorageJson<PersistedDeviceState>(), secureSecretStore, { skipHydration: true })
+export const useDeviceStore = createDeviceStore(createDeviceBlobStorage<PersistedDeviceState>(), secureSecretStore, { skipHydration: true })

@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { createDeviceStore, defaultPrefs, draftKey, waitForHydration, type Connection, type PersistedDeviceState } from './device-store'
 import { UNSENT_RETENTION_MS, type OutboxItem } from './outbox'
 import type { ProvisioningRun } from './provisioning'
-import { MemorySecretStore, createMemoryStorageJson, secretKey } from './persistence'
+import { NodeCipher } from '@test/node-cipher'
+
+import { DEVICE_STORAGE_KEY, MemorySecretStore, createMemoryStateStorage, createMemoryStorageJson, createSealedStorageJson, secretKey } from './persistence'
+import { SEALED_PREFIX } from './sealed-storage'
 
 function newStore() {
   return createDeviceStore(createMemoryStorageJson<PersistedDeviceState>(), new MemorySecretStore())
@@ -251,6 +254,66 @@ describe('agent setup runs (docs/11 section 4.1)', () => {
     store.getState().saveProvisioningRun(run('p-2', 'c2'))
     await store.getState().removeConnection('c1')
     expect(store.getState().provisioning.map(r => r.proposalId)).toEqual(['p-2'])
+  })
+})
+
+describe('the device blob at rest', () => {
+  const legacyRun: ProvisioningRun = {
+    proposalId: 'p-9',
+    connectionId: 'c1',
+    sourceProfile: 'concierge',
+    proposal: { proposal_id: 'p-9', briefing: 'Seed facts about the Acme account.' },
+    startedAt: 5
+  }
+  const legacyDraft: OutboxItem = { localId: 'l1', connectionId: 'c1', profile: 'linh', text: 'call Dirk back', createdAt: Date.now(), status: 'draft' }
+  const legacyState: PersistedDeviceState = {
+    connections: [conn1],
+    organization: { c1: { pins: ['linh'], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {} } },
+    prefs: { ...defaultPrefs, themeName: 'dark' },
+    drafts: { 'c1:linh': 'the invoice from Dirk' },
+    outbox: [legacyDraft],
+    provisioning: [legacyRun]
+  }
+  const secretTexts = ['Dirk', 'Acme', 'a.example', 'linh']
+
+  it('an install upgrading with a plaintext blob loses nothing, and the blob is stored encrypted at once', async () => {
+    const disk = createMemoryStateStorage()
+    await disk.setItem(DEVICE_STORAGE_KEY, JSON.stringify({ state: legacyState, version: 1 }))
+    const storage = createSealedStorageJson<PersistedDeviceState>(disk, new NodeCipher())
+
+    const upgraded = createDeviceStore(storage, new MemorySecretStore())
+    await waitForHydration(upgraded)
+
+    expect(upgraded.getState().connections).toEqual([conn1])
+    expect(upgraded.getState().organization.c1.pins).toEqual(['linh'])
+    expect(upgraded.getState().prefs.themeName).toBe('dark')
+    expect(upgraded.getState().drafts).toEqual({ 'c1:linh': 'the invoice from Dirk' })
+    expect(upgraded.getState().outbox).toEqual([legacyDraft])
+    expect(upgraded.getState().provisioning).toEqual([legacyRun])
+
+    const atRest = (await disk.getItem(DEVICE_STORAGE_KEY)) as string
+    expect(atRest.startsWith(SEALED_PREFIX)).toBe(true)
+    for (const text of secretTexts) {
+      expect(atRest).not.toContain(text)
+    }
+  })
+
+  it('stores every later write encrypted, and the next launch reads all of it', async () => {
+    const disk = createMemoryStateStorage()
+    await disk.setItem(DEVICE_STORAGE_KEY, JSON.stringify({ state: legacyState, version: 1 }))
+    const storage = createSealedStorageJson<PersistedDeviceState>(disk, new NodeCipher())
+    const first = createDeviceStore(storage, new MemorySecretStore())
+    await waitForHydration(first)
+
+    first.getState().setDraft('c1', 'kevin', 'ask Dirk about the Acme contract')
+
+    const next = createDeviceStore(storage, new MemorySecretStore())
+    await waitForHydration(next)
+    expect(next.getState().drafts).toEqual({ 'c1:linh': 'the invoice from Dirk', 'c1:kevin': 'ask Dirk about the Acme contract' })
+    expect(next.getState().provisioning).toEqual([legacyRun])
+    const atRest = (await disk.getItem(DEVICE_STORAGE_KEY)) as string
+    expect(atRest.startsWith(SEALED_PREFIX)).toBe(true)
+    expect(atRest).not.toContain('contract')
   })
 })
 
