@@ -9,6 +9,8 @@ the behavior outside a Hermes runtime.
 import json
 import sys
 import types
+from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
@@ -31,7 +33,8 @@ def without_hermes(monkeypatch):
     """Every Hermes import fails, as it does outside a Hermes runtime."""
     for name in ("hermes_constants", "hermes_cli", "hermes_cli.profiles", "hermes_cli.config",
                  "hermes_cli.plugins_discovery", "tools", "tools.cronjob_tools", "tools.cronjob_prompt_scan",
-                 "cron", "cron.jobs"):
+                 "tools.mcp_tool_registration", "cron", "cron.jobs", "cron.lifecycle_guard", "model_tools",
+                 "toolsets", "utils"):
         monkeypatch.setitem(sys.modules, name, None)
 
 
@@ -152,6 +155,68 @@ def test_check_prompt_refuses_what_the_scan_blocks_without_its_text(monkeypatch)
 def test_check_prompt_outside_a_hermes_runtime_fails_loudly(without_hermes):
     with pytest.raises(ImportError):
         hermes_adapter.check_prompt("Check the unpaid invoices.")
+
+
+def _hermes_lifecycle_guard(monkeypatch, blocks) -> list:
+    """Stand in for Hermes's ``cron.lifecycle_guard.check_gateway_lifecycle`` and the profile scope.
+
+    Returns ``(profile in scope, prompt, script)`` for every call the guard saw.
+    """
+    seen = []
+    scope = []
+    module = types.ModuleType("cron.lifecycle_guard")
+
+    class GatewayLifecycleBlocked(ValueError):
+        pass
+
+    def check_gateway_lifecycle(prompt, script=None):
+        seen.append((scope[-1] if scope else None, prompt, script))
+        if blocks(prompt):
+            raise GatewayLifecycleBlocked(f"Blocked: {prompt!r} contains a gateway lifecycle command.")
+
+    @contextmanager
+    def profile_home(profile):
+        scope.append(profile)
+        try:
+            yield Path("/hermes/profiles") / profile
+        finally:
+            scope.pop()
+
+    module.check_gateway_lifecycle = check_gateway_lifecycle
+    monkeypatch.setitem(sys.modules, "cron", types.ModuleType("cron"))
+    monkeypatch.setitem(sys.modules, "cron.lifecycle_guard", module)
+    monkeypatch.setattr(hermes_adapter, "_profile_home", profile_home)
+    return seen
+
+
+def test_check_gateway_lifecycle_asks_the_guard_with_the_stripped_prompt_in_the_profile_home(monkeypatch):
+    """The create strips the prompt and runs the guard with the profile's home active."""
+    seen = _hermes_lifecycle_guard(monkeypatch, lambda prompt: False)
+
+    hermes_adapter.check_gateway_lifecycle("thijs", "  Check the unpaid invoices.\n")
+
+    assert seen == [("thijs", "Check the unpaid invoices.", None)]
+
+
+def test_check_gateway_lifecycle_refuses_what_the_guard_blocks_without_its_text(monkeypatch):
+    _hermes_lifecycle_guard(monkeypatch, lambda prompt: "gateway" in prompt)
+
+    with pytest.raises(ValueError) as refused:
+        hermes_adapter.check_gateway_lifecycle("thijs", "Remind me to kill time before the Hermes gateway meeting.")
+
+    assert "meeting" not in str(refused.value) and "Blocked" not in str(refused.value)
+    assert refused.value.__cause__ is None and refused.value.__context__ is None
+
+
+def test_check_gateway_lifecycle_outside_a_hermes_runtime_fails_loudly(without_hermes):
+    with pytest.raises(ImportError):
+        hermes_adapter.check_gateway_lifecycle("thijs", "Check the unpaid invoices.")
+
+
+def test_outside_a_hermes_runtime_the_grant_and_the_toolset_are_unknown(without_hermes):
+    """Rule 3 of the tool gate then does not apply; Hermes is not there to run a tool anyway."""
+    assert hermes_adapter.granted_toolsets("thijs") is None
+    assert hermes_adapter.toolset_for_tool("terminal") is None
 
 
 def test_enable_plugin_outside_a_hermes_runtime_fails_loudly(without_hermes):

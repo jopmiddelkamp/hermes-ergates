@@ -6,6 +6,7 @@ import pytest
 
 from ergates.policy import (
     BLOCK_RAW_CRON,
+    BLOCK_REVOKED,
     BLOCK_SETUP,
     BLOCK_UNVERIFIED,
     decide,
@@ -40,9 +41,35 @@ def test_rule_1_comes_before_rule_2():
     assert decide("cronjob_manage", {"action": "create"}, **{**OPEN, "admitted": False})["message"] == BLOCK_SETUP
 
 
-def test_rule_3_is_not_applied_yet():
-    """Plan 5 adds revoked toolsets; until then a toolset outside the grant runs."""
-    assert decide("terminal", {}, admitted=True, granted_toolsets=frozenset({"web"}), tool_toolset="terminal") is None
+GRANT = frozenset({"web", "file"})
+
+
+def test_rule_3_a_tool_whose_toolset_the_profile_no_longer_grants_is_blocked():
+    assert decide("terminal", {}, admitted=True, granted_toolsets=GRANT, tool_toolset="terminal") == {
+        "action": "block", "message": BLOCK_REVOKED}
+
+
+def test_rule_3_a_tool_of_a_granted_toolset_runs():
+    assert decide("web_search", {}, admitted=True, granted_toolsets=GRANT, tool_toolset="web") is None
+
+
+def test_rule_3_never_blocks_the_ergates_tools():
+    """A template needs no `ergates` entry for its agent to propose or make reminders."""
+    for tool_name in ("ergates_create_reminder", "ergates_propose_agent"):
+        assert decide(tool_name, {}, admitted=True, granted_toolsets=frozenset(), tool_toolset="ergates") is None
+
+
+@pytest.mark.parametrize(("granted", "toolset"), [(None, "terminal"), (GRANT, None), (None, None)])
+def test_rule_3_applies_only_when_both_the_grant_and_the_toolset_are_known(granted, toolset):
+    """No toolset pin, or a tool Hermes does not know: Hermes alone decides."""
+    assert decide("terminal", {}, admitted=True, granted_toolsets=granted, tool_toolset=toolset) is None
+
+
+def test_rules_1_and_2_come_before_rule_3():
+    revoked = {"admitted": True, "granted_toolsets": frozenset(), "tool_toolset": "cronjob"}
+    assert decide("terminal", {}, **{**revoked, "admitted": False})["message"] == BLOCK_SETUP
+    assert decide("cronjob_manage", {"action": "create"}, **revoked)["message"] == BLOCK_RAW_CRON
+    assert decide("cronjob_manage", {"action": "list"}, **revoked)["message"] == BLOCK_REVOKED
 
 
 def test_review_focus_3_a_gate_that_raises_blocks_the_tool(caplog):

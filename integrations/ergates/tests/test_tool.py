@@ -23,7 +23,7 @@ from ergates import hermes_adapter, policy, tool
 from ergates.attention import AttentionService
 from ergates.delivery import DeliveryWorker, NtfySettings
 from ergates.paths import store_path
-from ergates.policy import BLOCK_RAW_CRON, BLOCK_SETUP, BLOCK_UNVERIFIED
+from ergates.policy import BLOCK_RAW_CRON, BLOCK_REVOKED, BLOCK_SETUP, BLOCK_UNVERIFIED
 from ergates.proposals import ProposalService, payload_hash, validate_proposal
 from ergates.reminders import ReminderService
 from ergates.store import ControlStore, StoreError
@@ -593,6 +593,29 @@ def test_review_focus_3_a_gate_whose_check_raises_blocks_the_tool(profile_proces
     assert _gate(_ProfilelessCtx())(tool_name="terminal", args={}) == {"action": "block", "message": BLOCK_UNVERIFIED}
 
 
+def test_the_gate_asks_for_the_grant_of_the_calling_profile_at_every_call(profile_process, monkeypatch):
+    """Rule 3 reads the profile's grant and the tool's toolset at the moment of the
+    call: a toolset taken out of the pin is blocked without a new session, and
+    a multiplexed gateway asks for each call's own profile."""
+    grants = {"thijs": frozenset({"web"}), "nora": None}
+    monkeypatch.setattr(hermes_adapter, "granted_toolsets", grants.__getitem__)
+    monkeypatch.setattr(hermes_adapter, "toolset_for_tool", {"terminal": "terminal", "web_search": "web"}.get)
+    gate = _gate(_MultiplexedCtx("thijs", "thijs", "nora"))
+
+    assert gate(tool_name="terminal", args={}) == {"action": "block", "message": BLOCK_REVOKED}
+    assert gate(tool_name="web_search", args={}) is None
+    assert gate(tool_name="terminal", args={}) is None  # nora pins no toolsets
+
+
+def test_a_grant_that_cannot_be_read_blocks_the_call(profile_process, monkeypatch):
+    def unreadable(profile):
+        raise OSError("the profile config cannot be read")
+
+    monkeypatch.setattr(hermes_adapter, "granted_toolsets", unreadable)
+
+    assert _gate(_RecordingCtx())(tool_name="web_search", args={}) == {"action": "block", "message": BLOCK_UNVERIFIED}
+
+
 def _store_folder_is_a_file(root):
     (root / "ergates").write_text("", encoding="utf-8")
 
@@ -678,10 +701,16 @@ def _no_prompt_check(prompt):
     return None
 
 
-def _ask(args, service, *, profile="thijs", check_schedule=_no_check, check_prompt=_no_prompt_check):
+def _no_lifecycle_check(profile, prompt):
+    return None
+
+
+def _ask(args, service, *, profile="thijs", check_schedule=_no_check, check_prompt=_no_prompt_check,
+         check_gateway_lifecycle=_no_lifecycle_check):
     """The reminder tool's answer, parsed."""
     return json.loads(create_reminder_handler(args, service=service, profile=profile,
-                                              check_schedule=check_schedule, check_prompt=check_prompt))
+                                              check_schedule=check_schedule, check_prompt=check_prompt,
+                                              check_gateway_lifecycle=check_gateway_lifecycle))
 
 
 def test_the_reminder_tool_creates_once_and_returns_the_same_reminder_again(store, cron):
@@ -754,6 +783,35 @@ def test_the_reminder_tool_refuses_a_prompt_hermes_cron_refuses(store, cron):
     assert cron.create_calls == [] and rows(store, "reminder_receipts") == []
 
 
+def test_the_reminder_tool_refuses_a_prompt_that_reads_as_stopping_the_gateway(store, cron):
+    """Hermes's create would refuse it on every try: an error, never an uncertain reminder."""
+    seen = []
+
+    def refuse(profile, prompt):
+        seen.append((profile, prompt))
+        raise ValueError(f"Blocked: {prompt!r} contains a gateway lifecycle command")
+
+    prompt = "Remind me to kill time before the Hermes gateway meeting."
+    result = _ask(_reminder_args(prompt=prompt), ReminderService(store, cron), check_gateway_lifecycle=refuse)
+
+    assert result == {
+        "error": "prompt reads as a command to stop or restart the Hermes gateway, which Hermes cron refuses"}
+    assert seen == [("thijs", prompt)]
+    assert cron.create_calls == [] and rows(store, "reminder_receipts") == []
+
+
+def test_the_reminder_tool_answers_an_error_when_the_prompt_cannot_be_checked(store, cron, caplog):
+    def vanished(profile, prompt):
+        raise FileNotFoundError("profile 'thijs' does not exist at /secret/hermes/profiles/thijs")
+
+    with caplog.at_level(logging.WARNING, logger="ergates.tool"):
+        result = _ask(_reminder_args(), ReminderService(store, cron), check_gateway_lifecycle=vanished)
+
+    assert result == {"error": "the prompt could not be checked"}
+    assert "FileNotFoundError" in caplog.text and "/secret" not in caplog.text
+    assert cron.create_calls == []
+
+
 def test_the_reminder_tool_refuses_a_lone_surrogate_in_the_prompt(store, cron):
     result = _ask(_reminder_args(prompt="Pay the \ud800 rent."), ReminderService(store, cron))
 
@@ -800,6 +858,9 @@ def test_register_wires_the_reminder_tool_to_the_profile_hermes_reports(tmp_path
     monkeypatch.setattr(hermes_adapter, "HermesCron", lambda: cron)
     monkeypatch.setattr(hermes_adapter, "check_schedule", _no_check)
     monkeypatch.setattr(hermes_adapter, "check_prompt", _no_prompt_check)
+    lifecycle_checks = []
+    monkeypatch.setattr(hermes_adapter, "check_gateway_lifecycle",
+                        lambda profile, prompt: lifecycle_checks.append((profile, prompt)))
     ctx = _MultiplexedCtx("nora")
     tool.register(ctx)
 
@@ -808,6 +869,7 @@ def test_register_wires_the_reminder_tool_to_the_profile_hermes_reports(tmp_path
     assert result["status"] == "created"
     assert result["receipt"]["profile"] == "nora"
     assert cron.create_calls[0]["profile"] == "nora"
+    assert lifecycle_checks == [("nora", "Check the unpaid invoices.")]
 
 
 def test_the_reminder_tool_answers_an_error_when_hermes_cannot_tell_the_profile(profile_process):

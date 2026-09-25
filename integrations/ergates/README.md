@@ -158,12 +158,15 @@ again: an accepted proposal answers 200 with its receipt).
 `POST /reminders` checks, in order: the fields (a `timezone` must be an IANA
 zone; a `label` is at most 64 printable characters and never defaults to
 prompt text), that the profile exists, that Hermes cron accepts the
-schedule, and that Hermes cron's prompt scan (invisible Unicode, "do not
-tell the user" and other injection phrases) accepts the prompt. Only then
-does it create, so a schedule or prompt Hermes refuses is a 400 with a
-fixed message, never an uncertain create the app would resend. A second
-identical request waits up to 5 s for the first and answers the same
-receipt.
+schedule, that Hermes cron's prompt scan (invisible Unicode, "do not
+tell the user" and other injection phrases) accepts the prompt, and that
+Hermes cron's gateway lifecycle guard, run in the profile, accepts it too
+(it refuses a prompt that reads as a command to stop or restart the
+gateway, plain prose such as "kill time before the Hermes gateway meeting"
+included). Only then does it create, so a schedule or prompt Hermes
+refuses is a 400 with a fixed message, never an uncertain create the app
+would resend. A second identical request waits up to 5 s for the first
+and answers the same receipt.
 
 ## Tools and the tool gate
 
@@ -174,12 +177,22 @@ receipt.
   id, so the same schedule, time zone and prompt in one profile is one
   reminder however often the model asks, until a one-shot has run: the
   same request after that makes a new one.
-- The `pre_tool_call` hook (roadmap contract C6, `ergates/policy.py`)
-  blocks every tool of a profile whose accepted proposal is still being
-  provisioned, and blocks `cronjob_manage` with `action: create` (agents
-  use `ergates_create_reminder`). Hermes runs a tool when a hook callback
-  raises, so the gate turns any failure of its own into a block. Revoked
-  toolsets are roadmap Plan 5.
+- The `pre_tool_call` hook (`ergates/policy.py`) blocks, in this order:
+  every tool of a profile whose accepted proposal is still being
+  provisioned; `cronjob_manage` with `action: create` (agents use
+  `ergates_create_reminder`); and a tool whose toolset the profile's
+  configuration no longer grants. Hermes runs a tool when a hook callback
+  raises, so the gate turns any failure of its own into a block.
+- The grant (`hermes_adapter.granted_toolsets`) is the toolset pin that
+  `profiles.configure` writes, `tools.enabled_toolsets` in the profile's
+  `config.yaml` (the app sets it from the template), plus the toolset
+  `mcp-<server>` of every MCP server the profile enables. It is read at
+  every tool call, so a toolset or MCP server taken away is blocked at the
+  next call, in a running session too. At the pin Hermes itself builds a
+  session's tools from `platform_toolsets` and ignores the toolset pin, so
+  the agent can still see a tool the gate refuses. A profile without a pin
+  (the default profile) is not narrowed, and the `ergates` tools are never
+  blocked this way.
 
 The profile is always `ctx.profile_name` read at the moment of the call
 (`hermes_adapter.current_profile`), never once at registration: a

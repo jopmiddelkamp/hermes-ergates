@@ -17,9 +17,13 @@ Rules, in order:
 2. ``cronjob_manage`` with ``action == "create"``: block with
    :data:`BLOCK_RAW_CRON`. Reminders go through ``ergates_create_reminder``,
    which a retry can never turn into a second job.
-3. Revoked toolsets (:data:`BLOCK_REVOKED`): added by roadmap Plan 5, which
-   supplies ``granted_toolsets`` and ``tool_toolset``. Until then both are
-   ``None`` and the rule does not apply.
+3. The tool's toolset is known, is not ``ergates``, and is missing from the
+   profile's granted toolsets (when the profile pins any): block with
+   :data:`BLOCK_REVOKED`. The configuration no longer grants the tool, even
+   when the running session still lists it. ``tool.register`` reads both
+   inputs from Hermes at every call
+   (:func:`~ergates.hermes_adapter.granted_toolsets`,
+   :func:`~ergates.hermes_adapter.toolset_for_tool`).
 4. Otherwise ``None``: the tool runs.
 """
 
@@ -37,6 +41,8 @@ BLOCK_REVOKED = "This tool is turned off for this agent."
 BLOCK_UNVERIFIED = "Ergates could not verify this tool call, so it was blocked."
 
 RAW_CRON_TOOL = "cronjob_manage"
+# The Ergates tools' own toolset: never revoked, so a template need not list it.
+ERGATES_TOOLSET = "ergates"
 
 
 def block(message: str) -> dict:
@@ -48,12 +54,18 @@ def decide(
     tool_name: str, args: dict, *, admitted: bool,
     granted_toolsets: frozenset[str] | None, tool_toolset: str | None,
 ) -> dict | None:
-    """The block directive for one tool call, or ``None`` to let it run (rules 1, 2 and 4 above)."""
+    """The block directive for one tool call, or ``None`` to let it run (the rules above, in order)."""
     if not admitted:
         return block(BLOCK_SETUP)
     if tool_name == RAW_CRON_TOOL and str(args.get("action", "")).strip().lower() == "create":
         return block(BLOCK_RAW_CRON)
-    # Rule 3 (revoked toolsets) is Plan 5's: it reads granted_toolsets and tool_toolset here.
+    if (
+        granted_toolsets is not None
+        and tool_toolset is not None
+        and tool_toolset != ERGATES_TOOLSET
+        and tool_toolset not in granted_toolsets
+    ):
+        return block(BLOCK_REVOKED)
     return None
 
 

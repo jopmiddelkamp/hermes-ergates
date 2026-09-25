@@ -27,7 +27,7 @@ from typing import Any, Callable, Dict, Optional
 from . import hermes_adapter, policy
 from .attention import AttentionService
 from .delivery import DeliveryWorker, send_ntfy
-from .operations import PROMPT_REFUSED, reminder_problem
+from .operations import PROMPT_REFUSED, PROMPT_STOPS_GATEWAY, reminder_problem
 from .paths import hermes_root, store_path
 from .proposals import HERMES_RESERVED_PROFILE_NAMES, ProposalError, ProposalService, validate_proposal
 from .reminders import ReminderError, ReminderService
@@ -197,6 +197,7 @@ def create_reminder_handler(
     profile: str,
     check_schedule: Callable[[str, str], None],
     check_prompt: Callable[[str], None],
+    check_gateway_lifecycle: Callable[[str, str], None],
     **_kwargs: Any,
 ) -> str:
     """Create or return the reminder of one request in ``profile``; always a JSON string.
@@ -232,6 +233,14 @@ def create_reminder_handler(
         check_prompt(args["prompt"])
     except ValueError:
         return json.dumps({"error": PROMPT_REFUSED})
+    try:
+        check_gateway_lifecycle(profile, args["prompt"])
+    except ValueError:
+        return json.dumps({"error": PROMPT_STOPS_GATEWAY})
+    except OSError as exc:
+        # The profile's home vanished since the schedule check. Class name only: the message carries the path.
+        logger.warning("ergates: the reminder prompt could not be checked (%s)", type(exc).__name__)
+        return json.dumps({"error": "the prompt could not be checked"})
     try:
         outcome = service.create(profile, args["schedule"], args["timezone"], args["prompt"], label=label)
     except ReminderError as exc:
@@ -447,7 +456,8 @@ def register(ctx: Any) -> None:
         return policy.decide(
             kwargs.get("tool_name") or "", kwargs.get("args"),
             admitted=services().proposals.is_admitted(profile),
-            granted_toolsets=None, tool_toolset=None,  # rule 3's inputs arrive with roadmap Plan 5
+            granted_toolsets=hermes_adapter.granted_toolsets(profile),
+            tool_toolset=hermes_adapter.toolset_for_tool(kwargs.get("tool_name") or ""),
         )
 
     def handle_propose(args: Dict[str, Any], **kwargs: Any) -> str:
@@ -468,7 +478,8 @@ def register(ctx: Any) -> None:
             return _not_recorded("reminder", exc)
         return create_reminder_handler(
             args, service=reminders, profile=profile, check_schedule=hermes_adapter.check_schedule,
-            check_prompt=hermes_adapter.check_prompt, **kwargs,
+            check_prompt=hermes_adapter.check_prompt, check_gateway_lifecycle=hermes_adapter.check_gateway_lifecycle,
+            **kwargs,
         )
 
     def handle_pre_approval(**kwargs: Any) -> None:
@@ -493,7 +504,7 @@ def register(ctx: Any) -> None:
     ctx.register_hook("pre_tool_call", handle_pre_tool_call)
     ctx.register_tool(
         name=PROPOSE_TOOL_NAME,
-        toolset="ergates",
+        toolset=policy.ERGATES_TOOLSET,
         schema=PROPOSE_SCHEMA,
         handler=handle_propose,
         description="Propose a new Ergates specialist agent for operator approval.",
@@ -501,7 +512,7 @@ def register(ctx: Any) -> None:
     )
     ctx.register_tool(
         name=REMINDER_TOOL_NAME,
-        toolset="ergates",
+        toolset=policy.ERGATES_TOOLSET,
         schema=REMINDER_SCHEMA,
         handler=handle_create_reminder,
         description="Create a reminder that a retry never duplicates.",

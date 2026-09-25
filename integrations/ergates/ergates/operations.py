@@ -49,6 +49,7 @@ _REMINDER_ERROR_STATUS = {"invalid": 400, "unknown_profile": 404}
 _NOT_AN_OBJECT = "the request body must be a JSON object"
 _STEP_STATUS_NOT_STRINGS = "step and status must be strings"
 PROMPT_REFUSED = "prompt is not one Hermes cron accepts"
+PROMPT_STOPS_GATEWAY = "prompt reads as a command to stop or restart the Hermes gateway, which Hermes cron refuses"
 
 
 @dataclass(frozen=True)
@@ -141,7 +142,8 @@ class Operations:
         self, store: ControlStore, *, cron: CronPort,
         profile_exists: Callable[[str], bool], plugin_enabled: Callable[[str], bool],
         enable_plugin: Callable[[str], None], check_schedule: Callable[[str, str], None],
-        check_prompt: Callable[[str], None], templates: Path, clock: Callable[[], float] = time.time,
+        check_prompt: Callable[[str], None], check_gateway_lifecycle: Callable[[str, str], None],
+        templates: Path, clock: Callable[[], float] = time.time,
     ) -> None:
         self._store = store
         self._profile_exists = profile_exists
@@ -149,6 +151,7 @@ class Operations:
         self._enable_plugin = enable_plugin
         self._check_schedule = check_schedule
         self._check_prompt = check_prompt
+        self._check_gateway_lifecycle = check_gateway_lifecycle
         self._templates = Path(templates)
         self._reminders = ReminderService(store, cron, clock=clock)
         self._proposals = ProposalService(store, clock=clock)
@@ -259,9 +262,11 @@ class Operations:
         Order: the body's fields (400) -- profile, request_id and the rest --
         then the profile's existence (404), then the schedule as Hermes cron
         reads it (400), then the prompt as Hermes cron's scan reads it (400),
-        so a malformed field is always a 400 and never races an unknown
-        profile for which status wins, and Hermes is never asked about a
-        schedule or prompt the request already fails on some other field.
+        then the prompt as its gateway lifecycle guard reads it in the
+        profile (400), so a malformed field is always a 400 and never races
+        an unknown profile for which status wins, and Hermes is never asked
+        about a schedule or prompt the request already fails on some other
+        field.
         """
         if not isinstance(body, dict):
             raise ReminderError(_NOT_AN_OBJECT)
@@ -294,6 +299,10 @@ class Operations:
         except ValueError:
             # Fixed text: the scan's reason names what matched in the prompt.
             raise ReminderError(PROMPT_REFUSED) from None
+        try:
+            self._check_gateway_lifecycle(profile, body["prompt"])
+        except ValueError:
+            raise ReminderError(PROMPT_STOPS_GATEWAY) from None
         return {
             "profile": profile, "schedule": body["schedule"], "timezone": body["timezone"],
             "prompt": body["prompt"], "request_id": request_id, "label": body.get("label"),

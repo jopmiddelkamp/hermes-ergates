@@ -17,6 +17,7 @@ import yaml
 from ergates.hermes_adapter import (
     HermesCron,
     _profile_home,
+    check_gateway_lifecycle,
     check_prompt,
     check_schedule,
     current_profile,
@@ -200,6 +201,30 @@ def test_check_prompt_refuses_exactly_what_a_hermes_cron_create_refuses(make_pro
         assert cron.find_job_ids_by_name("iris", name) == []
 
 
+def test_check_gateway_lifecycle_refuses_exactly_what_a_hermes_cron_create_refuses_in_that_profile(make_profile):
+    """The guard refuses prose that reads as stopping the gateway, and refuses
+    ``hermes -p <name> gateway restart`` only in the profile it names. The check
+    runs in the profile's home, as the create does, so both agree per profile."""
+    make_profile("ruth")
+    make_profile("olga")
+    cron = HermesCron()
+    olga_restart = "Run hermes -p olga gateway restart."
+
+    for profile, prompt in (("ruth", "Remind me to kill time before the Hermes gateway meeting."),
+                            ("olga", olga_restart)):
+        with pytest.raises(ValueError) as refused:
+            check_gateway_lifecycle(profile, f"  {prompt}\n")
+        assert "meeting" not in str(refused.value) and "olga" not in str(refused.value)
+        name = f"[bot:{profile}] refused · 00000000"
+        with pytest.raises(RuntimeError):
+            cron.create_job(profile, schedule="every 2h", prompt=prompt, name=name)
+        assert cron.find_job_ids_by_name(profile, name) == []
+
+    for prompt in (olga_restart, "Remind me about the Hermes gateway meeting."):
+        check_gateway_lifecycle("ruth", prompt)
+        assert cron.create_job("ruth", schedule="every 2h", prompt=prompt, name=f"[bot:ruth] {prompt[:20]}")["id"]
+
+
 def test_review_focus_1_the_reminder_service_on_hermes_cron_makes_one_job(root, make_profile):
     """Two identical requests at the same moment, through Hermes's real cron."""
     make_profile("sam")
@@ -237,7 +262,8 @@ def test_the_reminder_tool_makes_a_one_shot_again_after_hermes_ran_it(root, make
 
     def ask() -> dict:
         return json.loads(create_reminder_handler(dict(args), service=service, profile="tess",
-                                                  check_schedule=check_schedule, check_prompt=check_prompt))
+                                                  check_schedule=check_schedule, check_prompt=check_prompt,
+                                                  check_gateway_lifecycle=check_gateway_lifecycle))
 
     first = ask()
     ran = first["receipt"]["job_id"]

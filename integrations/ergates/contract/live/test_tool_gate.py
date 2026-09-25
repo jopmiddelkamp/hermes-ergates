@@ -15,7 +15,7 @@ import pytest
 
 from ergates.hermes_adapter import _profile_home, enable_plugin, plugin_enabled, profile_exists
 from ergates.paths import store_path
-from ergates.policy import BLOCK_RAW_CRON, BLOCK_SETUP, BLOCK_UNVERIFIED
+from ergates.policy import BLOCK_RAW_CRON, BLOCK_REVOKED, BLOCK_SETUP, BLOCK_UNVERIFIED
 from ergates.proposals import PROVISION_STEPS, ProposalService, validate_proposal
 from ergates.store import ControlStore
 
@@ -144,3 +144,67 @@ def test_a_push_thread_keeps_the_hermes_home_the_gateway_routed_to(make_profile)
     thread.join(timeout=5)
 
     assert seen == [home]
+
+
+# --- rule 3: the profile's toolset grant ----------------------------------------------
+
+
+@pytest.fixture
+def configure():
+    """``configure(profile, **params)``: Hermes's own ``profiles.configure`` RPC, the call the app makes."""
+    from tui_gateway.server import _methods
+
+    def call(profile: str, **params) -> None:
+        answer = _methods["profiles.configure"]("contract", {"name": profile, **params})
+        assert answer.get("result", {}).get("ok") is True, answer
+
+    return call
+
+
+def test_rule_3_a_toolset_taken_out_of_the_grant_is_blocked_at_the_next_call(gate, configure):
+    """docs/04 section 3: a revoked connector must not stay usable in a running session."""
+    assert gate("lena", "terminal", {}) == []  # no toolset pin yet: Hermes alone decides
+    configure("lena", enabled_toolsets=["web", "terminal"])
+    assert gate("lena", "terminal", {}) == []
+
+    configure("lena", enabled_toolsets=["web"])
+
+    assert gate("lena", "terminal", {}) == [{"action": "block", "message": BLOCK_REVOKED}]
+    assert gate("lena", "web_search", {}) == []
+    assert gate("lena", "ergates_create_reminder", {"schedule": "0 9 * * *"}) == []
+    assert gate("lena", "no_such_tool", {}) == []
+
+
+def test_rule_3_a_pinned_name_grants_the_toolsets_its_tools_are_registered_under(gate, configure):
+    """`browser` bundles `browser_cdp`, which Hermes registers under the toolset `browser-cdp`."""
+    gate("wim", "terminal", {})
+    configure("wim", enabled_toolsets=["browser"])
+
+    assert gate("wim", "browser_cdp", {}) == []
+    assert gate("wim", "browser_navigate", {}) == []
+    assert gate("wim", "terminal", {}) == [{"action": "block", "message": BLOCK_REVOKED}]
+
+
+def test_rule_3_an_mcp_server_the_profile_turned_off_is_blocked(gate, configure):
+    from hermes_cli.config import load_config, save_config
+    from tools.registry import registry
+
+    from ergates.hermes_adapter import _profile_home
+
+    gate("mira", "terminal", {})
+    configure("mira", enabled_toolsets=["web"])
+    with _profile_home("mira"):
+        config = load_config()
+        config["mcp_servers"] = {"notes": {"url": "https://notes.invalid/mcp"}}
+        save_config(config)
+    registry.register(name="mcp_notes_search", toolset="mcp-notes",
+                      schema={"name": "mcp_notes_search", "parameters": {"type": "object", "properties": {}}},
+                      handler=lambda args, **kwargs: "{}")
+    try:
+        assert gate("mira", "mcp_notes_search", {}) == []
+
+        configure("mira", enabled_mcp_servers=[])  # Hermes writes `disabled: true` for the server
+
+        assert gate("mira", "mcp_notes_search", {}) == [{"action": "block", "message": BLOCK_REVOKED}]
+    finally:
+        registry.deregister("mcp_notes_search")

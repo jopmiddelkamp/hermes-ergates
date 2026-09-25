@@ -122,6 +122,32 @@ def test_a_prompt_hermes_cron_refuses_is_400_on_every_resend_and_creates_nothing
         assert conn.execute("SELECT COUNT(*) FROM reminder_receipts WHERE profile = ?", (profile,)).fetchone()[0] == 0
 
 
+def test_a_prompt_that_reads_as_stopping_the_gateway_is_400_and_a_prompt_about_it_is_created(
+    web, token_headers, root, make_profile,
+):
+    """Hermes's create refuses a prompt its gateway lifecycle guard matches, plain
+    prose included, the same way every time: a 400, never a 202 the app would
+    resend. A prompt that only mentions the gateway is created as usual."""
+    home = make_profile("rika")
+    blocked = _reminder("rika", prompt="Remind me to kill time before the Hermes gateway meeting.",
+                        request_id="api-rika-blocked")
+    mentions = _reminder("rika", prompt="Remind me about the Hermes gateway meeting.", request_id="api-rika-ok")
+
+    refused = [web.post(f"{API}/reminders", json=blocked, headers=token_headers) for _ in range(2)]
+    created = web.post(f"{API}/reminders", json=mentions, headers=token_headers)
+
+    for reply in refused:
+        assert (reply.status_code, reply.json()) == (400, {"error": {"code": "invalid", "message": (
+            "prompt reads as a command to stop or restart the Hermes gateway, which Hermes cron refuses")}})
+    assert created.status_code == 201
+    jobs = json.loads((home / "cron" / "jobs.json").read_text(encoding="utf-8"))["jobs"]
+    assert [job["id"] for job in jobs] == [created.json()["receipt"]["job_id"]]
+    with ControlStore(store_path(root)).read() as conn:
+        request_ids = [row[0] for row in conn.execute(
+            "SELECT request_id FROM reminder_receipts WHERE profile = 'rika'")]
+    assert request_ids == ["api-rika-ok"]
+
+
 def test_a_non_json_content_type_is_400_and_creates_nothing(web, token_headers, root, make_profile):
     """Hermes's own JSON routes parse only ``application/json``/``+json``, which forces a
     CORS preflight for a cross-origin request. In gated mode the session cookies are
@@ -240,7 +266,8 @@ INTERNAL = {"error": {"code": "internal", "message": "The request could not be c
 def _operations_with(root, **adapter):
     """An ``Operations`` on the real store and Hermes, with some adapter functions replaced."""
     functions = {name: getattr(hermes_adapter, name) for name in (
-        "profile_exists", "plugin_enabled", "enable_plugin", "check_schedule", "check_prompt")}
+        "profile_exists", "plugin_enabled", "enable_plugin", "check_schedule", "check_prompt",
+        "check_gateway_lifecycle")}
     return Operations(ControlStore(store_path(root)), cron=hermes_adapter.HermesCron(), templates=templates_dir(root),
                       **{**functions, **adapter})
 

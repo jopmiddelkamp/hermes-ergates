@@ -165,6 +165,37 @@ def check_prompt(prompt: str) -> None:
         raise ValueError("Hermes cron's prompt scan refuses this prompt")
 
 
+def check_gateway_lifecycle(profile: str, prompt: str) -> None:
+    """Raise ``ValueError`` when Hermes cron's gateway lifecycle guard would refuse ``prompt`` in ``profile``.
+
+    Before it stores a job, ``cron.jobs.create_job`` strips the prompt and
+    runs ``cron.lifecycle_guard.check_gateway_lifecycle`` on it, which raises
+    ``GatewayLifecycleBlocked`` (a ``ValueError``) for a prompt that reads as
+    a command to restart or stop the Hermes gateway; ``cronjob(action="create")``
+    then answers an error instead of a job. The guard matches plain prose too
+    ("Remind me to kill time before the Hermes gateway meeting"), and it
+    refuses ``hermes -p <name> gateway restart`` only in the profile it
+    names, which it reads from the active Hermes home. So this runs the
+    guard the way the create does: on the stripped prompt, inside the
+    profile's home. The guard refuses the same prompt on every try, so
+    ``POST /reminders`` and the reminder tool ask here right after
+    :func:`check_prompt`: a refused prompt is a 400, never an uncertain
+    create the app would keep retrying. The error is fixed text.
+    ``contract/test_hermes_adapter.py`` pins the guard and its call in the create.
+    """
+    from cron.lifecycle_guard import check_gateway_lifecycle as run_hermes_guard
+
+    refused = False
+    with _profile_home(profile):
+        try:
+            run_hermes_guard(prompt.strip())
+        except ValueError:
+            refused = True
+    # Raised outside the handler, so the error carries no trace of Hermes's own.
+    if refused:
+        raise ValueError("Hermes cron's gateway lifecycle guard refuses this prompt")
+
+
 class HermesCron:
     """``reminders.CronPort`` on Hermes's own cron, scoped to one profile per call.
 
@@ -270,6 +301,69 @@ def plugin_enabled(profile: str) -> bool:
             return False
         enabled, disabled = _plugin_lists(load_config())
         return gate_manifest(manifest, disabled, enabled).action == "load"
+
+
+def granted_toolsets(profile: str) -> frozenset[str] | None:
+    """The toolsets ``profile``'s configuration grants now, or ``None`` when it pins none.
+
+    The grant is the toolset pin that ``profiles.configure`` writes, which is
+    how the app configures a new agent from its template:
+    ``tools.enabled_toolsets`` in the profile's ``config.yaml``. At the pin,
+    Hermes reads that pin only to describe the profile and builds a
+    session's tools from ``platform_toolsets``, so the tool gate is what
+    makes a template's toolsets binding. A pinned name whose tools Hermes
+    registers under other toolsets (``browser`` bundles ``browser-cdp``)
+    grants those toolsets too. Every MCP server the profile's config enables
+    adds its toolset, ``mcp-<server>``: enabled for Hermes (``enabled``, true
+    unless set) and not switched off by ``profiles.configure`` (``disabled``).
+
+    ``None`` means the profile pins no toolsets, so Hermes alone decides its
+    tools and Ergates cannot tell a narrower grant; outside a Hermes runtime
+    it is ``None`` too. The config is read at every call, so a toolset taken
+    out of the pin is blocked at the next tool call, without a new session.
+    Any other failure raises, and the tool gate blocks the call.
+    """
+    try:
+        from hermes_cli.config import load_config_readonly
+        from model_tools import get_toolset_for_tool
+        from tools.mcp_tool_registration import _server_enabled
+        from toolsets import resolve_toolset
+        from utils import is_truthy_value
+    except ImportError:
+        return None
+    with _profile_home(profile):
+        config = load_config_readonly() or {}
+        tools = config.get("tools")
+        pinned = tools.get("enabled_toolsets") if isinstance(tools, dict) else None
+        if not isinstance(pinned, list):
+            return None
+        names = {str(name).strip() for name in pinned if str(name).strip()}
+        granted = set(names)
+        for name in names:
+            granted.update(owner for tool in resolve_toolset(name) if (owner := get_toolset_for_tool(tool)))
+        servers = config.get("mcp_servers")
+        if isinstance(servers, dict):
+            granted.update(
+                f"mcp-{server}" for server, entry in servers.items()
+                if isinstance(entry, dict) and _server_enabled(entry)
+                and not is_truthy_value(entry.get("disabled", False))
+            )
+    return frozenset(granted)
+
+
+def toolset_for_tool(tool_name: str) -> str | None:
+    """The toolset Hermes registered ``tool_name`` under, or ``None`` for a tool it does not know.
+
+    Asks Hermes's tool registry (``model_tools.get_toolset_for_tool``) in the
+    active Hermes home, which Hermes sets to the calling profile's home for a
+    hook call, so a plugin tool that only one profile loads is found there.
+    ``None`` outside a Hermes runtime.
+    """
+    try:
+        from model_tools import get_toolset_for_tool
+    except ImportError:
+        return None
+    return get_toolset_for_tool(tool_name)
 
 
 def _is_profile_name(profile: object) -> bool:

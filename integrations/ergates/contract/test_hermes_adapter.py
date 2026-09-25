@@ -265,3 +265,121 @@ def test_a_create_ends_well_inside_the_reminder_in_flight_window(hermes: PinnedS
         '    if not name or name in ("builtin", "in-process", "inprocess"):\n'
         "        return InProcessCronScheduler()"
     )
+
+
+# --- the tool grant: granted_toolsets() and toolset_for_tool() -----------------
+
+PROFILES_RPC = "tui_gateway/methods_profiles.py"
+MODEL_TOOLS = "model_tools.py"
+TOOLSETS = "toolsets.py"
+MCP_REGISTRATION = "tools/mcp_tool_registration.py"
+UTILS = "utils.py"
+TUI_SERVER = "tui_gateway/server.py"
+GATEWAY_TURN = "gateway/run_turn.py"
+TOOLS_CONFIG = "hermes_cli/tools_config.py"
+
+
+def test_the_toolset_pin_is_what_profiles_configure_writes(hermes: PinnedSource) -> None:
+    # tui_gateway/methods_profiles.py:509-517: `enabled_toolsets` replaces tools.enabled_toolsets; an empty list removes the pin.
+    assert hermes.lines(PROFILES_RPC, 509, 517) == (
+        "def _save_toolset_pin(cfg, enabled, save_config) -> None:\n"
+        "    wanted = sorted(_clean_names(enabled))\n"
+        '    tools_cfg = cfg.get("tools") if isinstance(cfg.get("tools"), dict) else {}\n'
+        "    if wanted:\n"
+        '        tools_cfg["enabled_toolsets"] = wanted\n'
+        "    else:\n"
+        '        tools_cfg.pop("enabled_toolsets", None)\n'
+        '    cfg["tools"] = tools_cfg\n'
+        "    save_config(cfg)"
+    )
+    # tui_gateway/methods_profiles.py:384: profiles.describe reads the same key as the profile's toolsets.
+    assert hermes.lines(PROFILES_RPC, 384, 384) == (
+        '    pinned = (cfg.get("tools") if isinstance(cfg.get("tools"), dict) else {}).get("enabled_toolsets")'
+    )
+
+
+def test_hermes_builds_a_sessions_tools_from_platform_toolsets_not_from_the_pin(hermes: PinnedSource) -> None:
+    """Why the gate enforces the pin: Hermes does not, when it builds a session."""
+    # tui_gateway/server.py:1869 (app sessions) and gateway/run_turn.py:2151 (gateway turns).
+    assert hermes.lines(TUI_SERVER, 1869, 1869) == '        enabled = _get_platform_tools(cfg, "cli", include_default_mcp_servers=True)'
+    assert hermes.lines(GATEWAY_TURN, 2151, 2151) == "        return sorted(_get_platform_tools(user_config, platform_key))"
+    # hermes_cli/tools_config.py:553-554: that function reads platform_toolsets.
+    assert hermes.lines(TOOLS_CONFIG, 553, 554) == (
+        '    platform_toolsets = config.get("platform_toolsets") or {}\n'
+        "    toolset_names = platform_toolsets.get(platform)"
+    )
+
+
+def test_config_is_read_without_a_copy_for_every_tool_call(hermes: PinnedSource) -> None:
+    assert _arguments(hermes.function(CONFIG, "load_config_readonly")) == []
+
+
+def test_the_registry_names_the_toolset_of_a_tool(hermes: PinnedSource) -> None:
+    # model_tools.py:959-960
+    assert hermes.lines(MODEL_TOOLS, 959, 960) == (
+        "def get_toolset_for_tool(tool_name: str) -> Optional[str]:\n"
+        "    return registry.get_toolset_for_tool(tool_name)"
+    )
+    assert _arguments(hermes.function(TOOLSETS, "resolve_toolset")) == ["name", "visited", "include_registry"]
+
+
+def test_an_mcp_servers_tools_are_the_toolset_mcp_server_name(hermes: PinnedSource) -> None:
+    # tools/mcp_tool_registration.py:315
+    assert hermes.lines(MCP_REGISTRATION, 315, 315) == '    toolset_name = f"mcp-{name}"'
+    # tools/mcp_tool_registration.py:398-399: Hermes connects a server unless `enabled` says no.
+    assert hermes.lines(MCP_REGISTRATION, 398, 399) == (
+        "def _server_enabled(config: dict) -> bool:\n"
+        '    return _parse_boolish(config.get("enabled", True), default=True)'
+    )
+
+
+def test_profiles_configure_turns_an_mcp_server_off_with_disabled(hermes: PinnedSource) -> None:
+    """profiles.configure writes `disabled`, a key Hermes's MCP runtime does not read,
+    so granted_toolsets checks both keys."""
+    # tui_gateway/methods_profiles.py:526-530
+    assert hermes.lines(PROFILES_RPC, 526, 530) == (
+        "        if isinstance(mcp_cfg.get(srv), dict):\n"
+        '            mcp_cfg[srv].pop("disabled", None)\n'
+        "    for srv, entry in mcp_cfg.items():\n"
+        "        if srv not in wanted and isinstance(entry, dict):\n"
+        '            entry["disabled"] = True'
+    )
+    assert _arguments(hermes.function(UTILS, "is_truthy_value")) == ["value", "default"]
+
+
+# --- the gateway lifecycle guard: check_gateway_lifecycle() ----------------------
+
+LIFECYCLE_GUARD = "cron/lifecycle_guard.py"
+
+
+def test_a_create_refuses_a_prompt_the_gateway_lifecycle_guard_blocks(hermes: PinnedSource) -> None:
+    """``check_gateway_lifecycle`` asks the guard ``create_job`` runs, on the same
+    stripped prompt and in the profile's home, so ``POST /reminders`` and the
+    reminder tool answer 400 for a prompt the create would refuse on every try."""
+    # cron/jobs.py:1744-1749: the create strips the prompt and runs the guard without a script.
+    assert hermes.lines(JOBS, 1744, 1749) == (
+        "    prompt_text = _coerce_job_text(prompt).strip()\n"
+        "    if not prompt_text and not f[\"script\"] and not normalized_skills:\n"
+        "        raise ValueError(EMPTY_PAYLOAD_ERROR)\n"
+        "    # Reject gateway-lifecycle commands (respawn loops) here, not just in the CLI: covers the tool.\n"
+        "    from cron.lifecycle_guard import check_gateway_lifecycle\n"
+        "    check_gateway_lifecycle(prompt_text, f[\"script\"])"
+    )
+    assert _arguments(hermes.function(LIFECYCLE_GUARD, "check_gateway_lifecycle")) == ["prompt", "script"]
+    # cron/lifecycle_guard.py:23: a refusal is a ValueError.
+    assert hermes.lines(LIFECYCLE_GUARD, 23, 23) == "class GatewayLifecycleBlocked(ValueError):"
+    # tools/cronjob_tools.py:905-906: cronjob() turns the refusal into an error answer, never a job.
+    assert hermes.lines(CRONJOB, 905, 906) == "    except Exception as e:\n        return tool_error(str(e), success=False)"
+
+
+def test_the_gateway_lifecycle_guard_refuses_prose_and_depends_on_the_active_profile(hermes: PinnedSource) -> None:
+    """Why the check runs before a create, and inside the profile's home."""
+    # cron/lifecycle_guard.py:59: "Remind me to kill time before the Hermes gateway meeting" matches.
+    assert hermes.lines(LIFECYCLE_GUARD, 59, 59) == '    r"|(?:\\bp?kill\\b[^\\n]*\\bhermes\\b[^\\n]*\\bgateway)"'
+    # cron/lifecycle_guard.py:217-219: `hermes -p <name> gateway restart` is refused only for the
+    # profile the guard runs as, which it reads from the active Hermes home.
+    assert hermes.lines(LIFECYCLE_GUARD, 217, 219) == (
+        "        from hermes_cli.profiles import get_active_profile_name\n"
+        "\n"
+        "        return get_active_profile_name() or None"
+    )
