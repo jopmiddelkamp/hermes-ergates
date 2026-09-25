@@ -21,3 +21,11 @@ include = ["ergates*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["ergates"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

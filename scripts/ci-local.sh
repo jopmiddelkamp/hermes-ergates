@@ -7,7 +7,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-JOBS=(lint mobile)
+JOBS=(lint mobile integration)
 
 # The workflow files (actionlint) and this script (bash -n).
 job_lint() {
@@ -26,6 +26,14 @@ job_mobile() {
   npm run typecheck
   npm run test:coverage
   npm run depcruise
+}
+
+# The Global Constraints test command, plus the coverage gate.
+UV_TEST=(uv run --python 3.11 --with pytest --with pytest-cov --with pyyaml)
+
+job_integration() {
+  cd "$ROOT/integrations/ergates"
+  "${UV_TEST[@]}" pytest --cov --cov-fail-under=90
 }
 
 main() {
