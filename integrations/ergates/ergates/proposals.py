@@ -10,14 +10,14 @@ and session context are backend-owned and are attached by the tool handler
 :class:`ProposalService` keeps one receipt per proposal in the control store:
 the proposal hash, the reserved profile name, ``expires_at``, the source
 session id and the status of each provisioning step -- never the briefing or
-the description (docs/04 sections 4 and 8). States (C3 ``ProposalReceipt``)::
+the description (docs/04 sections 4 and 8). States (the ``ProposalReceipt`` of the HTTP API)::
 
     proposed --accept--> accepted --every step done + complete()--> complete
     proposed --reject--> rejected
     proposed past expires_at: read as "expired"; accept answers 410
 
-The app performs the provisioning steps and reports each one (roadmap
-decision D4); the server verifies the profile and the plugin before it marks
+The app performs the provisioning steps and reports each one (ADR-032);
+the server verifies the profile and the plugin before it marks
 the proposal complete.
 """
 
@@ -68,8 +68,8 @@ EXPIRED = "expired"
 PROVISION_STEPS: tuple[str, ...] = ("profile_created", "plugin_enabled", "configured", "bot_chat", "briefing")
 STEP_STATUSES = frozenset({"done", "uncertain", "failed"})
 
-# C3 error codes and their HTTP statuses. The template loader (roadmap contract
-# C3) raises ``unknown_template``; every code has its one home here.
+# The error codes of the HTTP API and their statuses. The template loader
+# raises ``unknown_template``; every code has its one home here.
 ERROR_HTTP_STATUS: Dict[str, int] = {
     "invalid": 400,
     "not_found": 404,
@@ -86,7 +86,7 @@ _REQUIRED_STRING_FIELDS = ("name", "title", "role", "template_id", "provider", "
 
 
 class ProposalError(ValueError):
-    """A proposal request that cannot be served. ``code`` and ``http_status`` follow C3.
+    """A proposal request that cannot be served. ``code`` and ``http_status`` are the HTTP answer.
 
     ``validate_proposal`` raises it with ``code="invalid"``; the tool handler
     turns it into an ``{"error": ...}`` result and never raises it into Hermes.
@@ -211,7 +211,7 @@ def _next_step(status: Dict[str, str]) -> Optional[str]:
 
 
 def _view(row: sqlite3.Row, status: Dict[str, str], now: float) -> dict:
-    """The C3 ``ProposalReceipt`` of a stored receipt, without ``template``."""
+    """The ``ProposalReceipt`` of a stored receipt, without ``template``."""
     state = row["state"]
     if state == PROPOSED_STATE and now > row["expires_at_epoch"]:
         state = EXPIRED
@@ -287,7 +287,7 @@ class ProposalService:
             raise ProposalError("the approved payload is not the recorded proposal", code="hash_mismatch")
 
     def accept(self, proposal_id: str, proposal: dict, *, profile_exists: Callable[[str], bool]) -> dict:
-        """Accept the proposal exactly as the agent proposed it (decision D10: no edits).
+        """Accept the proposal exactly as the agent proposed it: accept takes no edits.
 
         In order: an unknown id is ``not_found``; a payload that is not this
         proposal is ``hash_mismatch``; an accepted or complete proposal is

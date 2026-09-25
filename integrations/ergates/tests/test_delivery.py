@@ -103,7 +103,7 @@ def _event(store, event_id):
 # --- the request ------------------------------------------------------------
 
 
-def test_deep_link_has_the_c5_shape_with_encoded_values():
+def test_deep_link_has_the_app_shape_with_encoded_values():
     assert deep_link("session-1", "conn-1", "thijs") == "ergates://chat/session-1?connection=conn-1&profile=thijs"
     link = deep_link("sess/with slash", "conn with space", "name&with=chars")
     assert link.startswith("ergates://chat/sess%2Fwith%20slash?")
@@ -340,8 +340,8 @@ def test_a_push_scheduled_for_later_waits_until_it_is_due(attention, worker, pub
     assert publisher.sent[0]["event_id"] == event_id
 
 
-def test_bug4_a_push_enqueued_before_a_crash_is_sent_by_the_next_flush(attention, store, clock):
-    """Roadmap bug 4: the server dies after it enqueued the push but before
+def test_a_push_enqueued_before_a_crash_is_sent_by_the_next_flush(attention, store, clock):
+    """The server dies after it enqueued the push but before
     ntfy answered. The lease the dead worker took runs out, and
     the next flush sends the push."""
     event_id = _approval(attention)
@@ -386,8 +386,8 @@ def test_an_answered_approval_is_never_pushed(attention, worker, publisher, stor
     assert publisher.sent == []
 
 
-def test_bug5_giving_up_never_changes_the_event_state(attention, worker, publisher, store, clock):
-    """Roadmap bug 5: the give-up branch wrote state "failed" onto the event."""
+def test_giving_up_never_changes_the_event_state(attention, worker, publisher, store, clock):
+    """The give-up branch once wrote state "failed" onto the event."""
     event_id = _approval(attention)
     publisher.fail = ConnectionError("down")
     for _ in range(MAX_ATTEMPTS):
@@ -398,10 +398,10 @@ def test_bug5_giving_up_never_changes_the_event_state(attention, worker, publish
     assert _event(store, event_id)["state"] == "pending"
 
 
-def test_bug5_an_answer_during_the_last_failing_attempt_is_never_overwritten(attention, worker, publisher,
-                                                                            store, clock):
-    """Roadmap bug 5: the operator answered while the fifth push failed, and the
-    give-up overwrote "resolved" with "failed". Delivery now writes only the
+def test_an_answer_during_the_last_failing_attempt_is_never_overwritten(attention, worker, publisher,
+                                                                       store, clock):
+    """The operator answered while the fifth push failed, and the give-up once
+    overwrote "resolved" with "failed". Delivery now writes only the
     outbox row, and only while it still holds the lease on a due row."""
     event_id = _approval(attention)
     publisher.fail = ConnectionError("down")

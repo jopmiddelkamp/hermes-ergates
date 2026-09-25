@@ -167,7 +167,7 @@ Cron's default in-process polling interval is 60 seconds. Retain it for ordinary
 
 ## 9. Deployment contract (single VPS)
 
-The previous Compose sketch was removed because its port, network and Docker access did not support the stated flow. Produce and validate the runnable Compose file in P0 against this wiring contract; this table is not a claim of a completed deployment.
+`deploy/docker-compose.yml` implements this contract (ADR-035): `deploy/tests/test_static.py` checks it in CI, and `deploy/VERIFY.md` holds the live checks that must pass before it counts as a completed deployment; this table is not that claim.
 
 | Component | Required wiring |
 |---|---|

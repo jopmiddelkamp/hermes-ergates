@@ -1,4 +1,4 @@
-"""Roadmap D5: the boundary guard knows every name Hermes installs.
+"""The boundary guard knows every name Hermes installs.
 
 `tests/test_hermes_boundary.py` flags imports whose top-level name is in its
 HERMES_TOP_LEVEL. This test keeps that set equal to the pinned source: the

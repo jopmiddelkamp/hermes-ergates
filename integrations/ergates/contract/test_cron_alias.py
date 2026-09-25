@@ -1,8 +1,8 @@
 """The legacy tool-name alias the raw-cron gate relies on.
 
 `policy.py` blocks `cronjob_manage` with `action: create` and tells agents to
-use `ergates_create_reminder` instead (roadmap contract C6, `test_pre_tool_call.py`
-pins the gate mechanics themselves). That only closes the raw creation path
+use `ergates_create_reminder` instead (`test_pre_tool_call.py` pins the gate
+mechanics themselves). That only closes the raw creation path
 because Hermes canonicalizes a model's `cronjob` tool call to `cronjob_manage`
 *before* dispatch and *before* the `pre_tool_call` hook runs, on both of its
 call paths -- so a model that asks for the legacy name `cronjob` is blocked

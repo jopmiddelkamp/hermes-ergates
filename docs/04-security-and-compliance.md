@@ -78,7 +78,7 @@ An enabled email/payment/delete tool needs its own business-action approval gate
 | Gateway basic auth | Secret configuration on the server; password hash where supported; do not bake into images |
 | ntfy publication/subscription | Separate scoped tokens; server publisher and device subscriptions |
 | Mobile session | SecureStore-backed native cookie/token handling; no full authenticated URLs in logs |
-| Local draft key | Random per-install encryption key in secure storage; ciphertext in app-private storage |
+| Device blob key | Random per-install AES-256 key in SecureStore (`WHEN_UNLOCKED_THIS_DEVICE_ONLY` on iOS); it seals the whole device blob in AsyncStorage: connections, drafts, the outbox and unfinished agent setups (ADR-033) |
 
 Provision profiles with `mirror_credentials: false` and an approved role template; `profiles.create` defaults can otherwise copy launch credentials. Validate cloning/export options before offering them. A template must not silently carry secrets, personal memory or unrestricted connector grants.
 

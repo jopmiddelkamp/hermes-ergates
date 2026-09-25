@@ -205,15 +205,15 @@ def test_main_survives_a_malformed_root_config_and_still_prunes(tmp_path, capsys
     assert "unclosed" not in caplog.text
 
 
-def test_bug8_main_sweeps_the_shared_store_with_the_install_settings_from_a_profile_process(
+def test_main_sweeps_the_shared_store_with_the_install_settings_from_a_profile_process(
         tmp_path, capsys, monkeypatch, store):
-    """Roadmap bug 8: with HERMES_HOME=<root>/profiles/<name> the sweep opened the
+    """With HERMES_HOME=<root>/profiles/<name> the sweep once opened the
     profile's own journals. It sweeps the one store under the Hermes root, and it
     pushes with the install-wide settings in the root's config.yaml, not with
     whatever the profile's own config says. This also replaces the former
-    --profile coverage (roadmap bug 8, the other half): there is no --profile
-    any more, so the store opening under the Hermes root when the process runs
-    as a named profile is the whole of the remaining behavior, and
+    --profile coverage: there is no --profile any more, so the store opening
+    under the Hermes root when the process runs as a named profile is the whole
+    of the remaining behavior, and
     test_main_takes_no_credential_arguments_and_no_profile below shows --profile
     is refused outright."""
     monkeypatch.setitem(sys.modules, "hermes_constants", None)

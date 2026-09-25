@@ -17,12 +17,12 @@ describe('mapHttpError', () => {
 })
 
 describe('mapErgatesError', () => {
-  it('keeps the C3 code and the safe message of an Ergates error body', () => {
+  it('keeps the error code and the safe message of an Ergates error body', () => {
     const err = mapErgatesError(409, { error: { code: 'out_of_order', message: "'configured' cannot be reported before 'plugin_enabled' is done" } })
     expect(err).toMatchObject({ kind: 'unknown', status: 409, code: 'out_of_order', message: "'configured' cannot be reported before 'plugin_enabled' is done" })
     expect(mapErgatesError(404, { error: { code: 'not_found', message: 'no proposal' } })).toMatchObject({ kind: 'not_found', code: 'not_found' })
   })
-  it('maps an answer without a C3 body like any HTTP error', () => {
+  it('maps an answer without an Ergates error body like any HTTP error', () => {
     const err = mapErgatesError(401, { detail: 'Unauthorized' })
     expect(err).toMatchObject({ kind: 'unauthorized', status: 401 })
     expect(err.code).toBeUndefined()

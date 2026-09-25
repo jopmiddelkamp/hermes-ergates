@@ -1,4 +1,4 @@
-"""Roadmap D6 and C6: the Ergates tool gate inside Hermes's own hook dispatcher.
+"""The Ergates tool gate inside Hermes's own hook dispatcher.
 
 A plugin manager scoped to a profile's home loads the plugin the way that
 profile's gateway does, and ``invoke_hook("pre_tool_call", ...)`` is the call
@@ -64,7 +64,7 @@ def test_a_profile_is_blocked_while_it_is_provisioned_and_free_once_complete(gat
     assert gate("hugo", "terminal", {}) == []
 
 
-def test_review_focus_3_hermes_gets_a_block_when_the_gate_check_raises(gate, monkeypatch):
+def test_hermes_gets_a_block_when_the_gate_check_raises(gate, monkeypatch):
     """Hermes skips a callback that raises and runs the tool (fail open). The
     Ergates callback never raises: a failed check reaches Hermes as a block."""
     gate("ivo", "terminal", {})  # loads the plugin into this profile's manager
@@ -81,7 +81,7 @@ def test_review_focus_3_hermes_gets_a_block_when_the_gate_check_raises(gate, mon
     assert gate("ivo", "terminal", {}) == [{"action": "block", "message": BLOCK_UNVERIFIED}]
 
 
-def test_bug8_a_failed_profile_lookup_blocks_a_profile_being_provisioned(gate, root, monkeypatch):
+def test_a_failed_profile_lookup_blocks_a_profile_being_provisioned(gate, root, monkeypatch):
     """Hermes's ``profile_name`` answers "default" when its own lookup raises,
     and the default profile is always admitted. Read as given, a profile still
     being set up would run every tool; the gate blocks instead."""

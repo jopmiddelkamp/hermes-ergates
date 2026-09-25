@@ -40,8 +40,8 @@ def test_hermes_root_prefers_hermes_own_answer(with_hermes, monkeypatch):
     assert hermes_root() == Path("/srv/hermes")
 
 
-def test_bug8_a_profile_home_maps_to_the_shared_hermes_root(without_hermes, monkeypatch):
-    """Roadmap bug 8: `tool.hermes_home()` returned HERMES_HOME itself, so a named
+def test_a_profile_home_maps_to_the_shared_hermes_root(without_hermes, monkeypatch):
+    """`tool.hermes_home()` once returned HERMES_HOME itself, so a named
     profile (HERMES_HOME=<root>/profiles/<name>) kept its own journals and every
     profile saw different state. The store belongs to the root all profiles share."""
     monkeypatch.setenv("HERMES_HOME", "/srv/hermes/profiles/thijs")

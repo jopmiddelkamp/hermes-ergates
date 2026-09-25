@@ -3,7 +3,7 @@
 ``<hermes root>/ergates/control.sqlite3`` (see :mod:`ergates.paths`) holds the
 reminder and proposal receipts, the attention events, their push outbox and
 the attention preferences of every profile and every process of one Hermes
-install (roadmap decision D2). Hermes's own databases are never opened here.
+install (ADR-030). Hermes's own databases are never opened here.
 
 Every write runs inside :meth:`ControlStore.transaction`, which starts with
 ``BEGIN IMMEDIATE``: the write lock is taken before the first read, so two

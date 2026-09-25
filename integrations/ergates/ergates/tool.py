@@ -11,7 +11,7 @@ Every handler writes to the one control store of the Hermes install,
 profile itself is read from Hermes at every call
 (:func:`~ergates.hermes_adapter.current_profile`), never once at
 registration: a multiplexed gateway serves several profiles from one
-process (roadmap bug 8).
+process.
 """
 
 from __future__ import annotations
@@ -177,7 +177,7 @@ REMINDER_SCHEMA: Dict[str, Any] = {
                 "type": "string",
                 "description": (
                     "The user's IANA time zone, for example 'Europe/Amsterdam'; 'UTC' when unknown. "
-                    "Advisory: Hermes runs every job in the server's time zone."
+                    "Advisory: Hermes runs every job in its own configured time zone."
                 ),
             },
             "label": {
@@ -250,7 +250,8 @@ def create_reminder_handler(
     return json.dumps({"status": outcome.status, "receipt": outcome.receipt})
 
 
-# Decision D9: by default only routine (cron) turns push when they finish.
+# By default only routine (cron) turns push when they finish: `post_llm_call`
+# fires for every finished turn, and a push per chat reply would be noise.
 DEFAULT_COMPLETED_PLATFORMS = frozenset({"cron"})
 
 
@@ -451,7 +452,7 @@ def register(ctx: Any) -> None:
 
     @policy.guarded
     def handle_pre_tool_call(**kwargs: Any) -> Optional[dict]:
-        # Contract C6. Any exception, from here or from the store, is a block (policy.guarded).
+        # Any exception, from here or from the store, is a block (policy.guarded).
         profile = hermes_adapter.current_profile(ctx)
         return policy.decide(
             kwargs.get("tool_name") or "", kwargs.get("args"),

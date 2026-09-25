@@ -1,4 +1,4 @@
-"""The Ergates tool gate: which agent tool calls are blocked (roadmap contract C6, decision D6).
+"""The Ergates tool gate: which agent tool calls are blocked.
 
 ``tool.register`` wires :func:`decide` into Hermes's ``pre_tool_call`` hook,
 wrapped in :func:`guarded`. Hermes vetoes a tool call when a callback returns

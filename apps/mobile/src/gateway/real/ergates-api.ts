@@ -1,8 +1,8 @@
 /**
- * The Ergates integration routes (roadmap contracts C3 and C4) over the
- * connection's own `HttpClient`, so they carry its auth: the session-token
- * header in loopback token mode, the cookie in gated mode. Hermes mounts them
- * under `/api/plugins/ergates` from the plugin's `dashboard/manifest.json`.
+ * The Ergates integration routes over the connection's own `HttpClient`, so
+ * they carry its auth: the session-token header in loopback token mode, the
+ * cookie in gated mode. Hermes mounts them under `/api/plugins/ergates` from
+ * the plugin's `dashboard/manifest.json`.
  * Never logs a body: a reminder carries its prompt and an accept the briefing.
  */
 
@@ -28,7 +28,7 @@ const REMINDER_STATUS: Partial<Record<number, T.ReminderOutcome['status']>> = { 
  * without Home, which is what restores it for the other routes.
  */
 export function createErgatesApi(http: HttpClient, ready: () => Promise<unknown> = async () => undefined): ErgatesApi {
-  /** A 2xx JSON object, or the C3 error as a `GatewayError`. */
+  /** A 2xx JSON object, or the Ergates error as a `GatewayError`. */
   const call = async (method: string, path: string, body?: unknown): Promise<Record<string, unknown>> => {
     await ready()
     const answer = await http.exchange(method, `${ERGATES_BASE}${path}`, body)

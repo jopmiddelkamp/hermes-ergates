@@ -1,6 +1,6 @@
 /**
  * An agent the operator accepted whose setup has not finished (docs/11
- * section 4.1, roadmap decision D4). Device-owned, like an outbox item: the
+ * section 4.1, ADR-032). Device-owned, like an outbox item: the
  * user's pending action, kept so that a killed app resumes it. `proposal` is
  * the tool result exactly as it arrived: the accept call must send it back
  * unchanged (the server compares hashes), and the briefing step needs its

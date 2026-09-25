@@ -1,4 +1,4 @@
-"""The dashboard/ folder: what `hermes serve` reads to mount the Ergates router (roadmap D3).
+"""The dashboard/ folder: what `hermes serve` reads to mount the Ergates router (ADR-031).
 
 ``contract/live/test_dashboard_api.py`` proves the mount inside Hermes's own
 server; this test keeps the files consistent without Hermes.

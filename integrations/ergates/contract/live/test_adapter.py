@@ -1,4 +1,4 @@
-"""Roadmap C2 and D7: ``ergates/hermes_adapter.py`` against the pinned Hermes itself.
+"""``ergates/hermes_adapter.py`` against the pinned Hermes itself.
 
 Every test runs inside the temporary Hermes root that ``conftest.py`` makes.
 """
@@ -51,7 +51,7 @@ def test_profile_exists_asks_hermes(make_profile):
     assert profile_exists("../hermes") is False
 
 
-def test_bug8_current_profile_follows_the_home_hermes_runs_in(root, make_profile):
+def test_current_profile_follows_the_home_hermes_runs_in(root, make_profile):
     """Hermes's own PluginContext: the name changes with the active home, per read."""
     from hermes_cli.plugins import PluginContext
     from hermes_constants import reset_hermes_home_override, set_hermes_home_override
@@ -85,7 +85,7 @@ def test_enable_plugin_links_the_plugin_and_keeps_the_profile_config(root, make_
     assert plugin_enabled("pim") is True
 
 
-def test_d7_a_plugin_manager_for_the_profile_loads_ergates_after_enable(root, make_profile):
+def test_a_plugin_manager_for_the_profile_loads_ergates_after_enable(root, make_profile):
     """Hermes's own loader, scoped to the profile's home, finds and loads the plugin."""
     from hermes_cli.plugins import PluginManager
 
@@ -225,7 +225,7 @@ def test_check_gateway_lifecycle_refuses_exactly_what_a_hermes_cron_create_refus
         assert cron.create_job("ruth", schedule="every 2h", prompt=prompt, name=f"[bot:ruth] {prompt[:20]}")["id"]
 
 
-def test_review_focus_1_the_reminder_service_on_hermes_cron_makes_one_job(root, make_profile):
+def test_two_identical_requests_at_once_make_one_hermes_cron_job(root, make_profile):
     """Two identical requests at the same moment, through Hermes's real cron."""
     make_profile("sam")
     service = ReminderService(ControlStore(store_path(root)), HermesCron())

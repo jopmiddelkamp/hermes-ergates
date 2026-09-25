@@ -1,4 +1,4 @@
-"""Tests for ergates.policy: the pre_tool_call gate (roadmap contract C6)."""
+"""Tests for ergates.policy: the pre_tool_call gate."""
 
 import logging
 
@@ -72,7 +72,7 @@ def test_rules_1_and_2_come_before_rule_3():
     assert decide("cronjob_manage", {"action": "list"}, **revoked)["message"] == BLOCK_REVOKED
 
 
-def test_review_focus_3_a_gate_that_raises_blocks_the_tool(caplog):
+def test_a_gate_that_raises_blocks_the_tool(caplog):
     """Hermes runs the tool when a pre_tool_call callback raises (it fails OPEN), so
     the gate must turn its own failure into a block."""
 

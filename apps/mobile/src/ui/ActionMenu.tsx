@@ -77,7 +77,7 @@ export function ActionMenu({ visible, anchor, items, onClose }: ActionMenuProps)
               <Pressable
                 key={item.key}
                 // The item decides whether the menu closes: submenu items only
-                // change level, and terminal items close themselves (C1).
+                // change level, and terminal items close themselves.
                 onPress={item.onPress}
                 accessibilityRole="button"
                 accessibilityLabel={item.label}

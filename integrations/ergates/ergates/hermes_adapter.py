@@ -1,4 +1,4 @@
-"""The one module of the ergates package that imports Hermes (roadmap decision D5).
+"""The one module of the ergates package that imports Hermes.
 
 Every other module reaches Hermes through the functions here, so a Hermes
 upgrade has one file to check in this package (plus ``dashboard/api.py``).
@@ -71,7 +71,7 @@ def configured_timezone() -> tzinfo | None:
 def current_profile(ctx: object) -> str:
     """The profile a hook or tool call runs in: ``ctx.profile_name``, read at this call.
 
-    Roadmap bug 8: Hermes derives ``PluginContext.profile_name`` from the
+    Hermes derives ``PluginContext.profile_name`` from the
     active Hermes home every time it is read, and a multiplexed gateway
     switches that home per session with a context-local override. A name
     read once in ``register()`` would pin every later call to the profile
@@ -265,7 +265,7 @@ class HermesCron:
 
 
 def enable_plugin(profile: str) -> None:
-    """Make Hermes load this plugin in ``profile`` (roadmap decision D7).
+    """Make Hermes load this plugin in ``profile``.
 
     Hermes discovers user plugins in the ACTIVE home's ``plugins/`` folder and
     loads one only when that home's ``config.yaml`` lists it in

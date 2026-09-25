@@ -20,7 +20,7 @@ const TAG_RE = /^\[bot:([a-z0-9][a-z0-9_-]*)\]\s*/i
  */
 const REMINDER_TAG_RE = / · [0-9a-f]{8}$/
 
-/** The reminder label the server accepts (roadmap contract C3, `LABEL_MAX_LEN`). */
+/** The reminder label the server accepts (its `LABEL_MAX_LEN`). */
 export const ROUTINE_NAME_MAX_LEN = 64
 
 export function displayName(job: CronJob, profile: string): string {

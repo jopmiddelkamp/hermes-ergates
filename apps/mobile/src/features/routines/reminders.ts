@@ -1,8 +1,8 @@
 /**
- * New routines go through the Ergates reminder route (docs/11 section 4.3,
- * roadmap contract C3), never raw `cron.manage add`: the server keeps a
- * receipt per request id, so a resend of the same request answers with the
- * same receipt instead of a second cron job.
+ * New routines go through the Ergates reminder route (docs/11 section 4.3),
+ * never raw `cron.manage add`: the server keeps a receipt per request id, so
+ * a resend of the same request answers with the same receipt instead of a
+ * second cron job.
  *
  * Rules:
  *  - one request id per reminder the user tries to create; the same reminder

@@ -124,8 +124,8 @@ def test_quiet_until_handles_a_window_inside_one_day(utc):
 # --- approvals --------------------------------------------------------------
 
 
-def test_bug4_an_approval_and_its_push_commit_together(attention, store, clock):
-    """Roadmap bug 4: the first push was saved with next_retry=None, so a crash
+def test_an_approval_and_its_push_commit_together(attention, store, clock):
+    """The first push was once saved with next_retry=None, so a crash
     during the first send lost it. The outbox row now commits with the event,
     due at once, before anything is sent."""
     event_id = _approval(attention)
@@ -238,7 +238,7 @@ def test_a_response_with_no_match_changes_nothing(attention, store):
     assert _event(store, event_id)["state"] == "pending"
 
 
-# --- completions (decision D9) ----------------------------------------------
+# --- completions ------------------------------------------------------------
 
 
 def test_a_finished_routine_turn_is_an_event_with_a_push(attention, store, clock):
@@ -305,7 +305,7 @@ def test_a_muted_profile_gets_no_completion_push(attention, store):
     assert _outbox(store, event_id) is None
 
 
-# --- preferences (C3 AttentionPrefs) ----------------------------------------
+# --- preferences (AttentionPrefs) -------------------------------------------
 
 
 def test_prefs_default_to_unmuted_without_quiet_hours(attention):

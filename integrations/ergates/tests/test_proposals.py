@@ -235,7 +235,7 @@ def _code(caught):
     return caught.value.code, caught.value.http_status
 
 
-def test_record_returns_the_c3_receipt_without_a_template(service):
+def test_record_returns_the_receipt_without_a_template(service):
     proposal = _proposal()
 
     receipt = service.record(proposal)
@@ -331,7 +331,7 @@ def test_accept_is_idempotent(service):
 
 
 def test_accept_with_a_changed_payload_is_a_hash_mismatch(service):
-    """D10: the operator accepts the proposal exactly as the agent proposed it."""
+    """The operator accepts the proposal exactly as the agent proposed it: no edits."""
     proposal = _recorded(service)
     edited = json.loads(json.dumps(proposal))
     edited["agent"]["role"] = "Administrator"
@@ -537,7 +537,7 @@ def test_complete_needs_every_step_done(service):
 
 
 def test_complete_verifies_the_profile_and_the_plugin(service):
-    """D4: the server marks the proposal complete only after it checks both."""
+    """The server marks the proposal complete only after it checks both."""
     proposal_id = _accepted(service)
     _all_steps_done(service, proposal_id)
 

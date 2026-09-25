@@ -384,7 +384,7 @@ def test_on_approval_response_ignores_a_coalesced_follower_response(attention, s
     assert rows(store, "attention_events")[0]["state"] == "pending"
 
 
-# --- finished turns (decision D9) --------------------------------------------
+# --- finished turns ---------------------------------------------------------
 
 
 def test_completed_platforms_default_to_routines_only():
@@ -450,8 +450,8 @@ def profile_process(tmp_path, monkeypatch):
     return profile_home
 
 
-def test_bug8_register_opens_the_store_under_the_hermes_root_not_the_profile_home(tmp_path, profile_process):
-    """Roadmap bug 8: register() put its journals under $HERMES_HOME, which is the
+def test_register_opens_the_store_under_the_hermes_root_not_the_profile_home(tmp_path, profile_process):
+    """register() once put its journals under $HERMES_HOME, which is the
     profile's own home in a named profile. Every profile now shares one store."""
     ctx = _RecordingCtx()
 
@@ -518,7 +518,7 @@ def test_register_reads_the_completed_platforms_setting(tmp_path, profile_proces
     assert [row["session_id"] for row in rows(store, "attention_events")] == ["chat-1"]
 
 
-# --- per-call profile (roadmap bug 8) ------------------------------------------
+# --- per-call profile -------------------------------------------------------
 
 
 class _MultiplexedCtx(_RecordingCtx):
@@ -541,8 +541,8 @@ class _ProfilelessCtx(_RecordingCtx):
         raise RuntimeError("no active profile in this context")
 
 
-def test_bug8_each_hook_call_records_the_profile_it_runs_in(tmp_path, profile_process):
-    """Roadmap bug 8: the profile was fixed by the process's HERMES_HOME. Hermes
+def test_each_hook_call_records_the_profile_it_runs_in(tmp_path, profile_process):
+    """The profile was once fixed by the process's HERMES_HOME. Hermes
     reports it per call, and a multiplexed gateway switches it per session."""
     ctx = _MultiplexedCtx("concierge", "thijs")
     tool.register(ctx)
@@ -554,7 +554,7 @@ def test_bug8_each_hook_call_records_the_profile_it_runs_in(tmp_path, profile_pr
     assert [row["profile"] for row in rows(store, "attention_events")] == ["concierge", "thijs"]
 
 
-# --- the tool gate (contract C6) --------------------------------------------------
+# --- the tool gate ----------------------------------------------------------
 
 
 def _gate(ctx):
@@ -581,7 +581,7 @@ def test_the_gate_blocks_every_tool_of_a_profile_still_being_provisioned(tmp_pat
     assert _gate(_MultiplexedCtx("concierge"))(tool_name="terminal", args={}) is None
 
 
-def test_review_focus_3_a_gate_whose_check_raises_blocks_the_tool(profile_process, monkeypatch):
+def test_a_gate_whose_check_raises_blocks_the_tool(profile_process, monkeypatch):
     """Hermes runs the tool when a pre_tool_call callback raises. The registered
     callback itself must never raise: a failed check is a block."""
     def broken(*args, **kwargs):
@@ -669,7 +669,7 @@ class _DefaultCtx(_RecordingCtx):
     profile_name = "default"
 
 
-def test_bug8_the_gate_blocks_when_default_is_hermes_fallback_for_a_failed_lookup(profile_process, monkeypatch):
+def test_the_gate_blocks_when_default_is_hermes_fallback_for_a_failed_lookup(profile_process, monkeypatch):
     """Hermes's profile_name answers "default" when its own lookup raises. The
     default profile is always admitted, so a profile still being set up would
     run every tool. The adapter asks the lookup itself, and the gate blocks."""

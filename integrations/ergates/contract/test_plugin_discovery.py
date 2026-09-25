@@ -1,4 +1,4 @@
-"""Roadmap D7: the plugin is installed and enabled per profile.
+"""The plugin is installed and enabled per profile.
 
 Hermes reads user plugins from the ACTIVE home's `plugins/` folder and loads
 one only when that home's config.yaml lists it in `plugins.enabled`. A profile
@@ -15,7 +15,7 @@ CONFIG = "hermes_cli/config.py"
 
 
 def test_user_plugins_are_read_from_the_active_home(hermes: PinnedSource) -> None:
-    # hermes_cli/plugins_discovery.py:151-153 (the roadmap cites 150-152)
+    # hermes_cli/plugins_discovery.py:151-153
     assert hermes.lines(DISCOVERY, 151, 153) == (
         '    user_dir = get_hermes_home() / "plugins"\n'
         '    logger.debug("Scanning user plugins: %s", user_dir)\n'

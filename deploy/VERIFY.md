@@ -97,11 +97,14 @@ names on `internal` must still resolve and connect directly, proxy or not:
 
 ```bash
 docker compose exec -u hermes hermes-serve curl -sS --connect-timeout 3 -o /dev/null -w '%{http_code}\n' http://egress-proxy:3128
+docker compose exec -u hermes hermes-gateway curl -sS --connect-timeout 3 -o /dev/null -w '%{http_code}\n' http://hermes-serve:9119/
+docker compose exec -u hermes hermes-gateway curl -sS --connect-timeout 3 -o /dev/null -w '%{http_code}\n' http://ntfy:80/
 ```
 
-Expected: a real HTTP status (Squid's own `403` for a non-CONNECT request
-counts), not a resolution or connection failure -- the isolation removes
-the path to the host, not to sibling services.
+Expected: a real HTTP status from each (Squid's own `403` for a non-CONNECT
+request counts, and so does any answer of `hermes serve`'s auth gate), not a
+resolution or connection failure -- the isolation removes the path to the
+host, not to sibling services.
 
 Result:
 
@@ -219,9 +222,11 @@ Result:
 ### V9 A push reaches a locked iPhone
 
 Before subscribing the phone, confirm its ntfy app's server URL is typed
-exactly as `NTFY_BASE_URL` in `.env` (`http://<TAILSCALE_IP>:<NTFY_PORT>`)
--- a MagicDNS name works fine for browsing but silently breaks the iOS
-wake-up, which hashes the base URL Hermes was configured with into every
+exactly as ntfy's `NTFY_BASE_URL`, which `docker-compose.yml` builds from
+`TAILSCALE_IP` and `NTFY_PORT` in `.env` as
+`http://<TAILSCALE_IP>:<NTFY_PORT>`; `docker compose config | grep NTFY_BASE_URL`
+prints it. A MagicDNS name works fine for browsing but silently breaks the
+iOS wake-up, which hashes the base URL ntfy was configured with into every
 poll request.
 
 With Tailscale connected on the phone, the ntfy app subscribed to
@@ -347,9 +352,9 @@ Result:
 
 ### V16 A routine from the app, saved twice
 
-Create a routine; while the answer is uncertain (turn the phone's network
-off right after Save), tap Save again once the network is back (the button
-now reads "Try again", not "Save" -- tap that).
+Create a routine and turn the phone's network off right after Save, so the
+answer is uncertain. Once the network is back, Save again: the button now
+reads "Try again", not "Save", so tap that.
 
 Expected: the Routines list, which reads Hermes cron itself, shows exactly
 one routine, not two. The list hides the ` · <8 hex>` tag the server adds
@@ -410,11 +415,12 @@ Result:
 
 Push this branch to a real Git remote once and open the Actions run for it.
 
-Expected: every job in `.github/workflows/ci.yml` -- `lint`, `mobile`
-(including its ESLint step), `integration`, `contract` (including
-`contract/live`, within its own timeout), `deploy` -- finishes green. A
-local `scripts/ci-local.sh` run is not a substitute for this: it reuses a
-warm `node_modules` and does not prove a clean-runner install.
+Expected: every job in `.github/workflows/ci.yml` -- `workflow-lint` (the
+`lint` job of `scripts/ci-local.sh`), `mobile` (including its ESLint step),
+`integration`, `contract` (including `contract/live`, within its own
+timeout), `deploy` -- finishes green. A local `scripts/ci-local.sh` run is
+not a substitute for this: it reuses a warm `node_modules` and does not
+prove a clean-runner install.
 
 Result:
 

@@ -32,7 +32,7 @@ def test_templates_live_under_the_hermes_root(tmp_path):
     assert templates_dir(tmp_path) == tmp_path / "ergates" / "templates"
 
 
-def test_a_template_file_is_read_with_exactly_the_c3_fields(tmp_path):
+def test_a_template_file_is_read_with_exactly_the_documented_fields(tmp_path):
     directory = templates_dir(tmp_path)
     _write(directory, "bookkeeper-readonly", {**TEMPLATE, "notes": "not part of the contract"})
 

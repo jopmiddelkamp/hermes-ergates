@@ -1,12 +1,12 @@
 /**
- * The push deep link (roadmap contract C5, docs/11 section 4.2).
+ * The push deep link (docs/11 section 4.2).
  *
  * The server's ntfy `Click` URL is
  * `ergates://chat/<session_id>?connection=<connection_id>&profile=<profile>`
  * (integrations/ergates/ergates/delivery.py `deep_link`: the session is
  * percent-encoded in the path, the query is form-encoded). Expo Router would
  * match `chat/<session_id>` to `app/chat/[profile]` and open a chat for a
- * profile named like the session (roadmap bug 7), so `app/+native-intent.tsx`
+ * profile named like the session, so `app/+native-intent.tsx`
  * rewrites the link to `/open`, and `app/open.tsx` picks the connection and
  * the chat. The session id is kept for the record only: the app opens the
  * profile's Bot Chat, which shows its pending requests itself.

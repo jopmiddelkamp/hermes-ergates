@@ -1,4 +1,4 @@
-"""Roadmap D3, D4 and C3: the Ergates routes inside Hermes's own dashboard server.
+"""The Ergates routes inside Hermes's own dashboard server.
 
 ``hermes_cli.web_server`` is imported the way ``hermes serve`` loads it, with
 this plugin installed and enabled in the temporary root, so these requests go
@@ -187,7 +187,7 @@ def test_a_deeply_nested_body_is_400_not_a_500(web):
     assert asyncio.run(module._body(request)) is None
 
 
-def test_d4_provisioning_through_hermes_serve_ends_complete(web, token_headers, root):
+def test_provisioning_through_hermes_serve_ends_complete(web, token_headers, root):
     """The app's steps with the server's only step in the middle: the proposal is
     complete only after Hermes itself reports the profile and the plugin."""
     directory = templates_dir(root)
@@ -274,7 +274,7 @@ def _operations_with(root, **adapter):
 
 def test_a_failure_the_route_cannot_name_is_500_internal_and_logs_the_class_only(web, token_headers, monkeypatch,
                                                                                  caplog):
-    """Anything a route does not map answers the C3 error body, not Starlette's plain text."""
+    """Anything a route does not map answers the Ergates error body, not Starlette's plain text."""
     module = _module()
 
     def broken(ops):

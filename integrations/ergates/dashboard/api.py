@@ -1,4 +1,4 @@
-"""The Ergates HTTP operations as a Hermes dashboard plugin router (roadmap D3, contract C3).
+"""The Ergates HTTP operations as a Hermes dashboard plugin router (ADR-031).
 
 ``hermes serve`` imports this file by path, because ``manifest.json`` next to
 it names it as the plugin's ``api``, and mounts ``router`` under
@@ -20,8 +20,9 @@ mounting.
 
 Hermes imports this file under its own module name, outside any package, so
 the plugin folder is added to ``sys.path`` to import the ``ergates`` package.
-Decision D5 allows Hermes imports here; this file needs none, because every
-Hermes call goes through ``ergates.hermes_adapter``.
+The Hermes boundary (``tests/test_hermes_boundary.py``) allows Hermes
+imports here; this file needs none, because every Hermes call goes through
+``ergates.hermes_adapter``.
 """
 
 import json
@@ -74,7 +75,7 @@ def operations() -> Operations:
 
 
 def _call(method: Callable[[Operations], Reply]) -> Reply:
-    """Run ``method`` on the process's ``Operations``; always a C3 ``Reply``.
+    """Run ``method`` on the process's ``Operations``; always a ``Reply``.
 
     A store that cannot be opened is 503 ``store_unavailable``. Any other
     exception -- one an ``Operations`` method does not map, such as a Hermes

@@ -153,7 +153,7 @@ export function proposalView({ proposal, receipt, receiptError, step, outcome, b
   }
   if (receiptError) {
     if (isGatewayError(receiptError) && receiptError.kind === 'not_found') {
-      // With a C3 code the server pruned the receipt; without one the route itself is missing.
+      // With an Ergates error code the server pruned the receipt; without one the route itself is missing.
       return receiptError.code === 'not_found'
         ? { hidden: true, status: 'closed', text: null, actions: [] }
         : view('closed', 'Ergates is not installed on this gateway, so this proposal cannot be answered here.')
@@ -185,7 +185,7 @@ export function shouldForgetRun(receipt: ProposalReceipt | undefined, receiptErr
   if (receipt) {
     return SETTLED_STATES.has(receipt.state)
   }
-  // Matches the `hidden` branch above: a C3 `not_found` means the server
-  // pruned the receipt; a bare 404 means the route itself is missing.
+  // Matches the `hidden` branch above: an Ergates `not_found` code means the
+  // server pruned the receipt; a bare 404 means the route itself is missing.
   return isGatewayError(receiptError) && receiptError.kind === 'not_found' && receiptError.code === 'not_found'
 }

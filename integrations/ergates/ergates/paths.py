@@ -1,10 +1,10 @@
 """Where the Ergates control store lives on disk.
 
 One store serves every profile and every process of one Hermes install
-(roadmap decision D2): ``<hermes root>/ergates/control.sqlite3``. The Hermes
+(ADR-030): ``<hermes root>/ergates/control.sqlite3``. The Hermes
 root is not the ``HERMES_HOME`` of the running process: a named profile runs
 with ``HERMES_HOME=<root>/profiles/<name>``, and a store opened there would
-split the integration's state per profile (roadmap bug 8).
+split the integration's state per profile.
 """
 
 from __future__ import annotations
@@ -44,5 +44,5 @@ def store_path(root: Path) -> Path:
 
 
 def templates_dir(root: Path) -> Path:
-    """``<root>/ergates/templates``: the proposal templates of a Hermes install (roadmap contract C3)."""
+    """``<root>/ergates/templates``: the proposal templates of a Hermes install."""
     return Path(root) / STORE_DIR_NAME / TEMPLATES_DIR_NAME

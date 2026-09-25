@@ -1,4 +1,4 @@
-"""Roadmap D3: Ergates operations are routes of a dashboard plugin API router.
+"""Ergates operations are routes of a dashboard plugin API router (ADR-031).
 
 Pins that `hermes serve` imports `<plugin>/dashboard/<api>` named by
 `dashboard/manifest.json`, mounts its `router` under `/api/plugins/<name>`,

@@ -1,6 +1,5 @@
 /**
- * Provisioning an accepted agent (docs/11 section 4.1, roadmap decision D4,
- * ADR-032). The app runs each step through the public Hermes RPCs it already
+ * Provisioning an accepted agent (docs/11 section 4.1, ADR-032). The app runs each step through the public Hermes RPCs it already
  * uses and reports it to the server's receipt; the server enables the plugin
  * in the new profile and marks the proposal `complete` once it has checked it.
  *

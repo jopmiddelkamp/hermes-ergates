@@ -1,7 +1,7 @@
 /**
- * New routines go through the Ergates reminder route (docs/11 section 4.3,
- * roadmap contract C3): one request id per attempt, reused only for a
- * deliberate resend of the same reminder, and never an automatic retry.
+ * New routines go through the Ergates reminder route (docs/11 section 4.3):
+ * one request id per attempt, reused only for a deliberate resend of the same
+ * reminder, and never an automatic retry.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -95,7 +95,7 @@ describe('reminderResult', () => {
     const errors = [
       mapErgatesError(503, { error: { code: 'store_unavailable', message: 'the Ergates control store is unavailable' } }),
       mapErgatesError(500, { error: { code: 'internal', message: 'The request could not be completed.' } }),
-      // A proxy in front of the gateway answers without a C3 body.
+      // A proxy in front of the gateway answers without an Ergates error body.
       mapErgatesError(502, 'Bad Gateway')
     ]
     for (const err of errors) {

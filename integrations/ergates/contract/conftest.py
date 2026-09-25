@@ -4,7 +4,7 @@ The tests in this folder read the Hermes checkout named by HERMES_SOURCE as
 text and never import it; the tests in `live/` import it (see
 `live/conftest.py`). The checkout must be at HERMES_PIN with no local edits;
 `scripts/ci-local.sh contract` and the CI `contract` job prepare it. When a
-test here fails after a pin bump, re-check the roadmap decision it names
+test here fails after a pin bump, re-check the design decision it pins
 before changing the test.
 """
 

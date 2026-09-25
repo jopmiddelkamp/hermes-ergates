@@ -1,8 +1,8 @@
 /**
  * An agent proposal from the chat (docs/11 section 4.1): what the agent
- * proposed, then Accept or Reject. Accept takes no edits (roadmap decision
- * D10). After Accept the card follows the setup step by step. What it says and
- * offers comes from `proposalView` (`@/features/agents`).
+ * proposed, then Accept or Reject. Accept takes no edits. After Accept the
+ * card follows the setup step by step. What it says and offers comes from
+ * `proposalView` (`@/features/agents`).
  */
 
 import React from 'react'

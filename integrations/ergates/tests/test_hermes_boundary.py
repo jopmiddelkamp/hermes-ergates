@@ -1,4 +1,4 @@
-"""Hermes boundary guard (roadmap decision D5).
+"""Hermes boundary guard.
 
 Only ``ergates/hermes_adapter.py`` and ``dashboard/api.py`` may import a Hermes
 module. Every other module reaches Hermes through them, so a Hermes upgrade has

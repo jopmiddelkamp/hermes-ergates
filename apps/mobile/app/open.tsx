@@ -1,5 +1,5 @@
 /**
- * Where a push deep link lands (roadmap contract C5): after the device store
+ * Where a push deep link lands: after the device store
  * has hydrated, a known connection becomes the primary one and the app opens
  * the profile's chat; an unknown connection goes to connection selection. The
  * chat itself authenticates and reads the current state of every request.

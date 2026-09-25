@@ -1,5 +1,5 @@
 /**
- * The push deep link (roadmap contract C5). The server sends
+ * The push deep link. The server sends
  * `ergates://chat/<session_id>?connection=<id>&profile=<name>`
  * (integrations/ergates/ergates/delivery.py `deep_link`); the app must open the
  * chat of `profile` on connection `id`, never a chat named after the session.
@@ -11,7 +11,7 @@ import { openTarget, rewriteDeepLink } from './deep-link'
 const connections = [{ id: 'conn-1' }, { id: 'conn-2' }]
 
 describe('rewriteDeepLink', () => {
-  it('bug 7: a push link opens the chat of its profile, not a chat named after its session', () => {
+  it('a push link opens the chat of its profile, not a chat named after its session', () => {
     // Before the rewrite, Expo Router matched `chat/<session_id>` to
     // `app/chat/[profile]` and opened a chat for a "profile" called session-1.
     const path = rewriteDeepLink('ergates://chat/session-1?connection=conn-1&profile=thijs')

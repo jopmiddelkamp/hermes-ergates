@@ -124,11 +124,11 @@ export interface FilesApi {
 }
 
 /**
- * The Ergates integration routes under `/api/plugins/ergates` (roadmap
- * contracts C3 and C4), behind the connection's own Hermes auth. A C3 error
- * rejects with `GatewayError` whose `code` is the C3 code (`invalid`,
- * `not_found`, `name_taken`, ...). `createReminder` resolves for 200, 201, 202
- * and 409 instead: each of those answers carries the receipt.
+ * The Ergates integration routes under `/api/plugins/ergates`, behind the
+ * connection's own Hermes auth. An Ergates error rejects with `GatewayError`
+ * whose `code` is the Ergates error code (`invalid`, `not_found`,
+ * `name_taken`, ...). `createReminder` resolves for 200, 201, 202 and 409
+ * instead: each of those answers carries the receipt.
  */
 export interface ErgatesApi {
   health(): Promise<T.ErgatesHealth>

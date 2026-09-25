@@ -1,13 +1,13 @@
 """Attention events and their push outbox: the server half of docs/11 section 4.2.
 
 An attention event is one row in ``attention_events``: an ``approval`` that
-waits for the operator, or a ``completion`` -- a finished routine turn
-(roadmap decision D9). Every event that should reach the phone gets its
-``attention_outbox`` row in the same transaction, so a process that dies
-right after recording the event still leaves the push for
-:class:`~ergates.delivery.DeliveryWorker` (roadmap bug 4). Delivery
-bookkeeping -- attempts, backoff, give-up -- lives on the outbox row only; an
-event's ``state`` changes only through resolution or expiry (roadmap bug 5).
+waits for the operator, or a ``completion`` -- a finished routine turn.
+Every event that should reach the phone gets its ``attention_outbox`` row in
+the same transaction, so a process that dies right after recording the event
+still leaves the push for :class:`~ergates.delivery.DeliveryWorker`. Delivery
+bookkeeping -- attempts, backoff, give-up -- lives on the outbox row only, so
+a failed push never overwrites an answer: an event's ``state`` changes only
+through resolution or expiry.
 A completion has nothing to answer, so it is recorded ``resolved`` at once
 and ages out on the seven-day rule.
 
@@ -62,7 +62,7 @@ _NO_PREFS = {"muted": False, "quiet_start": None, "quiet_end": None}
 
 
 class AttentionError(ValueError):
-    """Invalid attention input: C3 ``invalid`` (HTTP 400)."""
+    """Invalid attention input: error code ``invalid`` (HTTP 400)."""
 
     code = "invalid"
     http_status = 400
@@ -243,7 +243,7 @@ class AttentionService:
         return event_id
 
     def get_prefs(self, profile: str) -> dict:
-        """The effective ``AttentionPrefs`` (C3): the profile's row, else the ``"*"`` row, else defaults."""
+        """The effective ``AttentionPrefs``: the profile's row, else the ``"*"`` row, else defaults."""
         _check_profile(profile)
         with self._store.read() as conn:
             return {"profile": profile, **effective_prefs(conn, profile)}

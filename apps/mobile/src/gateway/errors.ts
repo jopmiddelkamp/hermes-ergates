@@ -16,7 +16,7 @@ export type GatewayErrorKind =
 
 export class GatewayError extends Error {
   readonly kind: GatewayErrorKind
-  /** A JSON-RPC or socket close code, or the C3 error code of an Ergates route (`invalid`, `not_found`, ...). */
+  /** A JSON-RPC or socket close code, or the error code of an Ergates route (`invalid`, `not_found`, ...). */
   readonly code?: number | string
   readonly status?: number
   readonly data?: unknown
@@ -72,10 +72,9 @@ export function mapHttpError(status: number, body?: unknown): GatewayError {
 }
 
 /**
- * An error answer of an Ergates route (roadmap contract C3):
- * `{"error": {"code", "message"}}`. The kind follows the HTTP status, as for
- * any route; `code` is the C3 code and the message is the server's safe text.
- * An answer without that body (a 401 from Hermes's own auth middleware, a 404
+ * An error answer of an Ergates route: `{"error": {"code", "message"}}`. The
+ * kind follows the HTTP status, as for any route; `code` is the Ergates error
+ * code and the message is the server's safe text. An answer without that body (a 401 from Hermes's own auth middleware, a 404
  * from a gateway without the plugin) maps like any HTTP error, with no code.
  */
 export function mapErgatesError(status: number, body: unknown): GatewayError {

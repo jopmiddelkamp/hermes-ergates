@@ -1,7 +1,7 @@
 /**
- * The fake Ergates routes answer as the integration does (roadmap contract C3,
- * `ergates/operations.py`), so app tests meet the same outcomes and
- * error codes as the real server.
+ * The fake Ergates routes answer as the integration does
+ * (`integrations/ergates/ergates/operations.py`), so app tests meet the same
+ * outcomes and error codes as the real server.
  */
 import { describe, expect, it } from 'vitest'
 

@@ -57,7 +57,7 @@ export function botActionItems(input: BotActionItemsInput): BotActionItem[] {
   const { bot, level, handlers, setLevel, close } = input
 
   // Terminal actions dismiss the menu themselves; level changes must not.
-  // (C1: `ActionMenu` used to call `onClose()` before every item's handler, so
+  // (`ActionMenu` used to call `onClose()` before every item's handler, so
   // the submenu levels unmounted the menu instead of opening.) Items that open
   // a native dialog (`confirmDelete`, `askNewSection`) close from the dialog's
   // own buttons instead: an alert presented while the menu's Modal is being

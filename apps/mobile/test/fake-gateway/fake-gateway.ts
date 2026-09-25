@@ -255,7 +255,7 @@ export class FakeGateway implements GatewayPort {
 
   /** The profiles this gateway has: the recorded roster, plus any `profiles.create` made. */
   readonly profileNames = new Set<string>((profilesListFixture.profiles as { name: string }[]).map(p => p.name))
-  /** The Ergates routes, over this gateway's profiles (roadmap contract C3). */
+  /** The Ergates routes, over this gateway's profiles. */
   readonly ergates = new FakeErgates({ hasProfile: name => this.profileNames.has(name) })
 
   constructor(script: FakeScript = {}) {

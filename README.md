@@ -6,7 +6,7 @@ A clean React Native messaging app for a team of Hermes Agent assistants on your
 |---|---|---|
 | Mobile app (Expo SDK 57) | [apps/mobile](apps/mobile/README.md) | Runs on the iOS simulator against a local `hermes serve`; see the app README |
 | Integration package (Hermes plugin, Python) | [integrations/ergates](integrations/ergates/README.md) | Unit-tested and run against the pinned Hermes in the contract tests; not yet installed on a live gateway |
-| Deployment (Compose, profile templates, runbook) | [deploy](deploy/README.md) | Reviewed draft; not yet run on a VPS |
+| Deployment (Compose, profile and role templates, runbook) | [deploy](deploy/README.md) | Checked by CI; not yet run on a VPS; the live checks are [deploy/VERIFY.md](deploy/VERIFY.md) |
 | Design documents | [docs](docs/README.md) | Authoritative specification; `docs/superpowers/` holds the plans (among them the Fable upgrade roadmap) and research notes |
 
 ## Quick start (simulator)
@@ -22,6 +22,14 @@ cd apps/mobile && npm install && npx expo run:ios
 
 Connect in the app with `http://127.0.0.1:9119` and the token.
 
+The app's proposal, reminder and notification screens need the Ergates
+plugin in that Hermes (`integrations/ergates/README.md`, "Install"): link
+`integrations/ergates` to `~/.hermes/plugins/ergates`, then, from the
+repository root and with the Python your Hermes runs on, run
+`PYTHONPATH=integrations/ergates python -m ergates.install --templates deploy/templates`
+and restart `hermes serve`. The installer edits `~/.hermes/config.yaml` and
+the `config.yaml` of every profile.
+
 ## Verification
 
 `scripts/ci-local.sh` runs the CI jobs locally; `.github/workflows/ci.yml` runs the same script on GitHub Actions.
@@ -29,10 +37,10 @@ Connect in the app with `http://127.0.0.1:9119` and the token.
 | Job | What it checks |
 |---|---|
 | `lint` | the workflow files (actionlint) and the runner script |
-| `mobile` | `npm run typecheck`, ESLint (`npm run lint`, no warnings allowed), Vitest with the coverage gate, the ADR-029 dependency rules |
-| `integration` | the Python suite with a 90% branch-coverage gate, including the Hermes boundary guard |
-| `contract` | facts about the pinned Hermes source the integration relies on, and the integration running inside the pinned Hermes (its adapter, routes and tool gate) |
-| `deploy` | `docker compose config` and static checks of `deploy/` |
+| `mobile` | `npm run typecheck`, ESLint (`npm run lint`, no warnings allowed), Vitest with the coverage gate (including a guard against planning ids in comments and test titles), the ADR-029 dependency rules |
+| `integration` | the Python suite with a 90% branch-coverage gate, including the Hermes boundary guard and a guard against planning ids in comments, docstrings, test names and docs |
+| `contract` | facts about the pinned Hermes source the integration relies on, and the integration running inside the pinned Hermes (its adapter, routes, tool gate and installer) |
+| `deploy` | `docker compose config` and static checks of `deploy/`: published ports, the internal network and the egress proxy, image digests, mounts, profiles, templates and the live checklist |
 
 Run one job with `scripts/ci-local.sh mobile`, several with `scripts/ci-local.sh integration contract`. The quick loops:
 

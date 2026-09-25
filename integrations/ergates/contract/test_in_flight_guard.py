@@ -1,4 +1,4 @@
-"""The in-flight hook guard behind the roadmap's live-only gate (deploy/VERIFY.md, Plan 5).
+"""The in-flight hook guard behind live checks V7 and V8 of deploy/VERIFY.md.
 
 Hermes skips a callback that is still running and keys that check on the hook
 and the callback only, not on the session. For `pre_tool_call` a skip is a

@@ -15,11 +15,10 @@ Bookkeeping stays on the outbox row: attempts, backoff (30 s, 120 s, 600 s,
 then 600 s) and give-up after five attempts. A completion retry that would
 land inside the profile's quiet hours waits until they end, read in the
 Hermes timezone like the first attempt; an approval retry ignores quiet
-hours. The event's own ``state`` is
-never written here, so a failed delivery can never overwrite a resolution
-(roadmap bug 5). An approval that is no longer pending, or past its
-``expires_at``, is cancelled instead of sent: its push would point the
-operator at a request that can no longer be answered.
+hours. The event's own ``state`` is never written here, so a failed
+delivery can never overwrite a resolution. An approval that is no longer
+pending, or past its ``expires_at``, is cancelled instead of sent: its push
+would point the operator at a request that can no longer be answered.
 
 The stock Hermes ntfy adapter never sets a ``Click`` header;
 :func:`build_ntfy_publish` builds the full request -- ``Title``, ``Click``,
@@ -88,7 +87,7 @@ def ntfy_settings(values: Mapping[str, Any]) -> NtfySettings | None:
 
 
 def deep_link(session_id: str, connection_id: str, profile: str) -> str:
-    """``ergates://chat/<session>?connection=<id>&profile=<name>``, values url-encoded (C5).
+    """``ergates://chat/<session>?connection=<id>&profile=<name>``, values url-encoded.
 
     Opening this link only ever leads to connection selection for an unknown
     ``connection_id``; it never makes the app trust a supplied URL.

@@ -1,4 +1,4 @@
-"""Roadmap C1: `paths.hermes_root()` uses `hermes_constants.get_default_hermes_root()`.
+"""`paths.hermes_root()` uses `hermes_constants.get_default_hermes_root()`.
 
 The control store lives under the Hermes ROOT, shared by every profile. Pins
 that the function unwraps `<root>/profiles/<name>` to `<root>`, and that

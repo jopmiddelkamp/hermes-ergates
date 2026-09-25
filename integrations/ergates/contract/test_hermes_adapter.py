@@ -1,4 +1,4 @@
-"""Roadmap D1, D5, C1 and C2: how ``ergates/hermes_adapter.py`` calls Hermes.
+"""How ``ergates/hermes_adapter.py`` calls Hermes.
 
 ``test_hermes_root.py`` pins what ``get_default_hermes_root`` computes; this
 file pins every other Hermes name the adapter calls, as text and syntax, so a
@@ -119,7 +119,7 @@ def test_a_profile_scope_is_the_context_local_home_override(hermes: PinnedSource
 
 
 def test_profile_name_is_derived_from_the_active_home_at_every_read(hermes: PinnedSource) -> None:
-    # hermes_cli/plugins.py:397-406 (roadmap bug 8): a property, evaluated per access. When the
+    # hermes_cli/plugins.py:397-406: a property, evaluated per access. When the
     # lookup raises it answers "default", the same text as the default profile's own name.
     assert hermes.lines(PLUGINS, 397, 406) == (
         "    @property\n"

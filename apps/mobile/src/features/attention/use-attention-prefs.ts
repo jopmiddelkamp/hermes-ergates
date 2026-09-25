@@ -1,6 +1,6 @@
 /**
- * The notification settings of one profile (or `*`) through the Ergates route
- * (roadmap contract C3). React adapter only: the form rules live in `prefs.ts`.
+ * The notification settings of one profile (or `*`) through the Ergates route.
+ * React adapter only: the form rules live in `prefs.ts`.
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'

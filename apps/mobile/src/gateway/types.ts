@@ -624,7 +624,7 @@ export interface MemoryFiles {
   available: boolean
 }
 
-// ── Ergates integration routes (roadmap contract C3, /api/plugins/ergates) ──
+// ── Ergates integration routes (/api/plugins/ergates) ──
 
 export interface ErgatesHealth {
   ok: boolean
@@ -659,7 +659,7 @@ export interface ReminderOutcome {
   receipt: ReminderReceipt
 }
 
-/** Provisioning steps in the order the server accepts them (roadmap contract C1). */
+/** Provisioning steps in the order the server accepts them. */
 export const PROVISION_STEPS = ['profile_created', 'plugin_enabled', 'configured', 'bot_chat', 'briefing'] as const
 export type ProvisionStep = (typeof PROVISION_STEPS)[number]
 export type StepStatus = 'done' | 'uncertain' | 'failed'

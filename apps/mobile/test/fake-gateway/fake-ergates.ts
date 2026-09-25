@@ -1,5 +1,5 @@
 /**
- * FakeErgates: the Ergates integration routes (roadmap contract C3) in memory.
+ * FakeErgates: the Ergates integration routes in memory.
  *
  * It answers with the outcomes and error codes of the integration's
  * `ergates/operations.py`, built through the same `mapErgatesError`

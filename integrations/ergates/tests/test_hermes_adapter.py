@@ -49,8 +49,8 @@ class _MultiplexedCtx:
         return next(self._names)
 
 
-def test_bug8_current_profile_reads_ctx_profile_name_at_every_call():
-    """Roadmap bug 8: the profile must come from Hermes at call time, never from
+def test_current_profile_reads_ctx_profile_name_at_every_call():
+    """The profile must come from Hermes at call time, never from
     a value captured when the plugin loaded."""
     ctx = _MultiplexedCtx("concierge", "thijs")
 
@@ -72,7 +72,7 @@ class _DefaultCtx:
     profile_name = "default"
 
 
-def test_bug8_default_stands_when_hermes_lookup_names_the_default_profile(monkeypatch):
+def test_default_stands_when_hermes_lookup_names_the_default_profile(monkeypatch):
     hermes_profile_lookup(monkeypatch, lambda: "default")
 
     assert current_profile(_DefaultCtx()) == "default"
@@ -83,7 +83,7 @@ def _lookup_fails():
 
 
 @pytest.mark.parametrize("lookup", [_lookup_fails, lambda: "thijs"], ids=["lookup-raises", "lookup-disagrees"])
-def test_bug8_default_is_refused_when_it_is_hermes_fallback_for_a_failed_lookup(monkeypatch, lookup):
+def test_default_is_refused_when_it_is_hermes_fallback_for_a_failed_lookup(monkeypatch, lookup):
     """``PluginContext.profile_name`` answers "default" when its own lookup raises
     (``hermes_cli/plugins.py`` at the pin), and "default" is always admitted."""
     hermes_profile_lookup(monkeypatch, lookup)
@@ -92,7 +92,7 @@ def test_bug8_default_is_refused_when_it_is_hermes_fallback_for_a_failed_lookup(
         current_profile(_DefaultCtx())
 
 
-def test_bug8_default_is_refused_when_hermes_cannot_be_asked(without_hermes):
+def test_default_is_refused_when_hermes_cannot_be_asked(without_hermes):
     with pytest.raises(ValueError):
         current_profile(_DefaultCtx())
 

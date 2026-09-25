@@ -1,8 +1,8 @@
 /**
- * Provisioning an accepted agent (docs/11 section 4.1, roadmap D4): the app
+ * Provisioning an accepted agent (docs/11 section 4.1, ADR-032): the app
  * runs each step through the public Hermes RPCs and reports it to the server's
- * receipt. The server side is `FakeErgates` (roadmap contract C3); Hermes is a
- * small in-memory model of the profile and chat RPCs the steps use.
+ * receipt. The server side is `FakeErgates`; Hermes is a small in-memory
+ * model of the profile and chat RPCs the steps use.
  */
 import { describe, expect, it } from 'vitest'
 

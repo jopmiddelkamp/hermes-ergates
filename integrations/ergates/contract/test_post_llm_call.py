@@ -1,4 +1,4 @@
-"""Roadmap D9: a finished routine turn is a `post_llm_call` with `platform="cron"`.
+"""A finished routine turn is a `post_llm_call` with `platform="cron"`.
 
 `tool.on_turn_completed` reads only the `session_id` and `platform` keywords
 of `post_llm_call`, and pushes "A routine finished" for the platforms in

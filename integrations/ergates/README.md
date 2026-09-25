@@ -28,7 +28,7 @@ integrations/ergates/
     api.py             # the HTTP routes under /api/plugins/ergates (FastAPI router)
     index.js           # empty dashboard bundle, so the dashboard reports no error
   ergates/             # the actual logic, plain importable package
-    hermes_adapter.py  # the only module that imports Hermes (decision D5)
+    hermes_adapter.py  # the only module that imports Hermes
     paths.py           # hermes_root(), store_path(), templates_dir()
     store.py           # ControlStore: SQLite, WAL, BEGIN IMMEDIATE, versioned schema
     reminders.py       # ReminderService: idempotent reminders on top of Hermes cron
@@ -55,8 +55,7 @@ integrations/ergates/
 Hermes loads a user plugin from the ACTIVE home's `plugins/` folder, and only
 when that home's `config.yaml` lists it in `plugins.enabled`
 (`hermes_cli/plugins_discovery.py`). A named profile runs with its own home,
-so the plugin is installed once at the root and linked into each profile
-(roadmap decision D7):
+so the plugin is installed once at the root and linked into each profile:
 
 1. Link or mount this directory at `<hermes root>/plugins/ergates`
    (`~/.hermes/plugins/ergates` on a laptop; a read-only bind mount at
@@ -107,7 +106,7 @@ setting is per profile, read with `ctx.get_config` from that profile's own
 
 | Key | Default | Purpose |
 |---|---|---|
-| `attention.completed_platforms` | `["cron"]` | platforms whose finished turns push "A routine finished" (decision D9); `[]` turns them off |
+| `attention.completed_platforms` | `["cron"]` | platforms whose finished turns push "A routine finished" (by default routines only, not every chat reply); `[]` turns them off |
 
 No credentials are ever read from, or written into, this repository or the
 store. Push is skipped (not an error) whenever `ntfy.server` or `ntfy.topic`
@@ -140,9 +139,9 @@ An install that ran version 0.1.0 needs three changes by hand:
 ## HTTP API
 
 `hermes serve` mounts `dashboard/api.py` under `/api/plugins/ergates`
-(roadmap decision D3, ADR-031). Hermes's own middleware authenticates every
-request first: the dashboard session token on loopback, the cookie gate when
-dashboard auth is on. JSON in and out; every error is
+(ADR-031). Hermes's own middleware authenticates every request first: the
+dashboard session token on loopback, the cookie gate when dashboard auth is
+on. JSON in and out; every error is
 `{"error": {"code": "<code>", "message": "<safe text>"}}`. One
 `ControlStore` serves every request of the process.
 
@@ -209,8 +208,10 @@ and answers the same receipt.
 
 The profile is always `ctx.profile_name` read at the moment of the call
 (`hermes_adapter.current_profile`), never once at registration: a
-multiplexed gateway serves several profiles from one process (roadmap
-bug 8).
+multiplexed gateway serves several profiles from one process. Hermes names
+the profile of a home that is neither the root nor `<root>/profiles/<name>`
+`custom`; the gate finds no `custom` profile to read the grant from, so it
+blocks every tool call there (fail closed).
 
 ## The control store
 
@@ -285,7 +286,9 @@ screen, so Hermes's prompt scan and scheduler registration apply.
   reconciled the same way.
 - **Timezone is advisory.** Hermes 0.21.2 has no per-job timezone, so the
   zone stays in the idempotency key and comes back as `timezone_advisory`;
-  a reminder fires in the server's timezone.
+  a reminder fires in the time zone Hermes is configured for
+  (`HERMES_TIMEZONE`, else `timezone` in `config.yaml`; the machine's local
+  time when neither is set).
 
 ## Proposals
 
@@ -293,7 +296,7 @@ screen, so Hermes's prompt scan and scheduler registration apply.
 backend-owned `source_session_id` (from the handler's `session_id` or
 `task_id`, never from `args`), records the receipt as `proposed`, and
 returns the proposal as JSON. The operator then accepts it exactly as
-proposed (decision D10) or rejects it through the HTTP API.
+proposed, without edits, or rejects it through the HTTP API.
 
 Accepting answers the proposal's template, read from
 `<hermes root>/ergates/templates/<template_id>.json` (fields `template_id`,

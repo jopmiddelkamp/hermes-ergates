@@ -1,7 +1,7 @@
 /**
- * Rewrites a push deep link before Expo Router matches it (roadmap contract
- * C5, bug 7): `ergates://chat/<session>?connection=…&profile=…` goes to
- * `/open`, never to `app/chat/[profile]` with the session id as the profile.
+ * Rewrites a push deep link before Expo Router matches it:
+ * `ergates://chat/<session>?connection=…&profile=…` goes to `/open`, never to
+ * `app/chat/[profile]` with the session id as the profile.
  * The rules and their tests live in `src/features/attention/deep-link.ts`.
  */
 

@@ -1,9 +1,9 @@
-"""The Ergates HTTP operations of roadmap contract C3, free of any web framework.
+"""The Ergates HTTP operations, free of any web framework.
 
 ``dashboard/api.py`` maps each route under ``/api/plugins/ergates`` onto one
 method here and turns the returned :class:`Reply` into a JSON response. A
 method never raises for a problem with the request: every answer is a
-``Reply`` with the C3 status and body, so the router stays a thin shim and
+``Reply`` with the HTTP status and body, so the router stays a thin shim and
 the behavior is unit-tested without FastAPI. A failure no method maps (a
 Hermes call that raised) propagates, and the router answers it with
 :func:`internal_error`.
@@ -14,7 +14,7 @@ briefing or description text.
 
 Hermes is reached only through the functions an ``Operations`` is given
 (``hermes_adapter`` in production, fakes in the tests), so this module
-imports no Hermes code (decision D5). Methods block: a store write can wait
+imports no Hermes code (``tests/test_hermes_boundary.py``). Methods block: a store write can wait
 up to the store's busy timeout, and a second identical reminder request
 waits up to ``reminders.IN_FLIGHT_WAIT_SECONDS`` for the first. The router
 runs them on a worker thread.
@@ -61,7 +61,7 @@ class Reply:
 
 
 def error_reply(status: int, code: str, message: str, **extra: Any) -> Reply:
-    """The C3 error body, plus any ``extra`` top-level keys (a conflict carries its ``receipt``)."""
+    """The error body, plus any ``extra`` top-level keys (a conflict carries its ``receipt``)."""
     return Reply(status, {"error": {"code": code, "message": message}, **extra})
 
 
@@ -136,7 +136,7 @@ def _guard_store(method: Callable[..., "Reply"]) -> Callable[..., "Reply"]:
 
 
 class Operations:
-    """Every C3 route as a method that returns a :class:`Reply`."""
+    """Every HTTP route as a method that returns a :class:`Reply`."""
 
     def __init__(
         self, store: ControlStore, *, cron: CronPort,
@@ -309,7 +309,7 @@ class Operations:
         }
 
     def _proposal_reply(self, call: Callable[[], dict]) -> Reply:
-        """Run a proposal call; its receipt with ``template: null``, or its C3 error."""
+        """Run a proposal call; its receipt with ``template: null``, or its error reply."""
         try:
             receipt = call()
         except ProposalError as exc:

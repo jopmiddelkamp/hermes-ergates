@@ -333,6 +333,17 @@ docker compose pull
 docker compose up -d
 ```
 
+Then run the installer again, as in step 4 of the first-run provisioning,
+after every image update and after every `git pull` of this repository: the
+plugin's code and `templates/` come from the checkout, and `hermes serve`
+mounts the plugin's routes only when it starts.
+
+```bash
+docker compose exec -T -u hermes -e PYTHONPATH=/opt/data/plugins/ergates hermes-serve python -m ergates.install
+docker compose restart hermes-serve hermes-gateway
+docker compose exec -T -u hermes -e PYTHONPATH=/opt/data/plugins/ergates hermes-serve python -m ergates.install --check
+```
+
 A new Hermes image is a new Hermes: the integration's contract tests are
 pinned to one Hermes commit (`HERMES_PIN` in `scripts/ci-local.sh`), and
 that commit is not the image's. Move both together, and rerun
@@ -394,11 +405,11 @@ configs, Docker socket access under the image's privilege drop, egress and
 ingress isolation, the plugin install and the sweep, the two concurrency
 checks of Hermes's in-flight hook guard, locked-phone and repeated pushes,
 notification settings, deep links, the encrypted device data, provisioning,
-tool revocation, approval events with no app connected, sandbox workspace
-paths, the restore drill, the Hermes image version against the
-integration's contract pin, a green CI run on a real remote, and a closing
-set of app-only checks (proposal cards, offline chat sends) that do not
-depend on this deployment.
+tool revocation, a routine saved twice from the app, approval events with no
+app connected, sandbox workspace paths, the restore drill, the Hermes image
+version against the integration's contract pin, a green CI run on a real
+remote, and a closing set of app-only checks (proposal cards, offline chat
+sends) that do not depend on this deployment.
 
 ## Corrections applied after review
 

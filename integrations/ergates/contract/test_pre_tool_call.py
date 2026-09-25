@@ -1,4 +1,4 @@
-"""Roadmap D6: the Ergates tool gate is a `pre_tool_call` callback.
+"""The Ergates tool gate is a `pre_tool_call` callback.
 
 Pins what the gate relies on: a `{"action": "block", "message": str}` return
 vetoes the tool, a callback that raises is skipped (fail OPEN, so the Ergates

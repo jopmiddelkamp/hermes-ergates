@@ -9,8 +9,8 @@ cases safe:
 - Two identical requests at the same moment: one claims the receipt and
   calls cron; the other waits for it and returns the same receipt.
 - A job deleted natively (Routines screen): only the request that still
-  holds the version that saw the job missing creates it again (roadmap
-  bug 1).
+  holds the version that saw the job missing creates it again, so two
+  retries never make two jobs.
 - A one-shot that already ran: Hermes keeps it as a completed job (7 days
   by default). For a receipt keyed by its payload (no request id: the
   agent tool) that job counts as gone, so the same request after the run
@@ -20,13 +20,13 @@ cases safe:
 - A create whose answer was lost: the receipt is ``uncertain``, and the next
   request reconciles it through the job's unique name instead of creating
   blindly. A ``creating`` receipt older than :data:`IN_FLIGHT_SECONDS` is
-  treated the same way: its creator died (roadmap bug 3).
-- The retention sweep deletes only the receipt version it inspected (roadmap
-  bug 2).
+  treated the same way: its creator died.
+- The retention sweep deletes only the receipt version it inspected, never
+  a receipt claimed again after it looked.
 
 Cron is reached only through :class:`CronPort` and never inside a store
 transaction, so a slow scheduler never holds the store's write lock. The
-roadmap's contract C2 names the production port, ``hermes_adapter.HermesCron``.
+production port is ``hermes_adapter.HermesCron``.
 A process without cron access prunes with :class:`UnavailableCron`, which
 applies only the 30-day idle rule.
 
@@ -194,7 +194,7 @@ def _counts_as_gone(row, job: dict | None) -> bool:
 
 
 def _view(row: sqlite3.Row | dict) -> dict:
-    """The C3 ``ReminderReceipt`` of a stored receipt."""
+    """The ``ReminderReceipt`` of a stored receipt."""
     return {key: row[key] for key in _VIEW_KEYS}
 
 

@@ -100,7 +100,7 @@ def test_create_calls_cron_once_with_the_profile_out_of_band(service, cron):
     }]
 
 
-def test_the_receipt_has_exactly_the_c1_keys(service):
+def test_the_receipt_has_exactly_the_documented_keys(service):
     outcome = service.create(*ARGS, request_id="outbox-42")
 
     assert isinstance(outcome, ReminderOutcome)
@@ -342,8 +342,8 @@ def test_a_create_that_returns_no_job_id_is_uncertain(store, clock):
     assert outcome.status == "uncertain"
 
 
-def test_bug3_an_uncertain_receipt_reconciles_to_the_job_that_was_created(service, cron, store):
-    """Roadmap bug 3: an `uncertain` receipt was returned unchanged forever, even
+def test_an_uncertain_receipt_reconciles_to_the_job_that_was_created(service, cron, store):
+    """An `uncertain` receipt was once returned unchanged forever, even
     when its job existed. The next request now finds the job by its unique name."""
     cron.fail_create = "after"
     lost = service.create(*ARGS)
@@ -358,7 +358,7 @@ def test_bug3_an_uncertain_receipt_reconciles_to_the_job_that_was_created(servic
     assert len(cron.create_calls) == 1
 
 
-def test_bug3_an_uncertain_receipt_with_no_matching_job_is_created_once(service, cron):
+def test_an_uncertain_receipt_with_no_matching_job_is_created_once(service, cron):
     cron.fail_create = "before"
     service.create(*ARGS)
     cron.fail_create = None
@@ -372,7 +372,7 @@ def test_bug3_an_uncertain_receipt_with_no_matching_job_is_created_once(service,
     assert len(cron.jobs) == 1
 
 
-def test_bug3_several_jobs_with_the_receipt_name_leave_it_uncertain(service, cron):
+def test_several_jobs_with_the_receipt_name_leave_it_uncertain(service, cron):
     """Two jobs carry the name: the service cannot tell which is its own, so it
     creates nothing and says so."""
     cron.fail_create = "before"
@@ -388,7 +388,7 @@ def test_bug3_several_jobs_with_the_receipt_name_leave_it_uncertain(service, cro
     assert len(cron.create_calls) == 1
 
 
-def test_bug3_an_unreachable_cron_leaves_an_uncertain_receipt_uncertain(service, cron):
+def test_an_unreachable_cron_leaves_an_uncertain_receipt_uncertain(service, cron):
     cron.fail_create = "after"
     service.create(*ARGS)
     cron.fail_create = None
@@ -400,7 +400,7 @@ def test_bug3_an_unreachable_cron_leaves_an_uncertain_receipt_uncertain(service,
     assert len(cron.create_calls) == 1
 
 
-def test_bug3_a_creating_receipt_left_by_a_dead_creator_is_reconciled(service, cron, store, clock, monkeypatch):
+def test_a_creating_receipt_left_by_a_dead_creator_is_reconciled(service, cron, store, clock, monkeypatch):
     """A creator that died inside create_job leaves `creating` behind. For
     IN_FLIGHT_SECONDS it is presumed alive (the request waits, then answers
     uncertain); after that the next request reconciles it by name."""
@@ -427,7 +427,7 @@ def test_bug3_a_creating_receipt_left_by_a_dead_creator_is_reconciled(service, c
     assert len(cron.jobs) == 1
 
 
-# --- concurrency: identical requests at once, bug 1 -------------------------
+# --- concurrency: identical requests at once -------------------------------
 
 
 def test_two_identical_requests_at_the_same_moment_create_one_job_and_share_one_receipt(store, cron):
@@ -479,8 +479,8 @@ def test_two_processes_with_the_same_request_create_one_job(tmp_path):
     assert outcomes[0]["receipt"] == outcomes[1]["receipt"]
 
 
-def test_bug1_two_requests_that_both_see_the_job_gone_recreate_it_once(service, cron):
-    """Roadmap bug 1: both retries saw the natively deleted job as gone, and the
+def test_two_requests_that_both_see_the_job_gone_recreate_it_once(service, cron):
+    """Both retries once saw the natively deleted job as gone, and the
     slower one deleted the receipt the faster one had just re-created, then
     created a second job. The version check now stops the slower one."""
     first = service.create(*ARGS)
@@ -597,8 +597,8 @@ def test_prune_with_an_unavailable_cron_applies_only_the_idle_rule(service, stor
     assert blind.prune(clock()) == 1
 
 
-def test_bug2_prune_keeps_a_receipt_claimed_again_after_its_snapshot(service, cron, store, clock):
-    """Roadmap bug 2: prune looked the job up outside any lock, then deleted the
+def test_prune_keeps_a_receipt_claimed_again_after_its_snapshot(service, cron, store, clock):
+    """Prune once looked the job up outside any lock, then deleted the
     receipt without checking it again, so it deleted the receipt a concurrent
     request had just re-created. It now deletes only the version it inspected."""
     first = service.create(*ARGS)

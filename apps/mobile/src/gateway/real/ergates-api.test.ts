@@ -1,8 +1,8 @@
 /**
- * The Ergates routes over the connection's own HTTP client (roadmap contracts
- * C3 and C4): paths, bodies, auth, the status of each answer and the error
- * codes. The C3 behavior behind the routes is the integration's own suite; the
- * fake in test/fake-gateway/fake-ergates.ts mirrors it for the app tests.
+ * The Ergates routes over the connection's own HTTP client: paths, bodies,
+ * auth, the status of each answer and the error codes. The server behavior
+ * behind the routes is the integration's own suite; the fake in
+ * test/fake-gateway/fake-ergates.ts mirrors it for the app tests.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -132,7 +132,7 @@ describe('ErgatesApi over the real gateway', () => {
     [400, 'invalid', 'unknown'],
     [404, 'unknown_profile', 'not_found'],
     [503, 'store_unavailable', 'unknown']
-  ] as const)('rejects a %i reminder answer with the C3 code %s', async (status, code, kind) => {
+  ] as const)('rejects a %i reminder answer with the error code %s', async (status, code, kind) => {
     const { api } = await connected(() => [status, { error: { code, message: 'label must be 1 to 64 printable characters' } }])
 
     const err = await rejection(api.createReminder(request))
@@ -146,7 +146,7 @@ describe('ErgatesApi over the real gateway', () => {
     expect(err).toMatchObject({ code: 'invalid', status: 400 })
   })
 
-  it('maps a 401 from Hermes auth, which has no C3 body, like any other route', async () => {
+  it('maps a 401 from Hermes auth, which has no Ergates error body, like any other route', async () => {
     const { api } = await connected(() => [401, { detail: 'Unauthorized' }])
 
     const err = await rejection(api.getProposal('p-1'))
@@ -154,7 +154,7 @@ describe('ErgatesApi over the real gateway', () => {
     expect(err.code).toBeUndefined()
   })
 
-  it('maps a C3 internal 500 like the server sends on an unexpected failure', async () => {
+  it('maps an internal 500 like the server sends on an unexpected failure', async () => {
     const { api } = await connected(() => [500, { error: { code: 'internal', message: 'The request could not be completed.' } }])
 
     const err = await rejection(api.getProposal('p-1'))
@@ -207,7 +207,7 @@ describe('ErgatesApi over the real gateway', () => {
     expect(seen.map(s => s.body)).toEqual([undefined, { proposal }, undefined, { step: 'profile_created', status: 'done' }])
   })
 
-  it('rejects a proposal error with its C3 code', async () => {
+  it('rejects a proposal error with its error code', async () => {
     const { api } = await connected(() => [409, { error: { code: 'name_taken', message: "a profile named 'pim' already exists" } }])
 
     const err = await rejection(api.acceptProposal('p-1', proposal))
@@ -236,7 +236,7 @@ describe('ErgatesApi over the real gateway', () => {
     expect(seen.at(-1)!.body).toEqual(prefs)
   })
 
-  it('reports a gateway without the plugin as not found, with no C3 code', async () => {
+  it('reports a gateway without the plugin as not found, with no error code', async () => {
     const { api } = await connected(() => [404, { detail: 'Not Found' }])
 
     const err = await rejection(api.attentionPrefs('thijs'))

@@ -1,4 +1,4 @@
-"""Tests for ergates.operations: every route of roadmap contract C3, without a web server.
+"""Tests for ergates.operations: every HTTP route, without a web server.
 
 ``contract/live/test_dashboard_api.py`` runs the same operations through
 Hermes's own web server; these tests pin each status code and body.
@@ -145,7 +145,7 @@ def test_every_store_backed_route_is_503_when_the_store_is_unavailable(ops, stor
     assert reply.body == {"error": {"code": "store_unavailable", "message": "the Ergates control store is unavailable"}}
 
 
-def test_internal_error_is_the_c3_body_with_a_fixed_message():
+def test_internal_error_is_the_error_body_with_a_fixed_message():
     """What the router answers for a failure no route maps (``dashboard/api.py``)."""
     reply = internal_error()
 

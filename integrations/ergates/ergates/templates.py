@@ -1,4 +1,4 @@
-"""Proposal templates: the role a proposed agent is provisioned from (roadmap contract C3).
+"""Proposal templates: the role a proposed agent is provisioned from.
 
 One JSON file per template, ``<hermes root>/ergates/templates/<template_id>.json``,
 with exactly the ``ProposalTemplate`` fields::
