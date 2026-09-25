@@ -16,9 +16,12 @@ data.
 
 ```
 deploy/
-  docker-compose.yml               # hermes-serve, hermes-gateway, ntfy
+  docker-compose.yml               # hermes-serve, hermes-gateway, ntfy, egress-proxy, ingress
                                    #  + read-only mount of ../integrations/ergates
                                    #    at /opt/data/plugins/ergates in both controllers
+  proxy/squid.conf                 # egress: HTTPS to listed hosts only
+  proxy/allowed-domains.txt        # the hosts, one per line
+  ingress/haproxy.cfg              # the two published ports, forwarded as TCP
   .env.example                     # copy to .env, fill in real values, never commit .env
   profiles/
     concierge/{config.yaml,SOUL.md}            # default/launch profile
@@ -78,6 +81,8 @@ printf '%s\n' 'scrypt$16384$8$1$...' | sed 's/\$/$$/g'
 # 5. Also set in .env: HERMES_DASHBOARD_BASIC_AUTH_USERNAME, TAILSCALE_IP,
 #    DOCKER_SOCK_GID (stat -c '%g' /var/run/docker.sock).
 #    Leave HERMES_DASHBOARD_BASIC_AUTH_PASSWORD empty.
+#    Add your model provider's hosts to proxy/allowed-domains.txt
+#    (see "Egress and ingress" below); `hermes setup` needs them.
 
 # 6. Then validate and start.
 docker compose -f docker-compose.yml config   # validate before starting anything
@@ -107,6 +112,45 @@ The plugin is not copied anywhere: `docker-compose.yml` bind-mounts
 the user-plugin directory Hermes scans (`get_hermes_home()/plugins`, per
 `hermes_cli/plugins_discovery.py`). Step 4 of the first-run provisioning
 below enables it in every profile and installs the proposal templates.
+
+## Egress and ingress
+
+The controllers and ntfy sit only on the Compose network `internal`, which
+has no route out. They reach the internet only through `egress-proxy`
+(Squid), and only as HTTPS to a host listed in `proxy/allowed-domains.txt`;
+plain HTTP, other ports, IP addresses and unlisted hosts are denied. Every
+service behind the proxy gets `HTTP_PROXY`/`HTTPS_PROXY` pointing at it, but
+that is only the address: a tool that ignores the variables has no route
+out at all (04 section 7).
+
+`proxy/allowed-domains.txt` ships with `ntfy.sh`, the iOS wake-up upstream,
+and nothing else: no model provider is reachable until you add its hosts.
+Add, one per line, every host your model provider and connectors use, then
+`docker compose restart egress-proxy`. The hosts of the common built-in
+providers, the same in the Hermes image (v2026.9.11) and at the contract pin:
+
+| Provider | Hosts |
+|---|---|
+| Anthropic | `api.anthropic.com`; a Claude sign-in token also refreshes at `platform.claude.com` and `console.anthropic.com` |
+| OpenAI API | `api.openai.com` |
+| OpenAI Codex (ChatGPT sign-in) | `chatgpt.com`, `auth.openai.com` |
+| GitHub Copilot | `api.githubcopilot.com`, `api.github.com` (token exchange), `github.com` (device sign-in) |
+| xAI | `api.x.ai`; xAI sign-in also `auth.x.ai` |
+| OpenRouter | `openrouter.ai` |
+| Nous Portal | `inference-api.nousresearch.com`, `portal.nousresearch.com` |
+
+For any other provider, list the host of its base URL in Hermes's provider
+registry (`hermes_cli/auth.py`). The allowlist is per host: a listed host
+allows every path on it, so `api.github.com` opens all of GitHub's API.
+Denied requests show in `docker compose logs egress-proxy` with
+`TCP_DENIED`; add a host only when you know why the stack needs it.
+
+The only published ports belong to `ingress` (HAProxy), on `TAILSCALE_IP`:
+9119 for `hermes serve` and `NTFY_PORT` for ntfy, forwarded as plain TCP, so
+the app's WebSocket passes through unchanged. Docker publishes no port of a
+container that sits only on an internal network, which is why this hop
+exists. Both services therefore see every client as the ingress's address:
+a per-address limit in Hermes or ntfy applies to all phones together.
 
 ## First-run credential provisioning
 
@@ -249,11 +293,34 @@ past its schedule.
 
 ## Update
 
+Every image is pinned as `repository:tag@sha256:<digest>`; Docker uses the
+digest. To move one forward, read the new tag's index digest from the
+registry (for an official image such as `haproxy` the repository is
+`library/haproxy`):
+
+```bash
+image=binwiederhier/ntfy tag=v2.28.0
+token=$(curl -fsS "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${image}:pull" | python3 -c 'import json, sys; print(json.load(sys.stdin)["token"])')
+curl -fsSI -H "Authorization: Bearer ${token}" \
+  -H "Accept: application/vnd.oci.image.index.v1+json" \
+  -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
+  "https://registry-1.docker.io/v2/${image}/manifests/${tag}" | grep -i '^docker-content-digest'
+# docker-content-digest: sha256:6ef4b819f722fccdc036af611c4774cfdc2de821ab74fdd48bbf4c9d6f8973da
+```
+
+Put tag and digest into `docker-compose.yml` (both controllers use the same
+Hermes image), then:
+
 ```bash
 cd deploy
-docker compose pull                 # after moving the image tag/digest forward
+docker compose pull
 docker compose up -d
 ```
+
+A new Hermes image is a new Hermes: the integration's contract tests are
+pinned to one Hermes commit (`HERMES_PIN` in `scripts/ci-local.sh`), and
+that commit is not the image's. Move both together, and rerun
+`scripts/ci-local.sh contract` before you deploy.
 
 Both `hermes-serve` and `hermes-gateway` read from the same `/opt/data`
 volume, so no separate data migration step is expected for a same-major
@@ -326,15 +393,13 @@ These are called out, not hidden, because this file is a draft:
    automatically make `/opt/data/sandboxes/...` a valid host path for a
    container that itself launches sibling containers through the host
    daemon. Not proven here.
-5. **Image pins are tags, not digests.** Both `nousresearch/hermes-agent`
-   and `binwiederhier/ntfy` are pinned to a specific version tag as a
-   placeholder, with the digest observed at draft time recorded in a
-   comment for convenience. Replace both with a verified digest
-   (`@sha256:...`) once this file has actually been run through P0
-   validation -- do not ship the tag pin as the final state.
-6. **The outbound proxy and its allowlist** (provider/connector egress
-   control) are not modeled as a compose service in this draft; the wiring
-   contract requires one.
+5. **The pinned images have not been started.** Every image is pinned by
+   digest, read from the registry on 2026-09-25, but no container has run
+   from them yet.
+6. **Squid and HAProxy have not parsed their configs on a real run.**
+   `deploy/tests/test_static.py` checks the rules as text; the programs
+   themselves have not read `proxy/squid.conf` or `ingress/haproxy.cfg`,
+   and no denied request has been observed.
 7. **Backup/restore** above is a written procedure, not yet an executed
    drill.
 8. **The plugin mount, the installer and the periodic sweep have not been

@@ -3,7 +3,8 @@
 `scripts/ci-local.sh deploy` also runs `docker compose config`, which checks
 Compose syntax and interpolation. These tests check what Compose accepts but
 the design forbids: a port on 0.0.0.0, a missing plugin mount, a socket in the
-wrong container, a profile without the approval settings.
+wrong container, a profile without the approval settings, a route out that
+skips the egress proxy, an image that is not pinned by digest.
 """
 
 from __future__ import annotations
@@ -26,6 +27,11 @@ COMPOSE_TEXT = (DEPLOY / "docker-compose.yml").read_text(encoding="utf-8")
 COMPOSE = yaml.safe_load(COMPOSE_TEXT)
 SERVICES = COMPOSE["services"]
 CONTROLLERS = ("hermes-serve", "hermes-gateway")
+BEHIND_THE_PROXY = ("hermes-serve", "hermes-gateway", "ntfy")
+PROXY_URL = "http://egress-proxy:3128"
+# repository:tag@sha256:<64 hex>, the tag kept for people and the digest for Docker.
+PINNED_IMAGE = re.compile(r"^[a-z0-9][a-z0-9./_-]*:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$")
+HOSTNAME = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
 PLUGIN_MOUNT = "../integrations/ergates:/opt/data/plugins/ergates:ro"
 DOCKER_SOCKET = "/var/run/docker.sock:/var/run/docker.sock"
 PROFILES = sorted(path.parent.name for path in DEPLOY.glob("profiles/*/config.yaml"))
@@ -44,8 +50,8 @@ def profile(name: str) -> dict:
     return yaml.safe_load((DEPLOY / "profiles" / name / "config.yaml").read_text(encoding="utf-8"))
 
 
-def test_the_stack_is_serve_gateway_and_ntfy() -> None:
-    assert set(SERVICES) == {"hermes-serve", "hermes-gateway", "ntfy"}
+def test_the_stack_is_serve_gateway_ntfy_the_egress_proxy_and_the_ingress() -> None:
+    assert set(SERVICES) == {"hermes-serve", "hermes-gateway", "ntfy", "egress-proxy", "ingress"}
 
 
 def test_every_required_variable_has_an_example_value() -> None:
@@ -61,10 +67,85 @@ def test_every_required_variable_has_an_example_value() -> None:
     assert sorted(name for name in required if not examples.get(name)) == []
 
 
-def test_ports_are_published_only_on_the_tailscale_ip() -> None:
-    published = [port for service in SERVICES.values() for port in service.get("ports", [])]
-    assert published
+def test_ports_are_published_only_by_the_ingress_and_only_on_the_tailscale_ip() -> None:
+    assert sorted(name for name, service in SERVICES.items() if service.get("ports")) == ["ingress"]
+    published = SERVICES["ingress"]["ports"]
+    assert [port.partition("}:")[2] for port in published] == [
+        "9119:9119", "${NTFY_PORT:-8080}:8080"]
     assert all(port.startswith("${TAILSCALE_IP:?") for port in published)
+
+
+def test_no_service_uses_the_host_network() -> None:
+    """network_mode: host would skip both the published-port rule and the internal network."""
+    assert [name for name, service in SERVICES.items() if "network_mode" in service] == []
+
+
+def test_only_the_egress_proxy_and_the_ingress_have_a_route_out() -> None:
+    networks = COMPOSE["networks"]
+    assert networks["internal"]["internal"] is True
+    assert networks["edge"].get("internal", False) is False
+    assert set(networks) == {"internal", "edge"}
+    for name in BEHIND_THE_PROXY:
+        assert SERVICES[name]["networks"] == ["internal"], name
+    for name in ("egress-proxy", "ingress"):
+        assert sorted(SERVICES[name]["networks"]) == ["edge", "internal"], name
+
+
+@pytest.mark.parametrize("service", BEHIND_THE_PROXY)
+def test_every_service_behind_the_proxy_is_told_to_use_it(service: str) -> None:
+    environment = SERVICES[service]["environment"]
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        assert environment[key] == PROXY_URL, key
+    for key in ("NO_PROXY", "no_proxy"):
+        assert "ntfy" in environment[key].split(","), key
+
+
+def test_the_proxy_allows_only_https_tunnels_to_listed_hosts() -> None:
+    conf = [line.strip() for line in (DEPLOY / "proxy" / "squid.conf").read_text(encoding="utf-8").splitlines()]
+    rules = [line for line in conf if line.startswith("http_access")]
+    assert rules == [
+        "http_access deny !CONNECT",
+        "http_access deny !https_port",
+        "http_access allow allowed_hosts",
+        "http_access deny all",
+    ]
+    assert 'acl allowed_hosts dstdomain -n "/etc/squid/allowed-domains.txt"' in conf
+    assert "acl https_port port 443" in conf
+    assert SERVICES["egress-proxy"]["volumes"] == [
+        "./proxy/squid.conf:/etc/squid/squid.conf:ro",
+        "./proxy/allowed-domains.txt:/etc/squid/allowed-domains.txt:ro",
+    ]
+
+
+def test_the_allowlist_is_bare_host_names_and_reaches_the_ntfy_upstream() -> None:
+    hosts = (DEPLOY / "proxy" / "allowed-domains.txt").read_text(encoding="utf-8").split()
+    assert hosts
+    assert [host for host in hosts if not HOSTNAME.match(host)] == []
+    assert len(hosts) == len(set(hosts))
+    assert "ntfy.sh" in hosts
+
+
+def test_the_ingress_forwards_the_two_listeners_to_their_services() -> None:
+    config = [line.strip() for line in (DEPLOY / "ingress" / "haproxy.cfg").read_text(encoding="utf-8").splitlines()]
+    assert "mode tcp" in config
+    assert sorted(line for line in config if line.startswith("bind ")) == ["bind :8080", "bind :9119"]
+    servers = sorted(line.split()[2] for line in config if line.startswith("server "))
+    assert servers == ["hermes-serve:9119", "ntfy:80"]
+    assert SERVICES["ingress"]["volumes"] == ["./ingress/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro"]
+
+
+def test_hermes_serve_listens_on_its_container_network_for_the_ingress() -> None:
+    """The Tailscale IP exists only on the host; binding it inside the container fails."""
+    command = SERVICES["hermes-serve"]["command"]
+    assert command[command.index("--host") + 1] == "0.0.0.0"
+
+
+def test_ntfy_knows_the_url_phones_subscribe_with() -> None:
+    """ntfy refuses an upstream without a base URL, and hashes the base URL into iOS poll requests."""
+    environment = SERVICES["ntfy"]["environment"]
+    assert environment["NTFY_BASE_URL"].startswith("http://${TAILSCALE_IP:?")
+    assert environment["NTFY_BASE_URL"].endswith(":${NTFY_PORT:-8080}")
+    assert environment["NTFY_UPSTREAM_BASE_URL"] == "${NTFY_UPSTREAM_BASE_URL:-https://ntfy.sh}"
 
 
 @pytest.mark.parametrize("service", CONTROLLERS)
@@ -81,11 +162,15 @@ def test_ntfy_gets_no_docker_socket_and_denies_by_default() -> None:
     assert ntfy["environment"]["NTFY_AUTH_DEFAULT_ACCESS"] == "deny-all"
 
 
-def test_every_image_names_an_explicit_tag() -> None:
-    for name, service in SERVICES.items():
-        image = service["image"]
-        repository, _, tag = image.rpartition(":")
-        assert repository and tag and tag != "latest", f"{name}: {image}"
+def test_every_image_is_pinned_by_digest() -> None:
+    """03 section 9: "Pin image digests; do not use mutable ntfy/Caddy/Hermes tags"."""
+    unpinned = {name: service["image"] for name, service in SERVICES.items()
+                if not PINNED_IMAGE.match(service["image"]) or ":latest@" in service["image"]}
+    assert unpinned == {}
+
+
+def test_both_controllers_run_the_same_image() -> None:
+    assert SERVICES["hermes-serve"]["image"] == SERVICES["hermes-gateway"]["image"]
 
 
 def test_there_are_two_profiles() -> None:
