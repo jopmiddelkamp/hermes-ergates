@@ -68,16 +68,22 @@ def test_idempotency_key_separates_prompt_profile_and_timezone():
     assert base != idempotency_key(PROFILE, SCHEDULE, "America/New_York", PROMPT)
 
 
-def test_the_job_name_is_unique_per_receipt_and_never_carries_the_prompt():
+def test_the_job_name_is_unique_per_receipt_and_payload_and_never_carries_the_prompt():
     """docs/06 section 6: routine names start with `[bot:<profile>] `. The tag makes
-    the name unique per receipt, which is what reconciliation searches for."""
-    named = routine_name(PROFILE, "Invoice sweep", "outbox-1")
-    default = routine_name(PROFILE, None, "outbox-1")
+    the name unique per receipt AND payload, which is what reconciliation
+    searches for: a receipt id reused with a different payload must compute a
+    different name, or a fresh claim could adopt a stale job of the old
+    payload."""
+    payload = idempotency_key(*ARGS)
+    other_payload = idempotency_key(PROFILE, SCHEDULE, TIMEZONE, "A different prompt.")
+    named = routine_name(PROFILE, "Invoice sweep", "outbox-1", payload)
+    default = routine_name(PROFILE, None, "outbox-1", payload)
 
     assert named.startswith("[bot:thijs] Invoice sweep · ")
     assert default.startswith("[bot:thijs] reminder · ")
-    assert routine_name(PROFILE, "Invoice sweep", "outbox-2") != named
-    assert routine_name(PROFILE, "Invoice sweep", "outbox-1") == named
+    assert routine_name(PROFILE, "Invoice sweep", "outbox-2", payload) != named
+    assert routine_name(PROFILE, "Invoice sweep", "outbox-1", payload) == named
+    assert routine_name(PROFILE, "Invoice sweep", "outbox-1", other_payload) != named
     assert PROMPT not in default
 
 
@@ -90,7 +96,7 @@ def test_create_calls_cron_once_with_the_profile_out_of_band(service, cron):
     assert outcome.status == "created"
     assert cron.create_calls == [{
         "profile": PROFILE, "schedule": SCHEDULE, "prompt": PROMPT,
-        "name": routine_name(PROFILE, "Invoice sweep", outcome.receipt["id"]),
+        "name": routine_name(PROFILE, "Invoice sweep", outcome.receipt["id"], outcome.receipt["payload_hash"]),
     }]
 
 
@@ -284,7 +290,7 @@ def test_bug3_several_jobs_with_the_receipt_name_leave_it_uncertain(service, cro
     cron.fail_create = "before"
     lost = service.create(*ARGS)
     cron.fail_create = None
-    name = routine_name(PROFILE, None, lost.receipt["id"])
+    name = routine_name(PROFILE, None, lost.receipt["id"], lost.receipt["payload_hash"])
     cron.add_job(PROFILE, name)
     cron.add_job(PROFILE, name)
 
@@ -603,6 +609,109 @@ def test_reg_a_stale_creating_receipt_whose_job_was_actually_made_is_adopted_not
     clock.advance(REMINDER_MAX_IDLE_SECONDS + 1)
     assert service.prune(clock()) == 1  # the stale `creating` receipt; its job is untouched
 
+    adopted = service.create(*ARGS)
+
+    assert adopted.status == "existing"
+    assert adopted.receipt["job_id"] == "job-1"
+    assert len(cron.jobs) == 1
+    assert len(cron.create_calls) == 1
+
+
+# --- regression: a fresh claim's job name must depend on the payload too, not
+# just the receipt id, or a reused request id with an edited payload can
+# silently adopt the old (wrong-prompt) job instead of creating the new one -
+
+
+def test_reg_a_reused_request_id_with_a_new_payload_after_idle_prune_never_adopts_the_old_job(
+    service, cron, store, clock,
+):
+    """A fresh claim reconciles by name before creating (see above). Until this
+    fix, `routine_name` depended only on the receipt id, so a `request_id`
+    reused with a different payload -- after its old receipt was idle-pruned
+    -- computed the SAME name as the old job and the fresh claim adopted it:
+    `existing`, wrong prompt, wrong schedule, and the reminder that was
+    actually requested was never created. docs/11 section 4.3 requires the
+    same request id with a different payload to be a `conflict` (and it still
+    is, while the old receipt exists -- see
+    test_the_same_request_id_with_a_different_payload_conflicts_and_creates_nothing);
+    after a prune removes that receipt, the only way to preserve that intent
+    is for the new payload to compute a name the old job never matches."""
+    first = service.create(*ARGS, request_id="outbox-1")
+    clock.advance(REMINDER_MAX_IDLE_SECONDS + 1)
+    assert service.prune(clock()) == 1
+
+    changed = service.create(PROFILE, SCHEDULE, TIMEZONE, "A different prompt.", request_id="outbox-1")
+
+    assert changed.status == "created"
+    assert changed.receipt["job_id"] != first.receipt["job_id"]
+    assert len(cron.jobs) == 2
+    assert len(cron.create_calls) == 2
+
+
+# --- regression: the other two outcomes a fresh claim's own name lookup can
+# have, now that every fresh claim reconciles by name before creating -------
+
+
+def test_reg_a_new_reminders_name_lookup_that_raises_is_uncertain_and_creates_nothing(service, cron):
+    """A brand new reminder (never claimed before) still reconciles by name
+    first. If that lookup itself is unreachable, "could not tell" must not
+    become "safe to create": the request comes back `uncertain` and
+    `create_job` is never called."""
+    cron.fail_find = True
+
+    outcome = service.create(*ARGS)
+
+    assert outcome.status == "uncertain"
+    assert cron.create_calls == []
+
+
+def test_reg_a_new_reminders_name_lookup_finding_several_jobs_is_uncertain_and_creates_nothing(service, cron):
+    """A brand new reminder whose computed name already matches more than one
+    cron job (this can only happen if something outside this service created
+    jobs under that name) cannot tell which one is its own, so it creates
+    nothing rather than adding a third."""
+    payload = idempotency_key(*ARGS)
+    name = routine_name(PROFILE, None, payload, payload)  # request_id=None: the receipt id IS the payload hash
+    cron.add_job(PROFILE, name)
+    cron.add_job(PROFILE, name)
+
+    outcome = service.create(*ARGS)
+
+    assert outcome.status == "uncertain"
+    assert cron.create_calls == []
+    assert len(cron.jobs) == 2
+
+
+def test_reg_a_stale_creating_receipts_job_that_was_made_is_adopted_with_no_second_create(
+    service, cron, store, clock,
+):
+    """Pin, not a new fix: a `creating` receipt older than IN_FLIGHT_SECONDS is
+    reconciled by the next identical request through the pre-existing
+    takeover path (`_decide`'s stale-creating branch, `_swap` then
+    `_reconcile` -- unrelated to the fresh-claim routing above, since the row
+    is never deleted here, only re-claimed). If the dead creator's
+    `create_job` actually succeeded before it died, the takeover must adopt
+    that job instead of making a second one. Unlike the fresh-claim variant
+    above, this needs no prune: the row is still there, just stale. This
+    branch of `_decide` is untouched by the fresh-claim and job-name fixes
+    above, so this test may already have passed before either of them landed
+    -- it pins the behavior rather than fixing it."""
+    real_create_job = cron.create_job
+
+    class Died(BaseException):
+        """The process dies right after create_job returns; nothing after it runs."""
+
+    def create_job_then_die(*args, **kwargs):
+        real_create_job(*args, **kwargs)
+        raise Died()
+
+    cron.create_job = create_job_then_die
+    with pytest.raises(Died):
+        service.create(*ARGS)
+    assert _state(store, idempotency_key(*ARGS))["state"] == "creating"
+    cron.create_job = real_create_job
+
+    clock.advance(IN_FLIGHT_SECONDS + 1)
     adopted = service.create(*ARGS)
 
     assert adopted.status == "existing"

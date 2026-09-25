@@ -51,7 +51,8 @@ logger = logging.getLogger(__name__)
 SECONDS_PER_DAY = 86400
 REMINDER_MAX_IDLE_SECONDS = 30 * SECONDS_PER_DAY
 # A `creating` receipt younger than this belongs to a creator that is still
-# inside create_job. The in-process Hermes cron answers in milliseconds.
+# inside find_job_ids_by_name or create_job (a fresh claim reconciles by name
+# before it creates). The in-process Hermes cron answers in milliseconds.
 IN_FLIGHT_SECONDS = 60
 # How long a second request waits for that creator before it answers uncertain.
 IN_FLIGHT_WAIT_SECONDS = 5.0
@@ -136,15 +137,20 @@ def prompt_hash(prompt: str) -> str:
     return hashlib.sha256(_normalize(prompt).encode("utf-8")).hexdigest()
 
 
-def routine_name(profile: str, label: str | None, receipt_id: str) -> str:
-    """``[bot:<profile>] <label or "reminder"> · <first 8 hex of sha256(receipt_id)>``.
+def routine_name(profile: str, label: str | None, receipt_id: str, payload_hash: str) -> str:
+    """``[bot:<profile>] <label or "reminder"> · <first 8 hex of sha256(receipt_id + payload_hash)>``.
 
     The ``[bot:<profile>] `` prefix is the display convention clients filter
-    routines on (docs/06 section 6). The tag makes the name unique per
-    receipt, which is what lets an uncertain create be reconciled by name.
+    routines on (docs/06 section 6). The tag is unique per receipt **and**
+    payload, which is what lets a fresh claim or an uncertain create be
+    reconciled by name: a ``request_id`` reused with a different payload
+    (an edited prompt resent under the same id, after the receipt that would
+    have caught it as a ``conflict`` was pruned) must compute a different
+    name, or the fresh claim would find the old job by name and adopt it --
+    reporting success while the reminder actually requested is never made.
     The name never carries prompt text.
     """
-    tag = hashlib.sha256(receipt_id.encode("utf-8")).hexdigest()[:8]
+    tag = hashlib.sha256(f"{receipt_id}\n{payload_hash}".encode("utf-8")).hexdigest()[:8]
     text = _normalize(label) if label and label.strip() else "reminder"
     return f"[bot:{_normalize(profile)}] {text} · {tag}"
 
@@ -209,7 +215,7 @@ class ReminderService:
             "id": receipt_id,
             "request_id": request_id,
             "profile": _normalize(profile),
-            "job_name": routine_name(profile, label, receipt_id),
+            "job_name": routine_name(profile, label, receipt_id, payload),
             "timezone_advisory": _normalize(timezone),
             "payload_hash": payload,
             "prompt_hash": prompt_hash(prompt),
@@ -329,7 +335,8 @@ class ReminderService:
         return ReminderOutcome("uncertain", _view(row))
 
     def _reconcile(self, row, schedule: str, prompt: str) -> ReminderOutcome:
-        """Find the job an uncertain or abandoned create may have made, by its unique name."""
+        """Find the job a fresh claim, an uncertain receipt, or an abandoned create
+        may already have, by its name -- unique per receipt and payload."""
         try:
             job_ids = self._cron.find_job_ids_by_name(row["profile"], row["job_name"])
         except Exception as exc:
