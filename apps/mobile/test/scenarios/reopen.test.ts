@@ -31,6 +31,10 @@ function held(): { promise: Promise<SubmitOutcome>; release: (outcome?: SubmitOu
 const submittedTexts = (conn: FakeConnection): string[] =>
   conn.requests.filter(r => r.method === 'prompt.submit').map(r => String(r.params.text))
 
+/** What went on the wire: each submit's text and its `queued` flag (`null` when absent). */
+const submittedFlags = (conn: FakeConnection): [string, boolean | null][] =>
+  conn.requests.filter(r => r.method === 'prompt.submit').map(r => [String(r.params.text), r.params.queued === undefined ? null : Boolean(r.params.queued)])
+
 describe('re-opening the chat', () => {
   it('never submits an in-flight send a second time', async () => {
     const answer = held()
@@ -163,11 +167,56 @@ describe('re-opening the chat', () => {
     const conn = gateway.connectionFor('thijs')
     expect(submittedTexts(conn)).toEqual(['while the screen remounts'])
     expect(outbox.list()).toHaveLength(0)
-    expect(second.getView().state.items.filter(i => i.kind === 'user')).toMatchObject([{ text: 'while the screen remounts' }])
+    // The new controller applied the answer: without it the bubble would stay
+    // `submitting` for good, since a retry refuses a send still in flight.
+    const users = second.getView().state.items.filter(i => i.kind === 'user')
+    expect(users).toMatchObject([{ text: 'while the screen remounts', delivery: 'acknowledged' }])
+    // Its turn completed, so the bubble is history now: the local id is sealed off.
+    expect(users[0]).not.toHaveProperty('localId')
     expect(second.getView().state.items.filter(i => i.kind === 'user' && i.delivery === 'unconfirmed')).toEqual([])
     // An acknowledged send is never sent again, even by a deliberate retry.
     await second.retry(localId)
     expect(submittedTexts(conn)).toHaveLength(1)
+  })
+
+  it('queues the next outbox item behind one still in flight from before a remount', async () => {
+    // The old controller's flush sent `first` and waits for its answer. The new
+    // controller's flush skips it (in flight) and sends `second`, which the
+    // gateway reads after `first` set the session running: without `queued: true`
+    // it would redirect `first`.
+    const answers: ReturnType<typeof held>[] = []
+    const gateway = new FakeGateway({
+      onSubmit: () => {
+        const answer = held()
+        answers.push(answer)
+        return answer.promise
+      }
+    })
+    const seed: OutboxItem[] = [
+      { localId: 'r1', connectionId: 'c-test', profile: 'thijs', text: 'first', createdAt: 1, status: 'queued_unsent' },
+      { localId: 'r2', connectionId: 'c-test', profile: 'thijs', text: 'second', createdAt: 2, status: 'queued_unsent' }
+    ]
+    const outbox = memoryOutbox(seed)
+    const before = createSessionController({ port: gateway, profile: 'thijs', connectionId: 'c-test', outbox })
+    await before.open() // the open flush sends `first` and waits for its answer
+    await flush(1)
+    const conn = gateway.connectionFor('thijs')
+    expect(submittedFlags(conn)).toEqual([['first', null]])
+
+    // The screen remounts during the flush.
+    before.close()
+    const after = createSessionController({ port: gateway, profile: 'thijs', connectionId: 'c-test', outbox })
+    await after.open()
+    await flush(1)
+
+    expect(submittedFlags(conn)).toEqual([['first', null], ['second', true]])
+
+    for (const answer of answers) {
+      answer.release()
+    }
+    await flush(5)
+    expect(submittedTexts(conn)).toEqual(['first', 'second'])
+    expect(outbox.list()).toHaveLength(0)
   })
 
   it('keeps the reducer state across re-opens', async () => {

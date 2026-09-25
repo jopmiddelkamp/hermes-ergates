@@ -14,7 +14,7 @@ import type { OutboxItem } from '@/state/outbox'
 import { flush } from '@test/fake-gateway/fake-websocket'
 import turnPong from '@test/fixtures/turn-pong.json'
 
-import { FakeGateway } from '../fake-gateway/fake-gateway'
+import { FakeGateway, type SubmitOutcome } from '../fake-gateway/fake-gateway'
 import { memoryOutbox } from '../fake-gateway/memory-outbox'
 
 describe('the durable outbox', () => {
@@ -69,6 +69,36 @@ describe('the durable outbox', () => {
     expect(submits).toEqual([['first', undefined], ['second', true]])
     const users = controller.getView().state.items.filter(i => i.kind === 'user')
     expect(users).toMatchObject([{ text: 'first', delivery: 'acknowledged' }, { text: 'second', delivery: 'queued' }])
+  })
+
+  it('sends a second message queued while the first one\'s submit is still unanswered', async () => {
+    // At the pin the gateway reads one frame and finishes it before the next, so
+    // the second submit always lands after the first set `session["running"]`.
+    // Without `queued: true` it goes through `busy_input_mode` (default
+    // `interrupt`) and redirects or interrupts the first turn.
+    let answerFirst: (outcome: SubmitOutcome) => void = () => undefined
+    const firstAnswer = new Promise<SubmitOutcome>(resolve => {
+      answerFirst = resolve
+    })
+    const gateway = new FakeGateway({ onSubmit: text => (text === 'first' ? firstAnswer : { status: 'queued' as const }) })
+    const controller = createSessionController({ port: gateway, profile: 'thijs', connectionId: 'c-test', outbox: memoryOutbox() })
+    await controller.open()
+    const conn = gateway.connectionFor('thijs')
+
+    const sendingFirst = controller.send('first')
+    await flush(1)
+    await controller.send('second')
+    answerFirst([{ type: 'message.start', seq: 1 }])
+    await sendingFirst
+    await flush(20)
+
+    // The wire flags, not the bubbles: the fake scripts its answers and would hide a redirect.
+    const submits = conn.requests.filter(r => r.method === 'prompt.submit').map(r => [r.params.text, r.params.queued ?? null])
+    expect(submits).toEqual([['first', null], ['second', true]])
+    expect(controller.getView().state.items.filter(i => i.kind === 'user')).toMatchObject([
+      { text: 'first', delivery: 'acknowledged' },
+      { text: 'second', delivery: 'queued' }
+    ])
   })
 
   it('keeps an uncertain send in the outbox and never resends it automatically', async () => {

@@ -233,7 +233,12 @@ export class SendQueue {
       // A second message while a turn is running must never interrupt it:
       // `display.busy_input_mode` defaults to `interrupt`, which hard-kills the
       // live turn. `queued: true` forces the server's queue mode instead.
-      const result = await this.options.submit(item.text, { queued: Boolean(this.options.isBusy?.()) })
+      // Another send of ours still waiting for its answer counts as a running
+      // turn: the gateway handles one frame before it reads the next, so that
+      // submit set the session running before this one arrives. On an idle
+      // session the flag changes nothing.
+      const anotherInFlight = this.mine().some(i => i.localId !== item.localId && inFlight.has(i.localId))
+      const result = await this.options.submit(item.text, { queued: anotherInFlight || Boolean(this.options.isBusy?.()) })
       const status = String(result?.status ?? 'streaming')
       this.options.outbox.remove(item.localId)
       if (status === 'queued') {
