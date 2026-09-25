@@ -68,18 +68,19 @@ These are planned paths; they do not exist yet. Package versions and native buil
 
 ### 3.1 Code architecture rules (ADR-029)
 
-Screens import features. Features import the gateway port, the Query cache and the device store. The port contract, the session reducer and the vendored client import no React Native or Expo module, so they run unchanged in Node tests. The session reducer lives in the chat feature (`src/features/chat/session-reducer.ts`); `createSessionController` (`src/features/chat/session-controller.ts`) wires it to the port, and `use-session.ts` only binds that controller to React.
+Screens import features. Features import the gateway port, the Query cache and the device store. The port contract, the session reducer, the session controller and the vendored client import no React Native or Expo module, so they run unchanged in Node tests. The session reducer lives in the chat feature (`src/features/chat/session-reducer.ts`); `createSessionController` (`src/features/chat/session-controller.ts`) wires it to the port, and `use-session.ts` only binds that controller to React.
 
-`apps/mobile/.dependency-cruiser.cjs` encodes these rules as 13 named checks (prefix `adr029-<rule number>-`), and CI fails on any violation (`npm run depcruise`). Each feature exposes one public `index.ts`; screens, UI and other features import nothing else from it.
+`apps/mobile/.dependency-cruiser.cjs` encodes these rules as 15 named checks (prefix `adr029-<rule number>-`), and CI fails on any violation (`npm run depcruise`). Each feature exposes one public `index.ts`; screens, UI and other features import nothing else from it.
 
 ```mermaid
 flowchart TB
   APP[app/ screens: layout and wiring] --> FEAT[src/features/*]
   FEAT --> QRY[TanStack Query cache: Hermes-owned data]
   FEAT --> STORE[Zustand store: device-owned data]
-  FEAT --> RED[Pure session reducer, one per open session]
+  FEAT --> CTRL[Pure session controller, one per open session]
+  CTRL --> RED[Pure session reducer]
   QRY --> PORT[GatewayPort contract]
-  RED --> PORT
+  CTRL --> PORT
   PORT --> REAL[Native adapters]
   PORT --> FAKE[test/fake-gateway adapter]
   REAL --> VEND[vendor/hermes JsonRpcGatewayClient]

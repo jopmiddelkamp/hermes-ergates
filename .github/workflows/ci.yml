@@ -2,8 +2,11 @@
 name: CI
 
 on:
+  # Other branches get CI through their pull request. A push trigger for them
+  # too would run every job twice per commit (push and pull_request runs land
+  # in different concurrency groups). `main` runs on every push after a merge.
   push:
-    branches: [main, "upgrade/**"]
+    branches: [main]
   pull_request:
 
 permissions:
@@ -16,15 +19,19 @@ concurrency:
 jobs:
   workflow-lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "0.11.19"
       - run: scripts/ci-local.sh lint
 
   mobile:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -38,15 +45,19 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "0.11.19"
       - run: scripts/ci-local.sh integration
 
   contract:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
@@ -55,19 +66,25 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: NousResearch/hermes-agent
+          # Same pin in scripts/ci-local.sh and integrations/ergates/contract/pinned.py (HERMES_PIN).
           ref: d76856cc6971b6e0e1903b5369498bcc4bb83a60
           path: .cache/hermes-pin
           persist-credentials: false
       - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "0.11.19"
       - run: scripts/ci-local.sh contract
         env:
           HERMES_SOURCE: ${{ github.workspace }}/.cache/hermes-pin
 
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "0.11.19"
       - run: scripts/ci-local.sh deploy

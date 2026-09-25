@@ -1,11 +1,11 @@
-"""Fix round 1 (Important finding): the pin check refuses a dirty checkout.
+"""The pin check refuses a dirty checkout.
 
-`scripts/ci-local.sh`'s `check_pin()` fails a Hermes checkout that is at the
-pin but has uncommitted edits, not just one at the wrong commit. The `hermes`
-fixture must refuse the same way for every invocation path, not only the ones
-that go through `prepare_hermes_source`. These tests exercise
-`pinned.check_pin` directly against a throwaway git repo built in `tmp_path`;
-they never touch the real Hermes checkout or `.cache/hermes-pin`.
+Like `check_pin()` in `scripts/ci-local.sh`, `pinned.check_pin` fails a Hermes
+checkout that is at the pin but has uncommitted edits or untracked files, not
+just one at the wrong commit, so the `hermes` fixture refuses the same way for
+every invocation path, not only the ones that go through
+`prepare_hermes_source`. These tests run it against a throwaway git repo built
+in `tmp_path`; they never touch the real Hermes checkout or `.cache/hermes-pin`.
 """
 
 from __future__ import annotations
@@ -35,6 +35,17 @@ def _init_repo(root: Path) -> str:
 def test_a_checkout_at_the_pin_with_local_edits_fails_naming_the_checkout(tmp_path: Path) -> None:
     pin = _init_repo(tmp_path)
     (tmp_path / "tracked.txt").write_text("edited\n", encoding="utf-8")
+
+    failure = check_pin(tmp_path, pin)
+
+    assert failure is not None
+    assert str(tmp_path) in failure
+    assert "local edits" in failure
+
+
+def test_a_checkout_at_the_pin_with_an_untracked_file_fails_naming_the_checkout(tmp_path: Path) -> None:
+    pin = _init_repo(tmp_path)
+    (tmp_path / "stray.py").write_text("print('not part of the pin')\n", encoding="utf-8")
 
     failure = check_pin(tmp_path, pin)
 

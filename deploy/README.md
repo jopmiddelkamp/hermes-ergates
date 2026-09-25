@@ -339,12 +339,4 @@ These are called out, not hidden, because this file is a draft:
   generated before the first start, with the plaintext variable kept as a
   documented fallback.
 
-## Corrections made against the task brief
-
-The brief for this file named the ntfy image `binhs/ntfy`. No such
-repository exists on Docker Hub; `binwiederhier/ntfy` is the actual upstream
-ntfy server image (the project maintainer's account, confirmed against
-hub.docker.com and docs.ntfy.sh at draft time) and is what `docker-compose.yml`
-uses instead.
-
 [ntfy-config]: https://docs.ntfy.sh/config/

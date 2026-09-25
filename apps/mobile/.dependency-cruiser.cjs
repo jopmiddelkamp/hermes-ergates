@@ -72,6 +72,20 @@ module.exports = {
       to: { path: '^src/features/[^/]+/', pathNot: '^src/features/[^/]+/index\\.ts$' }
     },
     {
+      name: 'adr029-1-no-circular',
+      comment: 'Dependencies point one way: no module imports itself back through a chain of other modules.',
+      severity: 'error',
+      from: {},
+      to: { circular: true }
+    },
+    {
+      name: 'adr029-1-no-unresolvable',
+      comment: 'Every import resolves to a file. An import the checker cannot resolve is an edge that every other rule here would miss.',
+      severity: 'error',
+      from: {},
+      to: { couldNotResolve: true }
+    },
+    {
       name: 'adr029-2-store-holds-no-hermes-data',
       comment: 'Hermes-owned data lives only in the TanStack Query cache: the device store imports neither the Query cache nor any gateway module except the secret-store contract.',
       severity: 'error',

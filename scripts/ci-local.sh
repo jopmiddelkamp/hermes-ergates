@@ -36,18 +36,21 @@ job_integration() {
   "${UV_TEST[@]}" pytest --cov --cov-fail-under=90
 }
 
+# Same pin in integrations/ergates/contract/pinned.py and .github/workflows/ci.yml (contract job `ref`).
 HERMES_PIN="d76856cc6971b6e0e1903b5369498bcc4bb83a60"
 
-# Fails unless $1 is a Hermes checkout at the pin without local changes.
+# Fails unless $1 is a Hermes checkout at the pin without local changes or
+# untracked files (`git diff` would miss the untracked ones).
+# Checks every git exit code itself: `set -e` does not apply inside a function
+# called from an `if`.
 check_pin() {
-  local head
-  head="$(git -C "$1" rev-parse HEAD)"
-  if [[ "$head" != "$HERMES_PIN" ]]; then
-    echo "ci-local: $1 is at $head, not the Hermes pin $HERMES_PIN" >&2
+  local head changes
+  if ! head="$(git -C "$1" rev-parse HEAD)" || [[ "$head" != "$HERMES_PIN" ]]; then
+    echo "ci-local: $1 is at ${head:-no commit}, not the Hermes pin $HERMES_PIN" >&2
     return 1
   fi
-  if ! git -C "$1" diff --quiet HEAD; then
-    echo "ci-local: $1 has local changes; the contract tests need the pinned files as committed" >&2
+  if ! changes="$(git -C "$1" status --porcelain)" || [[ -n "$changes" ]]; then
+    echo "ci-local: $1 has local changes or untracked files; the contract tests need the pinned files as committed" >&2
     return 1
   fi
 }
@@ -57,7 +60,9 @@ check_pin() {
 #  - else $ROOT/.cache/hermes-pin, created once as a detached `git worktree add`
 #    from HERMES_REPO (default ~/Projects/misc/hermes/hermes-agent), or fetched
 #    from GitHub when that clone does not have the pinned commit.
-# The only write to an existing Hermes clone is that `git worktree add`.
+# The only write to an existing Hermes clone is that `git worktree add`: when
+# it fails, or the cache is left half-made, the script prints what to clean up
+# and leaves the clone alone.
 prepare_hermes_source() {
   if [[ -n "${HERMES_SOURCE:-}" ]]; then
     check_pin "$HERMES_SOURCE"
@@ -65,17 +70,25 @@ prepare_hermes_source() {
   fi
   local cache="$ROOT/.cache/hermes-pin"
   local repo="${HERMES_REPO:-$HOME/Projects/misc/hermes/hermes-agent}"
+  local hint="ci-local: could not prepare $cache. Delete it and run again; if git says the worktree is still registered, run \`git -C $repo worktree prune\` yourself."
   if [[ ! -e "$cache" ]]; then
     mkdir -p "$ROOT/.cache"
     if git -C "$repo" cat-file -e "$HERMES_PIN^{commit}" 2>/dev/null; then
-      git -C "$repo" worktree add --detach "$cache" "$HERMES_PIN"
-    else
-      git init -q "$cache"
-      git -C "$cache" fetch -q --depth 1 https://github.com/NousResearch/hermes-agent "$HERMES_PIN"
-      git -C "$cache" checkout -q --detach FETCH_HEAD
+      if ! git -C "$repo" worktree add --detach "$cache" "$HERMES_PIN"; then
+        echo "$hint" >&2
+        return 1
+      fi
+    elif ! { git init -q "$cache" &&
+      git -C "$cache" fetch -q --depth 1 https://github.com/NousResearch/hermes-agent "$HERMES_PIN" &&
+      git -C "$cache" checkout -q --detach FETCH_HEAD; }; then
+      echo "$hint" >&2
+      return 1
     fi
   fi
-  check_pin "$cache"
+  if ! check_pin "$cache"; then
+    echo "$hint" >&2
+    return 1
+  fi
   export HERMES_SOURCE="$cache"
 }
 
