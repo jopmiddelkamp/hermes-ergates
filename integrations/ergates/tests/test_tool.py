@@ -13,6 +13,8 @@ import sqlite3
 import sys
 import threading
 import time
+import types
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -56,7 +58,7 @@ def _valid_args(**overrides):
         "title": "Thijs",
         "role": "Bookkeeper",
         "description": "Read invoices and prepare reconciliation notes.",
-        "template_id": "bookkeeper-readonly",
+        "template_id": "bookkeeper",
         "provider": "operator-selected-provider",
         "model": "operator-selected-model",
         "briefing": "Role, boundaries, seed facts and reporting instructions.",
@@ -614,6 +616,57 @@ def test_a_grant_that_cannot_be_read_blocks_the_call(profile_process, monkeypatc
     monkeypatch.setattr(hermes_adapter, "granted_toolsets", unreadable)
 
     assert _gate(_RecordingCtx())(tool_name="web_search", args={}) == {"action": "block", "message": BLOCK_UNVERIFIED}
+
+
+@contextmanager
+def _fake_profile_home(profile):
+    yield Path("/hermes/profiles") / profile
+
+
+def _stub_hermes_grant_modules(monkeypatch, config, *, drop_server_enabled=False):
+    """Fake the Hermes modules ``granted_toolsets`` imports, so its real import
+    and config-reading logic runs without a Hermes install. ``drop_server_enabled``
+    leaves ``tools.mcp_tool_registration`` without the private symbol the grant
+    reads, the way a Hermes upgrade that renames or removes it would."""
+    monkeypatch.setattr(hermes_adapter, "_profile_home", _fake_profile_home)
+    hermes_config = types.ModuleType("hermes_cli.config")
+    hermes_config.load_config_readonly = lambda: config
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", hermes_config)
+    model_tools = types.ModuleType("model_tools")
+    model_tools.get_toolset_for_tool = lambda tool_name: None
+    monkeypatch.setitem(sys.modules, "model_tools", model_tools)
+    toolsets_module = types.ModuleType("toolsets")
+    toolsets_module.resolve_toolset = lambda name: []
+    monkeypatch.setitem(sys.modules, "toolsets", toolsets_module)
+    utils_module = types.ModuleType("utils")
+    utils_module.is_truthy_value = lambda value, default=False: bool(value)
+    monkeypatch.setitem(sys.modules, "utils", utils_module)
+    monkeypatch.setitem(sys.modules, "tools", types.ModuleType("tools"))
+    mcp_registration = types.ModuleType("tools.mcp_tool_registration")
+    if not drop_server_enabled:
+        mcp_registration._server_enabled = lambda entry: True
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool_registration", mcp_registration)
+
+
+def test_a_hermes_symbol_the_grant_needs_going_missing_blocks_instead_of_disarming_the_gate(
+        profile_process, monkeypatch):
+    """Only "Hermes is not here" (``hermes_cli.config`` unimportable) may read as
+    "no toolsets pinned". A Hermes present but missing a private symbol the
+    grant also reads, the way an upgrade renaming it would look, must not be
+    swallowed the same way: the pre_tool_call hook blocks."""
+    _stub_hermes_grant_modules(monkeypatch, {"tools": {"enabled_toolsets": ["web"]}}, drop_server_enabled=True)
+
+    assert _gate(_RecordingCtx())(tool_name="terminal", args={}) == {"action": "block", "message": BLOCK_UNVERIFIED}
+
+
+def test_a_toolset_pin_that_is_not_a_list_blocks_instead_of_granting_nothing(profile_process, monkeypatch):
+    """A hand-edited ``enabled_toolsets: web`` (a string, not a list) must not
+    read as "no toolsets pinned", which would let Hermes decide every tool:
+    the pre_tool_call hook blocks until it is fixed."""
+    _stub_hermes_grant_modules(monkeypatch, {"tools": {"enabled_toolsets": "web"}})
+
+    assert _gate(_RecordingCtx())(tool_name="terminal", args={}) == {"action": "block", "message": BLOCK_UNVERIFIED}
 
 
 def _store_folder_is_a_file(root):

@@ -330,24 +330,34 @@ def granted_toolsets(profile: str) -> frozenset[str] | None:
 
     ``None`` means the profile pins no toolsets, so Hermes alone decides its
     tools and Ergates cannot tell a narrower grant; outside a Hermes runtime
-    it is ``None`` too. The config is read at every call, so a toolset taken
-    out of the pin is blocked at the next tool call, without a new session.
-    Any other failure raises, and the tool gate blocks the call.
+    (``hermes_cli.config`` itself is not importable) it is ``None`` too. The
+    config is read at every call, so a toolset taken out of the pin is
+    blocked at the next tool call, without a new session.
+
+    Only "Hermes is not here" is read as "no toolsets pinned". A Hermes
+    present but missing one of the other symbols this reads (renamed or
+    moved by an upgrade) raises instead of returning ``None``, so the tool
+    gate blocks rather than silently granting every tool. A pin present but
+    not a list (a hand-edited config) raises for the same reason. Any other
+    failure raises too, and the tool gate blocks the call.
     """
     try:
         from hermes_cli.config import load_config_readonly
-        from model_tools import get_toolset_for_tool
-        from tools.mcp_tool_registration import _server_enabled
-        from toolsets import resolve_toolset
-        from utils import is_truthy_value
     except ImportError:
         return None
+    from model_tools import get_toolset_for_tool
+    from tools.mcp_tool_registration import _server_enabled
+    from toolsets import resolve_toolset
+    from utils import is_truthy_value
+
     with _profile_home(profile):
         config = load_config_readonly() or {}
         tools = config.get("tools")
         pinned = tools.get("enabled_toolsets") if isinstance(tools, dict) else None
-        if not isinstance(pinned, list):
+        if pinned is None:
             return None
+        if not isinstance(pinned, list):
+            raise ValueError(f"{profile!r} config tools.enabled_toolsets is not a list")
         names = {str(name).strip() for name in pinned if str(name).strip()}
         granted = set(names)
         for name in names:
