@@ -85,12 +85,33 @@ async def _answer(method: Callable[[Operations], Reply]) -> JSONResponse:
     return JSONResponse(status_code=reply.status, content=reply.body)
 
 
+def _sent_as_json(content_type: str) -> bool:
+    """True for ``application/json`` or a ``.../*+json`` subtype; parameters (``; charset=...``) are allowed."""
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    return media_type == "application/json" or media_type.endswith("+json")
+
+
 async def _body(request: Request) -> Any:
-    """The JSON body, or ``None`` when it is missing or not JSON (the operation answers 400)."""
+    """The JSON body, or ``None`` when it is missing, not JSON, or not sent as JSON.
+
+    Only a request whose ``Content-Type`` is ``application/json`` (or a
+    ``+json`` subtype) is parsed, matching what Hermes's own JSON routes
+    accept -- a missing or different content type answers ``None`` the same
+    as unparsable JSON, never parsing the body anyway. That forces a CORS
+    preflight before a cross-origin request can reach a mutating route:
+    Hermes checks no Origin or CSRF token, and a gated session cookie is
+    ``SameSite=Lax``, so without this check a same-site page could send a
+    no-preflight ``text/plain`` body straight into ``POST /reminders``.
+    Deeply nested JSON raises ``RecursionError``, not ``ValueError``; it is
+    treated the same as any other unparsable body rather than left to escape
+    as an unhandled 500.
+    """
+    if not _sent_as_json(request.headers.get("content-type", "")):
+        return None
     raw = await request.body()
     try:
         return json.loads(raw) if raw else None
-    except ValueError:
+    except (ValueError, RecursionError):
         return None
 
 

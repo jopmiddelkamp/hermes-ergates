@@ -7,6 +7,7 @@ through Hermes's real middleware, including its auth.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 
@@ -96,6 +97,45 @@ def test_a_schedule_hermes_refuses_and_malformed_json_are_400(web, token_headers
     assert (malformed.status_code, malformed.json()["error"]["code"]) == (400, "invalid")
     assert (unknown.status_code, unknown.json()["error"]["code"]) == (404, "unknown_profile")
     assert not (home / "cron" / "jobs.json").exists()
+
+
+def test_a_non_json_content_type_is_400_and_creates_nothing(web, token_headers, root, make_profile):
+    """Hermes's own JSON routes parse only ``application/json``/``+json``, which forces a
+    CORS preflight for a cross-origin request. In gated mode the session cookies are
+    ``SameSite=Lax`` and Hermes checks no Origin/CSRF token, so a same-site page could
+    otherwise send a no-preflight ``text/plain`` body straight into a mutating route.
+    This route must refuse anything not actually sent as JSON, parameters such as a
+    charset allowed."""
+    home = make_profile("wies")
+    body = json.dumps(_reminder("wies")).encode("utf-8")
+
+    plain = web.post(f"{API}/reminders", content=body, headers={**token_headers, "Content-Type": "text/plain"})
+
+    assert (plain.status_code, plain.json()["error"]["code"]) == (400, "invalid")
+    assert not (home / "cron" / "jobs.json").exists()
+    with ControlStore(store_path(root)).read() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM reminder_receipts WHERE profile = 'wies'").fetchone()[0] == 0
+
+    charset = web.post(f"{API}/reminders", content=body,
+                        headers={**token_headers, "Content-Type": "application/json; charset=utf-8"})
+    assert charset.status_code == 201
+
+
+def test_a_deeply_nested_body_is_400_not_a_500(web):
+    """``json.loads`` raises ``RecursionError`` for deeply nested JSON, not ``ValueError``;
+    ``_body`` must treat it like any other unparsable body instead of letting it escape
+    as an unhandled 500."""
+    from starlette.requests import Request
+
+    module = _module()
+    nested = ("[" * 20000 + "]" * 20000).encode("utf-8")
+
+    async def receive() -> dict:
+        return {"type": "http.request", "body": nested, "more_body": False}
+
+    request = Request({"type": "http", "headers": [(b"content-type", b"application/json")]}, receive)
+
+    assert asyncio.run(module._body(request)) is None
 
 
 def test_d4_provisioning_through_hermes_serve_ends_complete(web, token_headers, root):
