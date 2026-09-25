@@ -27,6 +27,8 @@ import pytest
 from pinned import HERMES_PIN, check_pin
 
 PLUGIN_DIR = Path(__file__).resolve().parents[2]
+# The dashboard session token `hermes serve` expects (hermes_cli/web_server.py reads the variable at import).
+SESSION_TOKEN = "ergates-contract-live-token"
 _temporary: list[Path] = []
 
 
@@ -45,8 +47,10 @@ def pytest_configure(config: pytest.Config) -> None:
     (root / "plugins").mkdir(parents=True)
     (root / "plugins" / "ergates").symlink_to(PLUGIN_DIR, target_is_directory=True)
     (root / "config.yaml").write_text("plugins:\n  enabled:\n  - ergates\n", encoding="utf-8")
-    os.environ.update({"HOME": str(home), "HERMES_HOME": str(root)})
+    os.environ.update({"HOME": str(home), "HERMES_HOME": str(root), "HERMES_DASHBOARD_SESSION_TOKEN": SESSION_TOKEN})
     sys.path.insert(0, str(source))
+    # Starlette at the pin prefers httpx2 for its TestClient; the pinned Hermes ships httpx.
+    config.addinivalue_line("filterwarnings", "ignore:Using `httpx` with `starlette.testclient`")
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
@@ -70,3 +74,18 @@ def make_profile(root):
         return home
 
     return make
+
+
+@pytest.fixture(scope="session")
+def web():
+    """Hermes's dashboard app, imported the way ``hermes serve`` loads it; the
+    import mounts every enabled plugin's API router."""
+    from fastapi.testclient import TestClient
+    from hermes_cli.web_server import app
+
+    return TestClient(app)
+
+
+@pytest.fixture(scope="session")
+def token_headers() -> dict[str, str]:
+    return {"X-Hermes-Session-Token": SESSION_TOKEN}

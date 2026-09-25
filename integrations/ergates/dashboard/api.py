@@ -1,0 +1,144 @@
+"""The Ergates HTTP operations as a Hermes dashboard plugin router (roadmap D3, contract C3).
+
+``hermes serve`` imports this file by path, because ``manifest.json`` next to
+it names it as the plugin's ``api``, and mounts ``router`` under
+``/api/plugins/ergates``. Hermes's own middleware authenticates every request
+before it reaches a route: the dashboard session token on loopback, the
+cookie gate when dashboard auth is on. There is no Ergates HTTP service of its
+own.
+
+Each route reads its input, runs one ``Operations`` method on the server's
+worker thread pool, and answers that method's status and JSON body. The work
+blocks (a store write may wait up to its busy timeout; a second identical
+reminder request waits up to five seconds for the first), so it never runs on
+the event loop.
+
+One ``Operations`` -- one ``ControlStore`` -- serves every request of the
+process. It is built on first use, not at import, so a store that cannot be
+opened answers 503 ``store_unavailable`` instead of keeping the router from
+mounting.
+
+Hermes imports this file under its own module name, outside any package, so
+the plugin folder is added to ``sys.path`` to import the ``ergates`` package.
+Decision D5 allows Hermes imports here; this file needs none, because every
+Hermes call goes through ``ergates.hermes_adapter``.
+"""
+
+import json
+import logging
+import sqlite3
+import sys
+import threading
+from pathlib import Path
+from typing import Any, Callable, Optional
+
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
+
+_PLUGIN_DIR = str(Path(__file__).resolve().parents[1])
+if _PLUGIN_DIR not in sys.path:
+    sys.path.append(_PLUGIN_DIR)
+
+from ergates import hermes_adapter  # noqa: E402
+from ergates.operations import Operations, Reply, store_unavailable  # noqa: E402
+from ergates.paths import hermes_root, store_path, templates_dir  # noqa: E402
+from ergates.store import ControlStore, StoreError  # noqa: E402
+
+logger = logging.getLogger("ergates.dashboard")
+
+router = APIRouter()
+
+_lock = threading.Lock()
+_operations: Optional[Operations] = None
+
+
+def operations() -> Operations:
+    """The process's one ``Operations``, built on first use."""
+    global _operations
+    with _lock:
+        if _operations is None:
+            root = hermes_root()
+            _operations = Operations(
+                ControlStore(store_path(root)),
+                cron=hermes_adapter.HermesCron(),
+                profile_exists=hermes_adapter.profile_exists,
+                plugin_enabled=hermes_adapter.plugin_enabled,
+                enable_plugin=hermes_adapter.enable_plugin,
+                check_schedule=hermes_adapter.check_schedule,
+                templates=templates_dir(root),
+            )
+        return _operations
+
+
+def _call(method: Callable[[Operations], Reply]) -> Reply:
+    try:
+        ops = operations()
+    except (StoreError, sqlite3.Error, OSError) as exc:
+        logger.warning("ergates: the control store cannot be opened (%s)", type(exc).__name__)
+        return store_unavailable()
+    return method(ops)
+
+
+async def _answer(method: Callable[[Operations], Reply]) -> JSONResponse:
+    reply = await run_in_threadpool(_call, method)
+    return JSONResponse(status_code=reply.status, content=reply.body)
+
+
+async def _body(request: Request) -> Any:
+    """The JSON body, or ``None`` when it is missing or not JSON (the operation answers 400)."""
+    raw = await request.body()
+    try:
+        return json.loads(raw) if raw else None
+    except ValueError:
+        return None
+
+
+@router.get("/health")
+async def health() -> JSONResponse:
+    return await _answer(lambda ops: ops.health())
+
+
+@router.post("/reminders")
+async def create_reminder(request: Request) -> JSONResponse:
+    body = await _body(request)
+    return await _answer(lambda ops: ops.create_reminder(body))
+
+
+@router.get("/proposals/{proposal_id}")
+async def get_proposal(proposal_id: str) -> JSONResponse:
+    return await _answer(lambda ops: ops.get_proposal(proposal_id))
+
+
+@router.post("/proposals/{proposal_id}/accept")
+async def accept_proposal(proposal_id: str, request: Request) -> JSONResponse:
+    body = await _body(request)
+    return await _answer(lambda ops: ops.accept_proposal(proposal_id, body))
+
+
+@router.post("/proposals/{proposal_id}/reject")
+async def reject_proposal(proposal_id: str) -> JSONResponse:
+    return await _answer(lambda ops: ops.reject_proposal(proposal_id))
+
+
+@router.post("/proposals/{proposal_id}/steps")
+async def record_step(proposal_id: str, request: Request) -> JSONResponse:
+    body = await _body(request)
+    return await _answer(lambda ops: ops.record_step(proposal_id, body))
+
+
+@router.post("/profiles/{profile}/plugin")
+async def enable_plugin(profile: str) -> JSONResponse:
+    return await _answer(lambda ops: ops.enable_plugin(profile))
+
+
+@router.get("/attention/prefs")
+async def get_prefs(request: Request) -> JSONResponse:
+    profile = request.query_params.get("profile")
+    return await _answer(lambda ops: ops.get_prefs(profile))
+
+
+@router.put("/attention/prefs")
+async def set_prefs(request: Request) -> JSONResponse:
+    body = await _body(request)
+    return await _answer(lambda ops: ops.set_prefs(body))

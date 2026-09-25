@@ -1,0 +1,10 @@
+{
+  "name": "ergates",
+  "label": "Ergates",
+  "description": "Server operations for the Ergates mobile app: reminders, agent proposals and push preferences. No dashboard page.",
+  "icon": "Puzzle",
+  "version": "0.2.0",
+  "tab": { "path": "/ergates", "hidden": true },
+  "entry": "index.js",
+  "api": "api.py"
+}
