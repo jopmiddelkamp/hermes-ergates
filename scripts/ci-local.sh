@@ -7,7 +7,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-JOBS=(lint mobile integration)
+JOBS=(lint mobile integration contract)
 
 # The workflow files (actionlint) and this script (bash -n).
 job_lint() {
@@ -34,6 +34,55 @@ UV_TEST=(uv run --python 3.11 --with pytest --with pytest-cov --with pyyaml)
 job_integration() {
   cd "$ROOT/integrations/ergates"
   "${UV_TEST[@]}" pytest --cov --cov-fail-under=90
+}
+
+HERMES_PIN="d76856cc6971b6e0e1903b5369498bcc4bb83a60"
+
+# Fails unless $1 is a Hermes checkout at the pin without local changes.
+check_pin() {
+  local head
+  head="$(git -C "$1" rev-parse HEAD)"
+  if [[ "$head" != "$HERMES_PIN" ]]; then
+    echo "ci-local: $1 is at $head, not the Hermes pin $HERMES_PIN" >&2
+    return 1
+  fi
+  if ! git -C "$1" diff --quiet HEAD; then
+    echo "ci-local: $1 has local changes; the contract tests need the pinned files as committed" >&2
+    return 1
+  fi
+}
+
+# Exports HERMES_SOURCE, a checkout at the pin:
+#  - HERMES_SOURCE when set (CI checks the pin out there);
+#  - else $ROOT/.cache/hermes-pin, created once as a detached `git worktree add`
+#    from HERMES_REPO (default ~/Projects/misc/hermes/hermes-agent), or fetched
+#    from GitHub when that clone does not have the pinned commit.
+# The only write to an existing Hermes clone is that `git worktree add`.
+prepare_hermes_source() {
+  if [[ -n "${HERMES_SOURCE:-}" ]]; then
+    check_pin "$HERMES_SOURCE"
+    return
+  fi
+  local cache="$ROOT/.cache/hermes-pin"
+  local repo="${HERMES_REPO:-$HOME/Projects/misc/hermes/hermes-agent}"
+  if [[ ! -e "$cache" ]]; then
+    mkdir -p "$ROOT/.cache"
+    if git -C "$repo" cat-file -e "$HERMES_PIN^{commit}" 2>/dev/null; then
+      git -C "$repo" worktree add --detach "$cache" "$HERMES_PIN"
+    else
+      git init -q "$cache"
+      git -C "$cache" fetch -q --depth 1 https://github.com/NousResearch/hermes-agent "$HERMES_PIN"
+      git -C "$cache" checkout -q --detach FETCH_HEAD
+    fi
+  fi
+  check_pin "$cache"
+  export HERMES_SOURCE="$cache"
+}
+
+job_contract() {
+  prepare_hermes_source
+  cd "$ROOT/integrations/ergates"
+  "${UV_TEST[@]}" pytest contract
 }
 
 main() {
