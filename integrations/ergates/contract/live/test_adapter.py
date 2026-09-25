@@ -162,6 +162,21 @@ def test_check_schedule_accepts_what_hermes_cron_accepts(make_profile):
             check_schedule("roos", schedule)
 
 
+def test_check_schedule_refuses_what_create_job_would_also_refuse(make_profile):
+    """These pass ``parse_schedule`` but have no next run: a calendar date that never
+    occurs (Feb 30, Apr 31) raises inside croniter, and a duration far enough out that
+    the resulting time overflows ``datetime`` raises ``OverflowError``, whether that
+    happens while parsing an "in ..." one-shot or while computing a recurring
+    schedule's next run. ``create_job`` would refuse all three; ``check_schedule`` must
+    refuse them first, as ``ValueError``, so ``POST /reminders`` answers 400 instead of
+    creating an uncertain job or crashing with an unmapped exception."""
+    make_profile("sara")
+
+    for schedule in ("0 0 30 2 *", "0 0 31 4 *", "every 9999999999m", "in 99999999999m"):
+        with pytest.raises(ValueError):
+            check_schedule("sara", schedule)
+
+
 def test_review_focus_1_the_reminder_service_on_hermes_cron_makes_one_job(root, make_profile):
     """Two identical requests at the same moment, through Hermes's real cron."""
     make_profile("sam")

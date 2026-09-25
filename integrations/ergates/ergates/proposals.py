@@ -330,9 +330,9 @@ class ProposalService:
         it again changes nothing. ``uncertain`` and ``failed`` are recorded
         without advancing ``next_step``.
         """
-        if step not in PROVISION_STEPS:
+        if not isinstance(step, str) or step not in PROVISION_STEPS:
             raise ProposalError(f"unknown provisioning step {step!r}")
-        if status not in STEP_STATUSES:
+        if not isinstance(status, str) or status not in STEP_STATUSES:
             raise ProposalError(f"unknown step status {status!r}")
         now = self._clock()
         with self._store.transaction() as conn:

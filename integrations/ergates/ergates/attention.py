@@ -256,7 +256,7 @@ class AttentionService:
         if (quiet_start is None) != (quiet_end is None):
             raise AttentionError("set both quiet_start and quiet_end, or neither")
         for value in (quiet_start, quiet_end):
-            if value is not None and not (isinstance(value, str) and _CLOCK_RE.match(value)):
+            if value is not None and not (isinstance(value, str) and _CLOCK_RE.fullmatch(value)):
                 raise AttentionError("quiet hours use HH:MM from 00:00 to 23:59")
         if quiet_start is not None and quiet_start == quiet_end:
             raise AttentionError("quiet_start and quiet_end must differ")

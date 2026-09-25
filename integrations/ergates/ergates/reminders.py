@@ -164,7 +164,7 @@ def _validate(profile, schedule, timezone, prompt, request_id, label) -> None:
         raise ReminderError("profile must be a Hermes profile name")
     if not isinstance(timezone, str):
         raise ReminderError("timezone must be a string")
-    if request_id is not None and not (isinstance(request_id, str) and _REQUEST_ID_RE.match(request_id)):
+    if request_id is not None and not (isinstance(request_id, str) and _REQUEST_ID_RE.fullmatch(request_id)):
         raise ReminderError("request_id must be 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit")
     if label is not None and not isinstance(label, str):
         raise ReminderError("label must be a string")

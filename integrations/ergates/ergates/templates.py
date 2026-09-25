@@ -36,7 +36,7 @@ def load_template(directory: Path, template_id: Any) -> dict:
     a safe file name, the file is missing, or it does not hold a valid
     template for that id. A broken file is logged by error class only.
     """
-    if not isinstance(template_id, str) or not _TEMPLATE_ID_RE.match(template_id):
+    if not isinstance(template_id, str) or not _TEMPLATE_ID_RE.fullmatch(template_id):
         raise ProposalError("the proposal names no known template", code="unknown_template")
     path = Path(directory) / f"{template_id}.json"
     try:

@@ -43,7 +43,9 @@ def test_a_missing_template_is_unknown(tmp_path):
     _unknown(templates_dir(tmp_path), "bookkeeper-readonly")
 
 
-@pytest.mark.parametrize("template_id", ["../secrets", "a/b", ".hidden", "Bookkeeper", "", None, 7, "x" * 65])
+@pytest.mark.parametrize("template_id", [
+    "../secrets", "a/b", ".hidden", "Bookkeeper", "", None, 7, "x" * 65, "bookkeeper-readonly\n",
+])
 def test_an_id_that_is_not_a_safe_file_name_is_unknown(tmp_path, template_id):
     _unknown(templates_dir(tmp_path), template_id)
 

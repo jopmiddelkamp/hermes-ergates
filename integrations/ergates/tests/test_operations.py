@@ -49,6 +49,11 @@ class FakeHermes:
         self.schedule_calls.append((profile, schedule))
         if schedule == "not a schedule":
             raise ValueError("Invalid schedule 'not a schedule'")
+        if schedule == "overflowing schedule":
+            # hermes_adapter.check_schedule maps this to ValueError; a fake that still
+            # raises the raw OverflowError pins that Operations refuses to trust that
+            # mapping and catches OverflowError itself too (belt and suspenders).
+            raise OverflowError("date value out of range")
 
 
 @pytest.fixture
@@ -97,6 +102,29 @@ def test_health_is_503_when_the_store_is_unavailable(ops, store):
     store.close()
 
     reply = ops.health()
+
+    assert reply.status == 503
+    assert reply.body == {"error": {"code": "store_unavailable", "message": "the Ergates control store is unavailable"}}
+
+
+@pytest.mark.parametrize("call", [
+    lambda ops: ops.health(),
+    lambda ops: ops.create_reminder(_reminder()),
+    lambda ops: ops.get_proposal("nope"),
+    lambda ops: ops.accept_proposal("nope", {"proposal": {}}),
+    lambda ops: ops.reject_proposal("nope"),
+    lambda ops: ops.record_step("nope", {"step": "profile_created", "status": "done"}),
+    lambda ops: ops.get_prefs("thijs"),
+    lambda ops: ops.set_prefs({"profile": "thijs", "muted": False, "quiet_start": None, "quiet_end": None}),
+], ids=["health", "create_reminder", "get_proposal", "accept_proposal", "reject_proposal", "record_step",
+        "get_prefs", "set_prefs"])
+def test_every_store_backed_route_is_503_when_the_store_is_unavailable(ops, store, call):
+    """The store opens a fresh connection per operation, so any of these routes can
+    hit a closed or unreachable store, not just health(). enable_plugin never
+    touches the control store, so it is pinned separately, not in this list."""
+    store.close()
+
+    reply = call(ops)
 
     assert reply.status == 503
     assert reply.body == {"error": {"code": "store_unavailable", "message": "the Ergates control store is unavailable"}}
@@ -175,9 +203,11 @@ def test_a_schedule_hermes_refuses_is_400_before_any_receipt_or_job(ops, cron, s
     _reminder(profile=...),
     _reminder(profile="Thijs"),
     _reminder(profile="../x"),
+    _reminder(profile="thijs\n"),
     _reminder(request_id=...),
     _reminder(request_id=""),
     _reminder(request_id="has spaces"),
+    _reminder(request_id="req-1\n"),
     _reminder(schedule=...),
     _reminder(schedule="  "),
     _reminder(prompt=...),
@@ -198,6 +228,20 @@ def test_an_invalid_request_is_400_and_reaches_no_cron(ops, cron, body):
 
 def test_fields_are_checked_before_the_profile(ops):
     assert _error(ops.create_reminder(_reminder(profile="nora", timezone="Mars/Olympus"))) == (400, "invalid")
+
+
+def test_a_bad_request_id_is_checked_before_the_profile_and_reaches_no_schedule_check(ops, hermes):
+    reply = ops.create_reminder(_reminder(profile="nora", request_id="has spaces"))
+
+    assert _error(reply) == (400, "invalid")
+    assert hermes.schedule_calls == []
+
+
+def test_an_overflowing_schedule_is_400_not_a_500(ops):
+    reply = ops.create_reminder(_reminder(schedule="overflowing schedule"))
+
+    assert _error(reply) == (400, "invalid")
+    assert reply.body["error"]["message"] == "schedule is not one Hermes cron accepts"
 
 
 def test_without_a_label_the_job_name_never_carries_prompt_text(ops, cron):
@@ -368,6 +412,8 @@ def test_an_unknown_step_or_status_is_400(ops, proposals):
     assert _error(_step(ops, proposal, "coffee")) == (400, "invalid")
     assert _error(_step(ops, proposal, "profile_created", "maybe")) == (400, "invalid")
     assert _error(ops.record_step(proposal["proposal_id"], "profile_created")) == (400, "invalid")
+    assert _error(_step(ops, proposal, "profile_created", ["done"])) == (400, "invalid")
+    assert _error(_step(ops, proposal, {"nested": True})) == (400, "invalid")
 
 
 def test_an_uncertain_step_is_recorded_without_advancing(ops, proposals):
@@ -394,6 +440,15 @@ def test_enable_plugin_is_200_and_enables_it_in_that_profile(ops, hermes):
 def test_enable_plugin_for_an_unknown_profile_is_404(ops, hermes, profile):
     assert _error(ops.enable_plugin(profile)) == (404, "unknown_profile")
     assert hermes.enable_calls == []
+
+
+def test_enable_plugin_does_not_need_the_control_store(ops, store, hermes):
+    """Unlike every other route, enable_plugin only calls Hermes-side functions."""
+    store.close()
+
+    reply = ops.enable_plugin("thijs")
+
+    assert (reply.status, reply.body) == (200, {"profile": "thijs", "enabled": True})
 
 
 # --- attention prefs ------------------------------------------------------------------
@@ -425,6 +480,7 @@ def test_get_prefs_for_an_invalid_profile_is_400(ops, profile):
     {"profile": "thijs", "muted": "yes", "quiet_start": None, "quiet_end": None},
     {"profile": "thijs", "muted": False, "quiet_start": "25:00", "quiet_end": "07:00"},
     {"profile": "thijs", "muted": False, "quiet_start": "22:00", "quiet_end": None},
+    {"profile": "thijs", "muted": False, "quiet_start": "08:00", "quiet_end": "22:00\n"},
 ])
 def test_put_prefs_refuses_an_invalid_body_with_400(ops, body):
     assert _error(ops.set_prefs(body)) == (400, "invalid")

@@ -457,6 +457,18 @@ def test_an_unknown_step_or_status_is_invalid(service):
         assert _code(caught) == ("invalid", 400)
 
 
+def test_a_non_string_step_or_status_is_invalid_not_a_typeerror(service):
+    """``status`` was checked with ``in`` against a frozenset: an unhashable value
+    (a list or dict) raised ``TypeError`` there instead of the documented
+    ``ProposalError``."""
+    proposal_id = _accepted(service)
+
+    for step, status in ((["profile_created"], "done"), ("profile_created", ["done"]), ({}, {})):
+        with pytest.raises(ProposalError) as caught:
+            service.record_step(proposal_id, step, status)
+        assert _code(caught) == ("invalid", 400)
+
+
 def test_an_uncertain_or_failed_step_does_not_advance(service):
     """docs/11 section 4.1: an uncertain briefing needs a deliberate retry."""
     proposal_id = _accepted(service)

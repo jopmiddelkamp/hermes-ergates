@@ -95,16 +95,28 @@ def profile_exists(profile: str) -> bool:
 def check_schedule(profile: str, schedule: str) -> None:
     """Raise ``ValueError`` unless Hermes cron would accept ``schedule`` for ``profile`` now.
 
-    The same two checks ``cron.jobs.create_job`` makes before it stores a
-    job: ``parse_schedule`` understands the text, and a one-shot time is not
-    already past. The ``POST /reminders`` route runs this first, so a
+    The same checks ``cron.jobs.create_job`` makes before it stores a job:
+    ``parse_schedule`` understands the text, and ``compute_next_run`` finds a
+    next run -- for every schedule kind, not only a one-shot. A cron
+    expression naming a calendar date that never occurs (Feb 30, Apr 31)
+    raises inside croniter there, which is already a ``ValueError``
+    (``CroniterBadDateError``). A duration far enough out that the resulting
+    time cannot be represented raises ``OverflowError`` instead -- while
+    parsing an "in ..." one-shot, or while computing a recurring schedule's
+    next run -- and is mapped to ``ValueError`` here so it is refused the
+    same way. A one-shot with no next run (the time has already passed) is
+    refused too. The ``POST /reminders`` route runs this first, so a
     schedule Hermes refuses is a 400, not an uncertain create.
     """
     from cron.jobs import compute_next_run, parse_schedule
 
     with _profile_home(profile):
-        parsed = parse_schedule(schedule)
-        if parsed.get("kind") == "once" and compute_next_run(parsed) is None:
+        try:
+            parsed = parse_schedule(schedule)
+            next_run = compute_next_run(parsed)
+        except OverflowError as exc:
+            raise ValueError(f"schedule {schedule!r} is out of range") from exc
+        if parsed.get("kind") == "once" and next_run is None:
             raise ValueError("the one-shot time is in the past")
 
 

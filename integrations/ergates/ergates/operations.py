@@ -20,6 +20,7 @@ runs them on a worker thread.
 
 from __future__ import annotations
 
+import functools
 import logging
 import re
 import sqlite3
@@ -32,7 +33,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from . import __version__
 from .attention import AttentionError, AttentionService
 from .proposals import ProposalError, ProposalService
-from .reminders import CronPort, ReminderError, ReminderService
+from .reminders import CronPort, ReminderError, ReminderService, _REQUEST_ID_RE
 from .store import ControlStore, StoreError
 from .templates import load_template
 
@@ -44,6 +45,7 @@ _PROFILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")  # Hermes profile ids at
 _REMINDER_STATUS = {"created": 201, "existing": 200, "uncertain": 202}
 _REMINDER_ERROR_STATUS = {"invalid": 400, "unknown_profile": 404}
 _NOT_AN_OBJECT = "the request body must be a JSON object"
+_STEP_STATUS_NOT_STRINGS = "step and status must be strings"
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,28 @@ def reminder_problem(*, schedule: Any, timezone: Any, prompt: Any, label: Any) -
     return None
 
 
+def _guard_store(method: Callable[..., "Reply"]) -> Callable[..., "Reply"]:
+    """Map a control-store failure from any route to 503 ``store_unavailable``.
+
+    The store opens a fresh connection per operation (``store.py``
+    ``transaction``/``read``), so any route that touches it -- not only
+    ``health()`` -- can hit a closed store or a schema a newer plugin wrote.
+    A bare ``OSError`` is deliberately not caught here: ``hermes_adapter``
+    raises it for reasons that have nothing to do with the store, and this
+    guard must not turn one of those into a false "store unavailable".
+    """
+
+    @functools.wraps(method)
+    def wrapper(self: "Operations", *args: Any, **kwargs: Any) -> Reply:
+        try:
+            return method(self, *args, **kwargs)
+        except (StoreError, sqlite3.Error) as exc:
+            logger.warning("operations: the control store is unavailable (%s)", type(exc).__name__)
+            return store_unavailable()
+
+    return wrapper
+
+
 class Operations:
     """Every C3 route as a method that returns a :class:`Reply`."""
 
@@ -106,15 +130,13 @@ class Operations:
         self._attention = AttentionService(store, clock=clock)
 
     # GET /health
+    @_guard_store
     def health(self) -> Reply:
-        try:
-            schema_version = self._store.schema_version
-        except (StoreError, sqlite3.Error, OSError) as exc:
-            logger.warning("operations: the control store is unavailable (%s)", type(exc).__name__)
-            return store_unavailable()
+        schema_version = self._store.schema_version
         return Reply(200, {"ok": True, "schema_version": schema_version, "plugin_version": __version__})
 
     # POST /reminders
+    @_guard_store
     def create_reminder(self, body: Any) -> Reply:
         try:
             request = self._reminder_request(body)
@@ -129,10 +151,12 @@ class Operations:
         return Reply(_REMINDER_STATUS[outcome.status], {"receipt": outcome.receipt})
 
     # GET /proposals/{proposal_id}
+    @_guard_store
     def get_proposal(self, proposal_id: str) -> Reply:
         return self._proposal_reply(lambda: self._proposals.get(proposal_id))
 
     # POST /proposals/{proposal_id}/accept
+    @_guard_store
     def accept_proposal(self, proposal_id: str, body: Any) -> Reply:
         if not isinstance(body, dict):
             return error_reply(400, "invalid", _NOT_AN_OBJECT)
@@ -147,14 +171,18 @@ class Operations:
         return Reply(200, {"proposal": {**receipt, "template": template}})
 
     # POST /proposals/{proposal_id}/reject
+    @_guard_store
     def reject_proposal(self, proposal_id: str) -> Reply:
         return self._proposal_reply(lambda: self._proposals.reject(proposal_id))
 
     # POST /proposals/{proposal_id}/steps
+    @_guard_store
     def record_step(self, proposal_id: str, body: Any) -> Reply:
         if not isinstance(body, dict):
             return error_reply(400, "invalid", _NOT_AN_OBJECT)
         step, status = body.get("step"), body.get("status")
+        if not isinstance(step, str) or not isinstance(status, str):
+            return error_reply(400, "invalid", _STEP_STATUS_NOT_STRINGS)
 
         def record() -> dict:
             receipt = self._proposals.record_step(proposal_id, step, status)
@@ -167,6 +195,7 @@ class Operations:
         return self._proposal_reply(record)
 
     # POST /profiles/{profile}/plugin
+    @_guard_store
     def enable_plugin(self, profile: str) -> Reply:
         if not _is_profile_name(profile):
             return error_reply(404, "unknown_profile", "there is no profile with that name")
@@ -176,6 +205,7 @@ class Operations:
         return Reply(200, {"profile": profile, "enabled": True})
 
     # GET /attention/prefs?profile=<name or *>
+    @_guard_store
     def get_prefs(self, profile: Any) -> Reply:
         try:
             prefs = self._attention.get_prefs(profile)
@@ -184,6 +214,7 @@ class Operations:
         return Reply(200, {"prefs": prefs})
 
     # PUT /attention/prefs
+    @_guard_store
     def set_prefs(self, body: Any) -> Reply:
         if not isinstance(body, dict):
             return error_reply(400, "invalid", _NOT_AN_OBJECT)
@@ -200,9 +231,11 @@ class Operations:
     def _reminder_request(self, body: Any) -> dict:
         """The service arguments of a valid request; ``ReminderError`` otherwise.
 
-        Order: the body's fields (400), the profile (404), then the schedule
-        as Hermes cron reads it (400), so a schedule Hermes refuses never
-        becomes an uncertain create.
+        Order: the body's fields (400) -- profile, request_id and the rest --
+        then the profile's existence (404), then the schedule as Hermes cron
+        reads it (400), so a malformed field is always a 400 and never races
+        an unknown profile for which status wins, and Hermes is never asked
+        about a schedule the request already fails on some other field.
         """
         if not isinstance(body, dict):
             raise ReminderError(_NOT_AN_OBJECT)
@@ -211,6 +244,10 @@ class Operations:
             raise ReminderError("profile must be a Hermes profile name")
         if not isinstance(request_id, str) or not request_id:
             raise ReminderError("request_id is required and must be a non-empty string")
+        if not _REQUEST_ID_RE.fullmatch(request_id):
+            raise ReminderError(
+                "request_id must be 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit"
+            )
         problem = reminder_problem(
             schedule=body.get("schedule"), timezone=body.get("timezone"), prompt=body.get("prompt"),
             label=body.get("label"),
@@ -221,7 +258,10 @@ class Operations:
             raise ReminderError(f"profile {profile!r} does not exist", code="unknown_profile")
         try:
             self._check_schedule(profile, body["schedule"])
-        except ValueError:
+        except (ValueError, OverflowError):
+            # hermes_adapter.check_schedule maps OverflowError to ValueError itself;
+            # this also catches it directly so a check_schedule that does not (a
+            # future adapter, or a test double) never turns into an unhandled 500.
             raise ReminderError("schedule is not one Hermes cron accepts") from None
         return {
             "profile": profile, "schedule": body["schedule"], "timezone": body["timezone"],
@@ -238,7 +278,7 @@ class Operations:
 
 
 def _is_profile_name(value: Any) -> bool:
-    return isinstance(value, str) and bool(_PROFILE_RE.match(value))
+    return isinstance(value, str) and bool(_PROFILE_RE.fullmatch(value))
 
 
 def _proposal_error(exc: ProposalError) -> Reply:
