@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View, type ListRenderItemInfo } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
-import { devInjectFrames, peerKey, useChatSession, type Line } from '@/features/chat'
+import { devInjectFrames, peerKey, useChatSession, useProposals, type Line } from '@/features/chat'
 import { attachDocument, attachImage, composeOutgoingText, pickDocument, pickImage, type PendingAttachment } from '@/features/files'
 import { realSpeech, SPEECH_DISCLOSURE } from '@/features/voice'
 import { userMessage } from '@/gateway/errors'
@@ -17,6 +17,7 @@ import { ApprovalCard, ClarifyCard } from '@/ui/chat/Cards'
 import { Composer } from '@/ui/chat/Composer'
 import { ExchangeRow } from '@/ui/chat/ExchangeRow'
 import { NoticeRow } from '@/ui/chat/NoticeRow'
+import { ProposalCard } from '@/ui/chat/ProposalCard'
 import { PeerAvatar } from '@/ui/chat/PeerAvatar'
 import { CommentaryRow, ConnectionLine, DateSeparator, EventRow, ToolRow, WorkingLine } from '@/ui/chat/Rows'
 import { Icon } from '@/ui/icons'
@@ -80,6 +81,9 @@ function Chat({ devSend, devInject, devFocus }: { devSend?: string; devInject?: 
   }, [devInject, session.phase, session])
 
   const liveId = session.state.liveSessionId
+  // Agent proposals sit under the newest message until they are answered (docs/11 section 4.1).
+  const proposals = useProposals()
+  const openAgentChat = useCallback((target: string) => router.push({ pathname: '/chat/[profile]', params: { profile: target } }), [router])
 
   // The timeline is the only producer of lines (spec 5.9); the screen reverses
   // it for the inverted list and renders one component per kind.
@@ -321,6 +325,16 @@ function Chat({ devSend, devInject, devFocus }: { devSend?: string; devInject?: 
           data={lines}
           keyExtractor={l => l.key}
           renderItem={renderLine}
+          // The inverted list draws its header at the bottom, under the newest line.
+          ListHeaderComponent={
+            proposals.length > 0 ? (
+              <View>
+                {proposals.map(p => (
+                  <ProposalCard key={p.proposal_id} proposal={p} onOpenChat={openAgentChat} />
+                ))}
+              </View>
+            ) : null
+          }
           contentContainerStyle={[styles.list, { paddingHorizontal: theme.pagePadding }]}
           onScroll={e => setAtBottom(e.nativeEvent.contentOffset.y < 40)}
           scrollEventThrottle={100}

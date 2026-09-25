@@ -1,0 +1,109 @@
+/**
+ * Which proposals a chat shows, and what each card says and offers
+ * (docs/11 section 4.1). Pure: the card and its hook only render this.
+ */
+import { describe, expect, it } from 'vitest'
+
+import { GatewayError } from '@/gateway/errors'
+import type { AgentProposal, ProposalReceipt } from '@/gateway/types'
+
+import { collectProposals, proposalView, PROPOSE_TOOL, type ProposalViewInput } from './proposal'
+
+const proposal = (id: string, name = 'pim'): AgentProposal => ({
+  kind: 'ergates.agent-proposal.v1',
+  proposal_id: id,
+  expires_at: '2999-01-01T00:00:00Z',
+  source_session_id: 'concierge-1',
+  agent: { name, title: 'Pim', role: 'Bookkeeper', description: 'Keeps the books.', template_id: 'bookkeeper-readonly', provider: 'p', model: 'm' },
+  briefing: 'Seed facts.'
+})
+
+const receipt = (state: ProposalReceipt['state'], over: Partial<ProposalReceipt> = {}): ProposalReceipt => ({
+  proposal_id: 'p-1',
+  state,
+  reserved_profile_name: 'pim',
+  expires_at: '2999-01-01T00:00:00Z',
+  completed_steps: [],
+  step_status: {},
+  next_step: 'profile_created',
+  template: null,
+  ...over
+})
+
+const input = (over: Partial<ProposalViewInput>): ProposalViewInput => ({
+  proposal: proposal('p-1'),
+  receipt: undefined,
+  receiptError: null,
+  step: null,
+  outcome: null,
+  busy: false,
+  ...over
+})
+
+describe('collectProposals', () => {
+  it('reads the tool results of the transcript, the live chat and the stored setups, once each', () => {
+    const rows = [
+      { role: 'tool', toolName: PROPOSE_TOOL, result: proposal('p-1') },
+      { role: 'tool', toolName: 'terminal', result: proposal('p-x') },
+      { role: 'assistant', result: proposal('p-y') }
+    ]
+    const items = [
+      { kind: 'tool', name: PROPOSE_TOOL, result: proposal('p-1') },
+      { kind: 'tool', name: PROPOSE_TOOL, result: { error: 'name must match ^[a-z0-9][a-z0-9-]{1,31}$' } },
+      { kind: 'tool', name: PROPOSE_TOOL, result: proposal('p-2', 'anna') },
+      { kind: 'assistant', result: proposal('p-z') }
+    ]
+    const stored = [proposal('p-3', 'bob'), { not: 'a proposal' }]
+
+    expect(collectProposals(items, rows, stored).map(p => p.proposal_id)).toEqual(['p-1', 'p-2', 'p-3'])
+  })
+})
+
+describe('proposalView', () => {
+  it('offers accept and reject for a proposed agent', () => {
+    expect(proposalView(input({ receipt: receipt('proposed') }))).toEqual({ hidden: false, status: 'proposed', text: null, actions: ['accept', 'reject'] })
+  })
+
+  it('shows the running step with its place in the setup', () => {
+    expect(proposalView(input({ receipt: receipt('accepted'), step: 'configured' }))).toMatchObject({ status: 'working', text: 'Setting up Pim: applying its role (3 of 5).', actions: [] })
+  })
+
+  it('hides a proposal that ended before this screen opened', () => {
+    for (const state of ['rejected', 'expired', 'complete'] as const) {
+      expect(proposalView(input({ receipt: receipt(state) })).hidden).toBe(true)
+    }
+    const pruned = new GatewayError('not_found', 'no proposal', { status: 404, code: 'not_found' })
+    expect(proposalView(input({ receiptError: pruned })).hidden).toBe(true)
+  })
+
+  it('says so when the gateway has no Ergates plugin', () => {
+    const missing = new GatewayError('not_found', 'Not Found', { status: 404 })
+    expect(proposalView(input({ receiptError: missing }))).toMatchObject({ status: 'closed', actions: [] })
+  })
+
+  it('reports each outcome of a run with the action it allows', () => {
+    expect(proposalView(input({ outcome: { kind: 'complete', profile: 'pim' } }))).toMatchObject({ status: 'complete', text: 'Pim is ready.', actions: ['open_chat'] })
+    expect(proposalView(input({ outcome: { kind: 'confirm_briefing', profile: 'pim' } }))).toMatchObject({ status: 'confirm', actions: ['open_chat', 'resend_briefing'] })
+    expect(proposalView(input({ outcome: { kind: 'not_ready', profile: 'pim' } }))).toMatchObject({ status: 'waiting', actions: ['retry'] })
+    expect(proposalView(input({ outcome: { kind: 'failed', step: 'configured', message: 'Hermes did not apply: toolsets.', terminal: false } }))).toMatchObject({
+      status: 'failed',
+      text: 'Applying its role failed. Hermes did not apply: toolsets.',
+      actions: ['retry']
+    })
+    expect(proposalView(input({ outcome: { kind: 'failed', step: 'accept', message: 'This proposal expired. Ask the agent to propose it again.', terminal: true } }))).toMatchObject({
+      status: 'closed',
+      actions: []
+    })
+  })
+
+  it('lets a failed receipt read be tried again', () => {
+    const offline = new GatewayError('network', 'No connection to the gateway.')
+    expect(proposalView(input({ receiptError: offline }))).toMatchObject({ status: 'failed', text: 'No connection to the gateway.', actions: ['reload'] })
+  })
+
+  it('shows an accepted proposal as being set up until the run reports a step', () => {
+    expect(proposalView(input({ receipt: receipt('accepted') }))).toMatchObject({ status: 'working', text: 'Setting up Pim…', actions: [] })
+    expect(proposalView(input({ receipt: receipt('proposed'), busy: true }))).toMatchObject({ status: 'working', actions: [] })
+    expect(proposalView(input({}))).toMatchObject({ status: 'loading', actions: [] })
+  })
+})
