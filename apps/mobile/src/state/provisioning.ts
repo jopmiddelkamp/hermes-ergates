@@ -14,3 +14,13 @@ export interface ProvisioningRun {
   proposal: Record<string, unknown>
   startedAt: number
 }
+
+/**
+ * The record to save when a setup starts or resumes. Reuses `existing`'s
+ * `startedAt` when this proposal already has a stored run, so a retry or a
+ * resumed run does not look freshly started: an age-based cleanup needs the
+ * time the operator first accepted, not the time of the latest attempt.
+ */
+export function withStartedAt(existing: ProvisioningRun | undefined, run: Omit<ProvisioningRun, 'startedAt'>, now: number): ProvisioningRun {
+  return { ...run, startedAt: existing?.startedAt ?? now }
+}

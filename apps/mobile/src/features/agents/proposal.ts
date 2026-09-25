@@ -132,7 +132,11 @@ export function proposalView({ proposal, receipt, receiptError, step, outcome, b
           return view('closed', outcome.message)
         }
         const what = STEP_TEXT[outcome.step]
-        return view('failed', `${what.charAt(0).toUpperCase()}${what.slice(1)} failed. ${outcome.message}`, ['retry'])
+        // A non-terminal failure while the server still reads `proposed` (only
+        // the `accept` step can fail there) leaves the proposal open: offer
+        // Reject alongside Try again, not just the latter until a remount.
+        const actions: ProposalAction[] = receipt?.state === 'proposed' ? ['retry', 'reject'] : ['retry']
+        return view('failed', `${what.charAt(0).toUpperCase()}${what.slice(1)} failed. ${outcome.message}`, actions)
       }
     }
   }
@@ -156,4 +160,23 @@ export function proposalView({ proposal, receipt, receiptError, step, outcome, b
     default:
       return { hidden: true, status: 'closed', text: null, actions: [] }
   }
+}
+
+const FORGET_STATES = new Set<ProposalReceipt['state']>(['complete', 'expired', 'rejected'])
+
+/**
+ * True once the device's stored setup run for this proposal is no longer
+ * useful: the server settled it terminally (this device may not have been
+ * the one that noticed), or has pruned the receipt entirely. False while the
+ * receipt is still `proposed`/`accepted`, not yet loaded, or the read failed
+ * for a reason that says nothing about the proposal itself (offline, no
+ * Ergates plugin on this gateway).
+ */
+export function shouldForgetRun(receipt: ProposalReceipt | undefined, receiptError: unknown): boolean {
+  if (receipt) {
+    return FORGET_STATES.has(receipt.state)
+  }
+  // Matches the `hidden` branch above: a C3 `not_found` means the server
+  // pruned the receipt; a bare 404 means the route itself is missing.
+  return isGatewayError(receiptError) && receiptError.kind === 'not_found' && receiptError.code === 'not_found'
 }

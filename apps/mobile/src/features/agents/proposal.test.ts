@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { GatewayError } from '@/gateway/errors'
 import type { AgentProposal, ProposalReceipt } from '@/gateway/types'
 
-import { collectProposals, proposalView, PROPOSE_TOOL, type ProposalViewInput } from './proposal'
+import { collectProposals, proposalView, shouldForgetRun, PROPOSE_TOOL, type ProposalViewInput } from './proposal'
 
 const proposal = (id: string, name = 'pim'): AgentProposal => ({
   kind: 'ergates.agent-proposal.v1',
@@ -101,9 +101,40 @@ describe('proposalView', () => {
     expect(proposalView(input({ receiptError: offline }))).toMatchObject({ status: 'failed', text: 'No connection to the gateway.', actions: ['reload'] })
   })
 
+  it('offers reject too when a non-terminal accept failure leaves the receipt proposed', () => {
+    const failedAccept = { kind: 'failed', step: 'accept', message: 'No connection to the gateway.', terminal: false } as const
+    expect(proposalView(input({ receipt: receipt('proposed'), outcome: failedAccept }))).toMatchObject({ status: 'failed', actions: ['retry', 'reject'] })
+    // No receipt yet, or a receipt no longer proposed: only retry, as before.
+    expect(proposalView(input({ outcome: failedAccept }))).toMatchObject({ status: 'failed', actions: ['retry'] })
+    expect(proposalView(input({ receipt: receipt('accepted'), outcome: failedAccept }))).toMatchObject({ status: 'failed', actions: ['retry'] })
+  })
+
   it('shows an accepted proposal as being set up until the run reports a step', () => {
     expect(proposalView(input({ receipt: receipt('accepted') }))).toMatchObject({ status: 'working', text: 'Setting up Pim…', actions: [] })
     expect(proposalView(input({ receipt: receipt('proposed'), busy: true }))).toMatchObject({ status: 'working', actions: [] })
     expect(proposalView(input({}))).toMatchObject({ status: 'loading', actions: [] })
+  })
+})
+
+describe('shouldForgetRun', () => {
+  it('is true once the receipt settled where no further run can help', () => {
+    for (const state of ['complete', 'expired', 'rejected'] as const) {
+      expect(shouldForgetRun(receipt(state), null)).toBe(true)
+    }
+    expect(shouldForgetRun(receipt('proposed'), null)).toBe(false)
+    expect(shouldForgetRun(receipt('accepted'), null)).toBe(false)
+  })
+
+  it('is true once the server has pruned the receipt entirely', () => {
+    const pruned = new GatewayError('not_found', 'no proposal', { status: 404, code: 'not_found' })
+    expect(shouldForgetRun(undefined, pruned)).toBe(true)
+  })
+
+  it('is false for a read that failed for a reason that says nothing about the proposal, or one not yet answered', () => {
+    const missingPlugin = new GatewayError('not_found', 'Not Found', { status: 404 })
+    const offline = new GatewayError('network', 'No connection to the gateway.')
+    expect(shouldForgetRun(undefined, missingPlugin)).toBe(false)
+    expect(shouldForgetRun(undefined, offline)).toBe(false)
+    expect(shouldForgetRun(undefined, null)).toBe(false)
   })
 })
