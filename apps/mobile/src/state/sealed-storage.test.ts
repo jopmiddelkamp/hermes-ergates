@@ -8,6 +8,11 @@ import { createSealedStateStorage, SEALED_PREFIX } from './sealed-storage'
 const NAME = 'ergates-device-v1'
 const BLOB = JSON.stringify({ state: { drafts: { 'c1:linh': 'the invoice from Dirk' } }, version: 1 })
 
+/** The raw ciphertext bytes of a stored value, decoded past the sealed prefix and its base64 wrapper. */
+function sealedBytes(raw: string): Buffer {
+  return Buffer.from(raw.slice(SEALED_PREFIX.length), 'base64')
+}
+
 function setup() {
   const inner = createMemoryStateStorage()
   const cipher = new NodeCipher()
@@ -24,7 +29,7 @@ describe('sealed device storage', () => {
 
     const raw = await inner.getItem(NAME)
     expect(raw?.startsWith(SEALED_PREFIX)).toBe(true)
-    expect(raw).not.toContain('Dirk')
+    expect(sealedBytes(raw as string).includes('Dirk')).toBe(false)
     expect(await sealed.getItem(NAME)).toBe(BLOB)
   })
 
@@ -42,7 +47,7 @@ describe('sealed device storage', () => {
 
     const raw = await inner.getItem(NAME)
     expect(raw?.startsWith(SEALED_PREFIX)).toBe(true)
-    expect(raw).not.toContain('Dirk')
+    expect(sealedBytes(raw as string).includes('Dirk')).toBe(false)
     expect(await sealed.getItem(NAME)).toBe(BLOB)
   })
 
@@ -86,6 +91,23 @@ describe('sealed device storage', () => {
     expect(await sealed.getItem(NAME)).toBe(BLOB)
     await sealed.setItem(NAME, '{"state":{"drafts":{}},"version":1}')
     expect(await sealed.getItem(NAME)).toBe('{"state":{"drafts":{}},"version":1}')
+  })
+
+  it('reads null and reports when the inner store rejects, and keeps the stored value', async () => {
+    const { inner, sealed, errors } = setup()
+    await sealed.setItem(NAME, BLOB)
+    const before = await inner.getItem(NAME)
+    const workingGetItem = inner.getItem
+    inner.getItem = async () => {
+      throw new Error('the device storage is unavailable')
+    }
+
+    expect(await sealed.getItem(NAME)).toBeNull() // resolves; a rejection would hang hydration forever
+    expect(errors).toHaveLength(1)
+
+    await sealed.setItem(NAME, '{"state":{},"version":1}')
+    inner.getItem = workingGetItem
+    expect(await inner.getItem(NAME)).toBe(before)
   })
 
   it('lands the newest value last even when an earlier seal is slower', async () => {

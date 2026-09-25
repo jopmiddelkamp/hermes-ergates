@@ -8,6 +8,11 @@ import { NodeCipher } from '@test/node-cipher'
 import { DEVICE_STORAGE_KEY, MemorySecretStore, createMemoryStateStorage, createMemoryStorageJson, createSealedStorageJson, secretKey } from './persistence'
 import { SEALED_PREFIX } from './sealed-storage'
 
+/** The raw ciphertext bytes of a stored value, decoded past the sealed prefix and its base64 wrapper. */
+function sealedBytes(raw: string): Buffer {
+  return Buffer.from(raw.slice(SEALED_PREFIX.length), 'base64')
+}
+
 function newStore() {
   return createDeviceStore(createMemoryStorageJson<PersistedDeviceState>(), new MemorySecretStore())
 }
@@ -293,8 +298,9 @@ describe('the device blob at rest', () => {
 
     const atRest = (await disk.getItem(DEVICE_STORAGE_KEY)) as string
     expect(atRest.startsWith(SEALED_PREFIX)).toBe(true)
+    const atRestBytes = sealedBytes(atRest)
     for (const text of secretTexts) {
-      expect(atRest).not.toContain(text)
+      expect(atRestBytes.includes(text)).toBe(false)
     }
   })
 
@@ -313,7 +319,7 @@ describe('the device blob at rest', () => {
     expect(next.getState().provisioning).toEqual([legacyRun])
     const atRest = (await disk.getItem(DEVICE_STORAGE_KEY)) as string
     expect(atRest.startsWith(SEALED_PREFIX)).toBe(true)
-    expect(atRest).not.toContain('contract')
+    expect(sealedBytes(atRest).includes('contract')).toBe(false)
   })
 })
 

@@ -54,7 +54,14 @@ export function createSealedStateStorage(inner: StateStorage, cipher: BlobCipher
   }
 
   async function read(name: string): Promise<string | null> {
-    const stored = await inner.getItem(name)
+    let stored: string | null
+    try {
+      stored = await inner.getItem(name)
+    } catch (error) {
+      kept.add(name)
+      report(error)
+      return null
+    }
     if (stored === null || stored === undefined) {
       kept.delete(name)
       return null

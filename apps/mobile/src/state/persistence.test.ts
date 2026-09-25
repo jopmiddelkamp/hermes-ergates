@@ -9,6 +9,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BLOB_KEY_NAME, createAesBlobCipher, createDeviceBlobStorage, DEVICE_STORAGE_KEY } from './persistence'
 import { SEALED_PREFIX } from './sealed-storage'
 
+/** The raw ciphertext bytes of a stored value, decoded past the sealed prefix and its base64 wrapper. */
+function sealedBytes(raw: string): Buffer {
+  return Buffer.from(raw.slice(SEALED_PREFIX.length), 'base64')
+}
+
 const keychain = vi.hoisted(() => ({
   items: new Map<string, string>(),
   options: [] as unknown[],
@@ -175,7 +180,7 @@ describe('the device blob storage on the phone', () => {
 
     const raw = asyncStorage.get(DEVICE_STORAGE_KEY) as string
     expect(raw.startsWith(SEALED_PREFIX)).toBe(true)
-    expect(raw).not.toContain('Dirk')
+    expect(sealedBytes(raw).includes('Dirk')).toBe(false)
     expect(await storage.getItem(DEVICE_STORAGE_KEY)).toEqual(value)
   })
 
