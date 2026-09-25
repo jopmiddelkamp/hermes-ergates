@@ -103,7 +103,7 @@ describe('provisionAgent', () => {
     expect((await ergates.getProposal('p-pim')).state).toBe('complete')
   })
 
-  it('Review Focus 4: killed after the profile exists, it resumes without a second profile or briefing', async () => {
+  it('killed after the profile exists, it resumes without a second profile or briefing', async () => {
     const { deps, ergates, calls } = hermes()
     const createProfile = deps.createProfile
     // The profile is created, then the app dies before it hears back.
@@ -119,7 +119,7 @@ describe('provisionAgent', () => {
     expect(calls.submit).toEqual([PROPOSAL.briefing])
   })
 
-  it('Review Focus 4: killed after the briefing went out, it resumes without a second briefing', async () => {
+  it('killed after the briefing went out, it resumes without a second briefing', async () => {
     const { deps, ergates, calls } = hermes()
     const submit = deps.submit
     void provisionAgent({ ...deps, submit: async (live, text) => (await submit(live, text), killed()) }, PROPOSAL)
@@ -150,7 +150,7 @@ describe('provisionAgent', () => {
     expect(calls.submit).toHaveLength(1)
   })
 
-  it('Review Focus 4: killed after the server recorded a step, it continues at the next step', async () => {
+  it('killed after the server recorded a step, it continues at the next step', async () => {
     const { deps, ergates, calls } = hermes()
     ergates.fail('recordProposalStep', 'hang', 'after')
     void provisionAgent(deps, PROPOSAL)

@@ -1,6 +1,7 @@
 /**
  * The notification settings form (docs/11 section 4.2): mute and quiet hours,
- * checked as the server checks them (Plan 2 `AttentionService.set_prefs`) so
+ * checked as the server checks them (`AttentionService.set_prefs` in
+ * `ergates/attention.py`) so
  * Save never sends what the server would refuse.
  */
 import { describe, expect, it } from 'vitest'

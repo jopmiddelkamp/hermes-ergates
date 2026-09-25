@@ -2,7 +2,7 @@
  * FakeErgates: the Ergates integration routes (roadmap contract C3) in memory.
  *
  * It answers with the outcomes and error codes of the integration's
- * `ergates/operations.py` (Plan 3), built through the same `mapErgatesError`
+ * `ergates/operations.py`, built through the same `mapErgatesError`
  * the real adapter uses, so an app test meets what the real server answers.
  * Test hooks: `record` (what the propose tool does), `nextCreateUncertain`,
  * `fail`, `failInternal`; logs: `calls`, `jobs`, `enabledPlugins`.
@@ -57,7 +57,7 @@ function c3(code: string, message: string): GatewayError {
   return mapErgatesError(HTTP_STATUS[code] ?? 400, { error: { code, message } })
 }
 
-/** The server's own answer on an unexpected failure (implementer-rules.md): 500, fixed message. */
+/** The server's own answer on an unexpected failure (`operations.internal_error`): 500, fixed message. */
 function internal(): GatewayError {
   return mapErgatesError(500, { error: { code: 'internal', message: 'The request could not be completed.' } })
 }
@@ -165,7 +165,7 @@ export class FakeErgates implements ErgatesApi {
   /**
    * The next call of `op` fails as the server does on an unexpected error:
    * 500 `{"error": {"code": "internal", "message": "The request could not
-   * be completed."}}` (implementer-rules.md, C3 as executed).
+   * be completed."}}` (`internal_error` in `ergates/operations.py`).
    */
   failInternal(op: ErgatesOp, when: 'before' | 'after' = 'before'): void {
     this.fail(op, internal(), when)
@@ -365,7 +365,8 @@ export class FakeErgates implements ErgatesApi {
     if (!this.hasProfile(req.profile)) {
       throw c3('unknown_profile', `profile '${req.profile}' does not exist`)
     }
-    // The fake's Hermes cron refuses exactly this schedule (Plan 3 test double).
+    // The fake's Hermes cron refuses exactly this schedule; the server answers a
+    // schedule `hermes_adapter.check_schedule` refuses with this `invalid`.
     if (req.schedule === 'not a schedule') {
       throw c3('invalid', 'schedule is not one Hermes cron accepts')
     }
