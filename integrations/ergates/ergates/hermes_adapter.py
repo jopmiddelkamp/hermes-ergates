@@ -76,11 +76,36 @@ def current_profile(ctx: object) -> str:
     switches that home per session with a context-local override. A name
     read once in ``register()`` would pin every later call to the profile
     that loaded the plugin. Raises when ``ctx`` has no usable name.
+
+    ``profile_name`` answers ``"default"`` for the default profile, and also
+    when its own lookup, ``hermes_cli.profiles.get_active_profile_name()``,
+    raises (``contract/test_hermes_adapter.py`` pins both). The default
+    profile is always admitted, so the fallback would let a profile that is
+    still being set up run every tool. A ``"default"`` therefore stands only
+    when that lookup, asked again here, names the default profile; otherwise
+    this raises and the tool gate blocks.
     """
     name = getattr(ctx, "profile_name")
     if not isinstance(name, str) or not name.strip():
         raise ValueError("the plugin context has no profile name")
-    return name.strip()
+    name = name.strip()
+    if name == "default" and not _hermes_names_the_default_profile():
+        raise ValueError("Hermes could not tell the active profile")
+    return name
+
+
+def _hermes_names_the_default_profile() -> bool:
+    """True when Hermes's own profile lookup names the default profile now.
+
+    False when it names another profile, raises, or Hermes is not importable
+    (the lookup cannot be asked, so the answer is unknown).
+    """
+    try:
+        from hermes_cli.profiles import get_active_profile_name
+
+        return get_active_profile_name() == "default"
+    except Exception:
+        return False
 
 
 def profile_exists(profile: str) -> bool:

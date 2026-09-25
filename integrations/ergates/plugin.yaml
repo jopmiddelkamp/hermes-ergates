@@ -2,13 +2,14 @@ name: ergates
 label: Ergates
 version: 0.2.0
 description: >-
-  Agent proposal tooling and background attention/push notifications for the
-  Ergates mobile companion: records agent proposals, approval requests and
-  finished routine turns in one SQLite control store, and publishes their
-  pushes to ntfy.
+  Server side of the Ergates mobile companion: agent proposals, reminders that
+  a retry never duplicates, a tool gate, and approval and finished-routine
+  pushes to ntfy, all recorded in one SQLite control store.
 provides_tools:
   - ergates_propose_agent
+  - ergates_create_reminder
 provides_hooks:
+  - pre_tool_call
   - pre_approval_request
   - post_approval_response
   - post_llm_call

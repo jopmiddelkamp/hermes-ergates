@@ -1,4 +1,4 @@
-"""Hermes plugin wiring: the ``ergates_propose_agent`` tool and the attention hooks.
+"""Hermes plugin wiring: the Ergates tools, the attention hooks and the tool gate.
 
 Registered by ``register(ctx)`` in the top-level ``__init__.py`` (the Hermes
 plugin entry point). Kept separate from ``ctx`` so every function here stays
@@ -7,21 +7,30 @@ worker, config values) as explicit arguments rather than reaching into a
 global ``ctx``.
 
 Every handler writes to the one control store of the Hermes install,
-``<hermes root>/ergates/control.sqlite3``, whichever profile it runs in.
+``<hermes root>/ergates/control.sqlite3``, whichever profile it runs in. The
+profile itself is read from Hermes at every call
+(:func:`~ergates.hermes_adapter.current_profile`), never once at
+registration: a multiplexed gateway serves several profiles from one
+process (roadmap bug 8).
 """
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import sqlite3
 import threading
-from typing import Any, Dict, Optional
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Optional
 
+from . import hermes_adapter, policy
 from .attention import AttentionService
 from .delivery import DeliveryWorker, ntfy_settings, send_ntfy
+from .operations import reminder_problem
 from .paths import hermes_root, store_path
 from .proposals import ProposalError, ProposalService, validate_proposal
+from .reminders import ReminderError, ReminderService
 from .store import ControlStore, StoreError
 
 logger = logging.getLogger(__name__)
@@ -125,10 +134,97 @@ def propose_handler(
     except ProposalError as exc:
         return json.dumps({"error": str(exc)})
     except (StoreError, sqlite3.Error) as exc:
-        # Class name only: a store error message can carry the file path.
-        logger.warning("ergates: the proposal could not be recorded (%s)", type(exc).__name__)
-        return json.dumps({"error": f"the proposal could not be recorded ({type(exc).__name__})"})
+        return _not_recorded("proposal", exc)
     return json.dumps(proposal)
+
+
+def _not_recorded(what: str, exc: BaseException) -> str:
+    """The tool result for a store failure: ``{"error": ...}`` naming the exception class only.
+
+    Class name only, in the log and the result: a store error message can carry the file path.
+    """
+    logger.warning("ergates: the %s could not be recorded (%s)", what, type(exc).__name__)
+    return json.dumps({"error": f"the {what} could not be recorded ({type(exc).__name__})"})
+
+
+REMINDER_TOOL_NAME = "ergates_create_reminder"
+
+REMINDER_SCHEMA: Dict[str, Any] = {
+    "name": REMINDER_TOOL_NAME,
+    "description": (
+        "Create a reminder: a Hermes cron job in this agent's profile that runs the prompt on "
+        "the schedule. Asking again with the same schedule, time zone and prompt returns the "
+        "reminder that already exists instead of making a second one. Use this, not "
+        "cronjob_manage, to create reminders."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "schedule": {
+                "type": "string",
+                "description": (
+                    "When it runs: cron syntax ('0 9 * * *'), 'every monday 9am', 'every 2h', "
+                    "or once ('in 30m')."
+                ),
+            },
+            "prompt": {
+                "type": "string",
+                "description": "The full, self-contained instruction the reminder runs.",
+            },
+            "timezone": {
+                "type": "string",
+                "description": (
+                    "The user's IANA time zone, for example 'Europe/Amsterdam'; 'UTC' when unknown. "
+                    "Advisory: Hermes runs every job in the server's time zone."
+                ),
+            },
+            "label": {
+                "type": "string",
+                "description": "Short name for the Routines list, at most 64 characters. Never the prompt itself.",
+            },
+        },
+        "required": ["schedule", "prompt", "timezone"],
+    },
+}
+
+
+def create_reminder_handler(
+    args: Dict[str, Any],
+    *,
+    service: ReminderService,
+    profile: str,
+    check_schedule: Callable[[str, str], None],
+    **_kwargs: Any,
+) -> str:
+    """Create or return the reminder of one request in ``profile``; always a JSON string.
+
+    The same checks as ``POST /reminders`` run first, so a schedule Hermes
+    refuses is an error, never an uncertain create. There is no request id:
+    the receipt id is the payload hash, so the same schedule, time zone and
+    prompt in one profile is one reminder however often the model asks. A
+    store failure is an error naming the exception class, as in
+    :func:`propose_handler`; asking again after it never makes a second job.
+    """
+    if not isinstance(args, dict):
+        return json.dumps({"error": "the arguments must be an object"})
+    label = args.get("label")
+    problem = reminder_problem(
+        schedule=args.get("schedule"), timezone=args.get("timezone"), prompt=args.get("prompt"), label=label,
+    )
+    if problem is not None:
+        return json.dumps({"error": problem})
+    try:
+        check_schedule(profile, args["schedule"])
+    except (ValueError, OverflowError):
+        # hermes_adapter.check_schedule maps OverflowError itself; POST /reminders catches both too.
+        return json.dumps({"error": "schedule is not one Hermes cron accepts"})
+    try:
+        outcome = service.create(profile, args["schedule"], args["timezone"], args["prompt"], label=label)
+    except ReminderError as exc:
+        return json.dumps({"error": str(exc)})
+    except (StoreError, sqlite3.Error) as exc:
+        return _not_recorded("reminder", exc)
+    return json.dumps({"status": outcome.status, "receipt": outcome.receipt})
 
 
 NTFY_KEYS = ("server", "topic", "token", "connection_id")
@@ -160,6 +256,11 @@ def _deliver_in_background(worker: DeliveryWorker, event_id: str) -> threading.T
     committed when this starts; the network call runs on a short-lived daemon
     thread. A push this thread cannot finish stays due in the outbox, and
     the next ``python -m ergates.flush`` sends it.
+
+    The thread runs in a copy of the caller's context. A multiplexed gateway
+    routes each session to its profile with a context-local Hermes home, and
+    the worker reads that profile's settings (its time zone, for quiet
+    hours); a plain thread would start with none of it.
     """
     def _run() -> None:
         try:
@@ -167,7 +268,8 @@ def _deliver_in_background(worker: DeliveryWorker, event_id: str) -> threading.T
         except Exception as exc:
             logger.warning("ergates: push for event %s failed (%s)", event_id, type(exc).__name__)
 
-    thread = threading.Thread(target=_run, name=f"ergates-ntfy-{event_id}", daemon=True)
+    context = contextvars.copy_context()
+    thread = threading.Thread(target=context.run, args=(_run,), name=f"ergates-ntfy-{event_id}", daemon=True)
     thread.start()
     return thread
 
@@ -249,22 +351,15 @@ def on_turn_completed(
 
 
 def _resolve_profile(ctx: Any) -> Optional[str]:
-    """The active profile, preferring ``ctx``'s own session context over static config.
+    """The profile this hook call runs in, or ``None`` when Hermes cannot tell.
 
-    ``ctx.profile_name`` (``hermes_cli/plugins.py`` in the pinned checkout)
-    reflects the actual running profile -- derived from ``HERMES_HOME``, so
-    it works in gateway and kanban workers too, not just the interactive
-    CLI -- which is a better "owning profile" than a static setting. Falls
-    back to the ``ntfy.default_profile`` plugin setting when ``ctx`` has no
-    such attribute (e.g. a minimal test double) or it raises.
+    An attention event without a profile is still recorded and pushed; its
+    deep link then carries an empty profile and the app asks which chat.
     """
     try:
-        session_profile = ctx.profile_name
+        return hermes_adapter.current_profile(ctx)
     except Exception:
-        session_profile = None
-    if session_profile:
-        return session_profile
-    return ctx.get_config("ntfy.default_profile", None)
+        return None
 
 
 def _delivery_worker(ctx: Any, store: ControlStore) -> Optional[DeliveryWorker]:
@@ -275,32 +370,104 @@ def _delivery_worker(ctx: Any, store: ControlStore) -> Optional[DeliveryWorker]:
     return DeliveryWorker(store, send_ntfy, settings)
 
 
+@dataclass(frozen=True)
+class _Services:
+    store: ControlStore
+    proposals: ProposalService
+    attention: AttentionService
+    reminders: ReminderService
+
+
+# What opening the control store raises when it cannot serve: a folder or file
+# this process cannot create or open (OSError), SQLite refusing the file, or a
+# schema a newer plugin wrote (StoreError).
+_OPEN_ERRORS = (StoreError, sqlite3.Error, OSError)
+
+
+def _services_on_first_use() -> Callable[[], _Services]:
+    """``services()``: the control store and its services, opened by the first call that needs them.
+
+    Opening can fail. ``register`` must not: Hermes then disposes of every
+    registration the plugin made, the tool gate included, and every tool call
+    runs unchecked (``contract/test_pre_tool_call.py`` pins it). So the store
+    opens here, and a failed open raises to that one caller and is tried again
+    by the next call.
+    """
+    lock = threading.Lock()
+    opened: list[_Services] = []
+
+    def services() -> _Services:
+        with lock:
+            if not opened:
+                store = ControlStore(store_path(hermes_root()))
+                opened.append(_Services(
+                    store, ProposalService(store), AttentionService(store),
+                    ReminderService(store, hermes_adapter.HermesCron()),
+                ))
+            return opened[0]
+
+    return services
+
+
 def register(ctx: Any) -> None:
-    """Wire the ``ergates_propose_agent`` tool and the attention hooks into Hermes."""
-    store = ControlStore(store_path(hermes_root()))
-    proposals = ProposalService(store)
-    attention = AttentionService(store)
+    """Wire the tool gate, the Ergates tools and the attention hooks into Hermes. Never raises for the store.
+
+    The gate is registered first. While the control store cannot open, the
+    gate blocks every tool call (``policy.BLOCK_UNVERIFIED``), the tools
+    answer an error, and the attention hooks raise, which Hermes logs.
+    """
+    services = _services_on_first_use()
+
+    @policy.guarded
+    def handle_pre_tool_call(**kwargs: Any) -> Optional[dict]:
+        # Contract C6. Any exception, from here or from the store, is a block (policy.guarded).
+        profile = hermes_adapter.current_profile(ctx)
+        return policy.decide(
+            kwargs.get("tool_name") or "", kwargs.get("args"),
+            admitted=services().proposals.is_admitted(profile),
+            granted_toolsets=None, tool_toolset=None,  # rule 3's inputs arrive with roadmap Plan 5
+        )
 
     def handle_propose(args: Dict[str, Any], **kwargs: Any) -> str:
+        try:
+            proposals = services().proposals
+        except _OPEN_ERRORS as exc:
+            return _not_recorded("proposal", exc)
         return propose_handler(args, service=proposals, **kwargs)
 
+    def handle_create_reminder(args: Dict[str, Any], **kwargs: Any) -> str:
+        try:
+            profile = hermes_adapter.current_profile(ctx)
+        except Exception:
+            return json.dumps({"error": "Ergates could not tell which agent is asking"})
+        try:
+            reminders = services().reminders
+        except _OPEN_ERRORS as exc:
+            return _not_recorded("reminder", exc)
+        return create_reminder_handler(
+            args, service=reminders, profile=profile, check_schedule=hermes_adapter.check_schedule, **kwargs,
+        )
+
     def handle_pre_approval(**kwargs: Any) -> None:
+        opened = services()
         on_approval_request(
-            attention, worker=_delivery_worker(ctx, store), profile=_resolve_profile(ctx), **kwargs,
+            opened.attention, worker=_delivery_worker(ctx, opened.store), profile=_resolve_profile(ctx), **kwargs,
         )
 
     def handle_post_approval(**kwargs: Any) -> None:
-        on_approval_response(attention, **kwargs)
+        on_approval_response(services().attention, **kwargs)
 
     def handle_turn_completed(**kwargs: Any) -> None:
         platforms = completed_platforms(ctx.get_config("attention.completed_platforms", None))
         if kwargs.get("platform") not in platforms:
             return
+        opened = services()
         on_turn_completed(
-            attention, worker=_delivery_worker(ctx, store), profile=_resolve_profile(ctx),
+            opened.attention, worker=_delivery_worker(ctx, opened.store), profile=_resolve_profile(ctx),
             platforms=platforms, **kwargs,
         )
 
+    ctx.register_hook("pre_tool_call", handle_pre_tool_call)
     ctx.register_tool(
         name=PROPOSE_TOOL_NAME,
         toolset="ergates",
@@ -309,6 +476,22 @@ def register(ctx: Any) -> None:
         description="Propose a new Ergates specialist agent for operator approval.",
         emoji="\U0001FA84",  # magic wand
     )
+    ctx.register_tool(
+        name=REMINDER_TOOL_NAME,
+        toolset="ergates",
+        schema=REMINDER_SCHEMA,
+        handler=handle_create_reminder,
+        description="Create a reminder that a retry never duplicates.",
+        emoji="\u23F0",  # alarm clock
+    )
     ctx.register_hook("pre_approval_request", handle_pre_approval)
     ctx.register_hook("post_approval_response", handle_post_approval)
     ctx.register_hook("post_llm_call", handle_turn_completed)
+    try:
+        services()
+    except Exception as exc:
+        # Class name only: the message can carry the store path.
+        logger.warning(
+            "ergates: the control store could not be opened (%s); tool calls are blocked until it opens",
+            type(exc).__name__,
+        )

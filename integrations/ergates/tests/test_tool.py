@@ -6,6 +6,7 @@ in 11 section 4.1-4.2 ("never creates a profile", "records the proposal as
 configured").
 """
 
+import contextvars
 import json
 import logging
 import sqlite3
@@ -17,16 +18,19 @@ from pathlib import Path
 import pytest
 import yaml
 
-from conftest import raw_bytes, rows
-from ergates import tool
+from conftest import FakeCron, hermes_profile_lookup, raw_bytes, rows
+from ergates import hermes_adapter, policy, tool
 from ergates.attention import AttentionService
 from ergates.delivery import DeliveryWorker, NtfySettings
 from ergates.paths import store_path
+from ergates.policy import BLOCK_RAW_CRON, BLOCK_SETUP, BLOCK_UNVERIFIED
 from ergates.proposals import ProposalService, payload_hash, validate_proposal
+from ergates.reminders import ReminderService
 from ergates.store import ControlStore, StoreError
 from ergates.tool import (
     _resolve_profile,
     completed_platforms,
+    create_reminder_handler,
     on_approval_request,
     on_approval_response,
     on_turn_completed,
@@ -208,37 +212,25 @@ def test_extra_proposal_arguments_never_reach_the_proposal_or_the_receipt(propos
 # --- the approval hooks -----------------------------------------------------
 
 
-class _CtxWithSessionProfile:
-    profile_name = "thijs"
-
-    def get_config(self, key, default=None):
-        return default
-
-
-class _CtxWithoutSessionProfile:
-    def get_config(self, key, default=None):
-        return "config-default-profile" if key == "ntfy.default_profile" else default
-
-
 class _CtxWhoseProfileNameRaises:
     @property
     def profile_name(self):
         raise RuntimeError("no active profile in this context")
 
     def get_config(self, key, default=None):
-        return "config-default-profile" if key == "ntfy.default_profile" else default
+        return default
 
 
-def test_resolve_profile_prefers_ctx_session_context():
-    assert _resolve_profile(_CtxWithSessionProfile()) == "thijs"
+def test_resolve_profile_is_the_profile_hermes_reports_now():
+    class Ctx:
+        profile_name = "thijs"
+
+    assert _resolve_profile(Ctx()) == "thijs"
 
 
-def test_resolve_profile_falls_back_to_config_default_profile_when_ctx_has_none():
-    assert _resolve_profile(_CtxWithoutSessionProfile()) == "config-default-profile"
-
-
-def test_resolve_profile_falls_back_when_ctx_profile_name_raises():
-    assert _resolve_profile(_CtxWhoseProfileNameRaises()) == "config-default-profile"
+def test_resolve_profile_is_none_when_hermes_cannot_tell():
+    assert _resolve_profile(_CtxWhoseProfileNameRaises()) is None
+    assert _resolve_profile(object()) is None
 
 
 def test_on_approval_request_records_a_pending_event_with_its_push(attention, store):
@@ -321,6 +313,30 @@ def test_on_approval_request_returns_before_a_slow_publisher_completes(attention
 
     release.set()
     _join(thread)
+
+
+_ROUTED_HOME = contextvars.ContextVar("routed_home", default=None)
+
+
+def test_a_push_thread_runs_in_the_context_of_the_hook_call(attention, store):
+    """A multiplexed gateway routes each session to its profile with a
+    context-local Hermes home (Hermes's _HERMES_HOME_OVERRIDE). The push reads
+    that profile's settings, its time zone for quiet hours included, so the
+    thread must run in a copy of the caller's context, not a fresh one."""
+    seen = []
+
+    class Probe:
+        def deliver(self, event_id):
+            seen.append(_ROUTED_HOME.get())
+
+    token = _ROUTED_HOME.set("profiles/nora")
+    try:
+        thread = on_approval_request(attention, worker=Probe(), command="cmd", session_key="s-1")
+    finally:
+        _ROUTED_HOME.reset(token)
+    _join(thread)
+
+    assert seen == ["profiles/nora"]
 
 
 def test_a_push_thread_that_hits_a_store_error_only_logs(attention, store, caplog):
@@ -494,3 +510,255 @@ def test_register_reads_the_completed_platforms_setting(tmp_path, profile_proces
 
     store = ControlStore(store_path(tmp_path))
     assert [row["session_id"] for row in rows(store, "attention_events")] == ["chat-1"]
+
+
+# --- per-call profile (roadmap bug 8) ------------------------------------------
+
+
+class _MultiplexedCtx(_RecordingCtx):
+    """One plugin context serving several profiles, like a multiplexed gateway's."""
+
+    def __init__(self, *names, config=None):
+        super().__init__(config)
+        self._names = iter(names)
+
+    @property
+    def profile_name(self):
+        return next(self._names)
+
+
+class _ProfilelessCtx(_RecordingCtx):
+    """A plugin context whose profile Hermes cannot report."""
+
+    @property
+    def profile_name(self):
+        raise RuntimeError("no active profile in this context")
+
+
+def test_bug8_each_hook_call_records_the_profile_it_runs_in(tmp_path, profile_process):
+    """Roadmap bug 8: the profile was fixed by the process's HERMES_HOME. Hermes
+    reports it per call, and a multiplexed gateway switches it per session."""
+    ctx = _MultiplexedCtx("concierge", "thijs")
+    tool.register(ctx)
+
+    ctx.hooks["pre_approval_request"](command="cmd", session_key="s-1", surface="gateway")
+    ctx.hooks["pre_approval_request"](command="cmd", session_key="s-2", surface="gateway")
+
+    store = ControlStore(store_path(tmp_path))
+    assert [row["profile"] for row in rows(store, "attention_events")] == ["concierge", "thijs"]
+
+
+# --- the tool gate (contract C6) --------------------------------------------------
+
+
+def _gate(ctx):
+    tool.register(ctx)
+    return ctx.hooks["pre_tool_call"]
+
+
+def test_the_gate_blocks_a_raw_cron_create_and_lets_everything_else_run(profile_process):
+    gate = _gate(_RecordingCtx())
+
+    assert gate(tool_name="cronjob_manage", args={"action": "create", "prompt": "p"}, task_id="t") == {
+        "action": "block", "message": BLOCK_RAW_CRON}
+    assert gate(tool_name="cronjob_manage", args={"action": "list"}, task_id="t") is None
+    assert gate(tool_name="ergates_create_reminder", args={"schedule": "0 9 * * *"}, task_id="t") is None
+
+
+def test_the_gate_blocks_every_tool_of_a_profile_still_being_provisioned(tmp_path, profile_process):
+    proposals = ProposalService(ControlStore(store_path(tmp_path)))
+    proposal = validate_proposal(_valid_args(name="thijs"))
+    proposals.record(proposal)
+    proposals.accept(proposal["proposal_id"], proposal, profile_exists=lambda name: False)
+
+    assert _gate(_RecordingCtx())(tool_name="terminal", args={}) == {"action": "block", "message": BLOCK_SETUP}
+    assert _gate(_MultiplexedCtx("concierge"))(tool_name="terminal", args={}) is None
+
+
+def test_review_focus_3_a_gate_whose_check_raises_blocks_the_tool(profile_process, monkeypatch):
+    """Hermes runs the tool when a pre_tool_call callback raises. The registered
+    callback itself must never raise: a failed check is a block."""
+    def broken(*args, **kwargs):
+        raise RuntimeError("the control store is unreadable")
+
+    monkeypatch.setattr(policy, "decide", broken)
+
+    assert _gate(_RecordingCtx())(tool_name="terminal", args={}) == {"action": "block", "message": BLOCK_UNVERIFIED}
+    assert _gate(_ProfilelessCtx())(tool_name="terminal", args={}) == {"action": "block", "message": BLOCK_UNVERIFIED}
+
+
+def _store_folder_is_a_file(root):
+    (root / "ergates").write_text("", encoding="utf-8")
+
+
+def _store_from_a_newer_plugin(root):
+    store = ControlStore(store_path(root))
+    with store.transaction() as conn:
+        conn.execute("PRAGMA user_version = 99")
+
+
+@pytest.mark.parametrize(
+    ("break_the_store", "error_class"),
+    [(_store_folder_is_a_file, NotADirectoryError), (_store_from_a_newer_plugin, StoreError)],
+    ids=["folder-is-a-file", "newer-schema"],
+)
+def test_register_registers_the_gate_when_the_store_cannot_open(tmp_path, profile_process, caplog, break_the_store,
+                                                                error_class):
+    """Hermes disposes of every registration of a plugin whose register() raises,
+    the gate included, and then runs every tool call unchecked (fail open). So
+    register() never raises for the store; the gate blocks until the store opens."""
+    break_the_store(tmp_path)
+    ctx = _RecordingCtx()
+
+    with caplog.at_level(logging.WARNING, logger="ergates.tool"):
+        tool.register(ctx)
+        gate_result = ctx.hooks["pre_tool_call"](tool_name="terminal", args={})
+        proposed = json.loads(ctx.tools["ergates_propose_agent"](_valid_args(), session_id="s-1"))
+        reminded = json.loads(ctx.tools["ergates_create_reminder"](_reminder_args(), session_id="s-1"))
+
+    assert sorted(ctx.hooks) == ["post_approval_response", "post_llm_call", "pre_approval_request", "pre_tool_call"]
+    assert sorted(ctx.tools) == ["ergates_create_reminder", "ergates_propose_agent"]
+    assert gate_result == {"action": "block", "message": BLOCK_UNVERIFIED}
+    assert proposed == {"error": f"the proposal could not be recorded ({error_class.__name__})"}
+    assert reminded == {"error": f"the reminder could not be recorded ({error_class.__name__})"}
+    assert error_class.__name__ in caplog.text
+    assert str(tmp_path) not in caplog.text
+
+
+def test_the_gate_opens_the_store_once_it_can(tmp_path, profile_process):
+    _store_folder_is_a_file(tmp_path)
+    gate = _gate(_RecordingCtx())
+    assert gate(tool_name="terminal", args={}) == {"action": "block", "message": BLOCK_UNVERIFIED}
+
+    (tmp_path / "ergates").unlink()
+
+    assert gate(tool_name="terminal", args={}) is None
+    assert store_path(tmp_path).exists()
+
+
+class _DefaultCtx(_RecordingCtx):
+    profile_name = "default"
+
+
+def test_bug8_the_gate_blocks_when_default_is_hermes_fallback_for_a_failed_lookup(profile_process, monkeypatch):
+    """Hermes's profile_name answers "default" when its own lookup raises. The
+    default profile is always admitted, so a profile still being set up would
+    run every tool. The adapter asks the lookup itself, and the gate blocks."""
+    def lookup_fails():
+        raise OSError("the Hermes home cannot be resolved")
+
+    hermes_profile_lookup(monkeypatch, lookup_fails)
+    assert _gate(_DefaultCtx())(tool_name="terminal", args={}) == {"action": "block", "message": BLOCK_UNVERIFIED}
+
+    hermes_profile_lookup(monkeypatch, lambda: "default")
+    assert _gate(_DefaultCtx())(tool_name="terminal", args={}) is None
+
+
+# --- ergates_create_reminder ---------------------------------------------------------
+
+
+def _reminder_args(**overrides):
+    args = {"schedule": "0 9 * * *", "prompt": "Check the unpaid invoices.", "timezone": "Europe/Amsterdam",
+            "label": "Invoices"}
+    args.update(overrides)
+    return args
+
+
+def _no_check(profile, schedule):
+    return None
+
+
+def test_the_reminder_tool_creates_once_and_returns_the_same_reminder_again(store, cron):
+    service = ReminderService(store, cron)
+
+    first = json.loads(create_reminder_handler(_reminder_args(), service=service, profile="thijs",
+                                               check_schedule=_no_check))
+    again = json.loads(create_reminder_handler(_reminder_args(), service=service, profile="thijs",
+                                               check_schedule=_no_check))
+
+    assert (first["status"], again["status"]) == ("created", "existing")
+    assert first["receipt"]["job_id"] == again["receipt"]["job_id"]
+    assert len(cron.jobs) == 1
+    assert cron.create_calls[0]["name"].startswith("[bot:thijs] Invoices · ")
+
+
+@pytest.mark.parametrize(("args", "message"), [
+    ("not an object", "the arguments must be an object"),
+    (_reminder_args(timezone="Mars/Olympus"), "timezone must be an IANA time zone name, for example Europe/Amsterdam"),
+    (_reminder_args(label="x" * 65), "label must be 1 to 64 printable characters"),
+    (_reminder_args(prompt=""), "prompt is required and must be a non-empty string"),
+])
+def test_the_reminder_tool_refuses_bad_arguments_before_cron(store, cron, args, message):
+    service = ReminderService(store, cron)
+
+    result = json.loads(create_reminder_handler(args, service=service, profile="thijs", check_schedule=_no_check))
+
+    assert result == {"error": message}
+    assert cron.create_calls == []
+
+
+def test_the_reminder_tool_refuses_a_schedule_hermes_refuses(store, cron):
+    def refuse(profile, schedule):
+        raise ValueError("Invalid schedule")
+
+    result = json.loads(create_reminder_handler(_reminder_args(schedule="soon"), service=ReminderService(store, cron),
+                                                profile="thijs", check_schedule=refuse))
+
+    assert result == {"error": "schedule is not one Hermes cron accepts"}
+    assert cron.create_calls == []
+
+
+def test_the_reminder_tool_refuses_a_schedule_out_of_range_like_post_reminders(store, cron):
+    def overflow(profile, schedule):
+        raise OverflowError("date value out of range")
+
+    result = json.loads(create_reminder_handler(_reminder_args(schedule="in 99999999999m"),
+                                                service=ReminderService(store, cron), profile="thijs",
+                                                check_schedule=overflow))
+
+    assert result == {"error": "schedule is not one Hermes cron accepts"}
+    assert cron.create_calls == []
+
+
+def test_the_reminder_tool_reports_a_service_refusal_as_an_error(store, cron):
+    result = json.loads(create_reminder_handler(_reminder_args(), service=ReminderService(store, cron),
+                                                profile="Not A Profile", check_schedule=_no_check))
+
+    assert result == {"error": "profile must be a Hermes profile name"}
+
+
+def test_the_reminder_tool_reports_a_store_failure_as_an_error(store, cron, caplog):
+    """The Hermes tool contract: a handler always returns a JSON string. The
+    error names the exception class only; its message can carry a file path."""
+    store.close()
+
+    with caplog.at_level(logging.WARNING, logger="ergates.tool"):
+        result = json.loads(create_reminder_handler(_reminder_args(), service=ReminderService(store, cron),
+                                                    profile="thijs", check_schedule=_no_check))
+
+    assert result == {"error": "the reminder could not be recorded (StoreError)"}
+    assert "StoreError" in caplog.text
+    assert "closed" not in caplog.text
+    assert cron.create_calls == []
+
+
+def test_register_wires_the_reminder_tool_to_the_profile_hermes_reports(tmp_path, profile_process, monkeypatch):
+    cron = FakeCron()
+    monkeypatch.setattr(hermes_adapter, "HermesCron", lambda: cron)
+    monkeypatch.setattr(hermes_adapter, "check_schedule", _no_check)
+    ctx = _MultiplexedCtx("nora")
+    tool.register(ctx)
+
+    result = json.loads(ctx.tools["ergates_create_reminder"](_reminder_args(), task_id="t", session_id="s"))
+
+    assert result["status"] == "created"
+    assert result["receipt"]["profile"] == "nora"
+    assert cron.create_calls[0]["profile"] == "nora"
+
+
+def test_the_reminder_tool_answers_an_error_when_hermes_cannot_tell_the_profile(profile_process):
+    ctx = _ProfilelessCtx()
+    tool.register(ctx)
+
+    assert json.loads(ctx.tools["ergates_create_reminder"](_reminder_args())) == {
+        "error": "Ergates could not tell which agent is asking"}

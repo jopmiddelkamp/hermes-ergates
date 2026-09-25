@@ -11,6 +11,7 @@ import sys
 
 import pytest
 
+from conftest import hermes_profile_lookup
 from ergates import hermes_adapter
 from ergates.hermes_adapter import (
     HermesCron,
@@ -60,6 +61,35 @@ def test_current_profile_refuses_a_context_without_a_name():
         current_profile(Blank())
     with pytest.raises(AttributeError):
         current_profile(object())
+
+
+class _DefaultCtx:
+    profile_name = "default"
+
+
+def test_bug8_default_stands_when_hermes_lookup_names_the_default_profile(monkeypatch):
+    hermes_profile_lookup(monkeypatch, lambda: "default")
+
+    assert current_profile(_DefaultCtx()) == "default"
+
+
+def _lookup_fails():
+    raise OSError("the Hermes home cannot be resolved")
+
+
+@pytest.mark.parametrize("lookup", [_lookup_fails, lambda: "thijs"], ids=["lookup-raises", "lookup-disagrees"])
+def test_bug8_default_is_refused_when_it_is_hermes_fallback_for_a_failed_lookup(monkeypatch, lookup):
+    """``PluginContext.profile_name`` answers "default" when its own lookup raises
+    (``hermes_cli/plugins.py`` at the pin), and "default" is always admitted."""
+    hermes_profile_lookup(monkeypatch, lookup)
+
+    with pytest.raises(ValueError):
+        current_profile(_DefaultCtx())
+
+
+def test_bug8_default_is_refused_when_hermes_cannot_be_asked(without_hermes):
+    with pytest.raises(ValueError):
+        current_profile(_DefaultCtx())
 
 
 @pytest.mark.parametrize("name", ["", "Thijs", "../etc", "a/b", "-x", "x" * 65, None, 7])

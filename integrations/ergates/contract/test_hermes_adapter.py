@@ -118,8 +118,9 @@ def test_a_profile_scope_is_the_context_local_home_override(hermes: PinnedSource
 
 
 def test_profile_name_is_derived_from_the_active_home_at_every_read(hermes: PinnedSource) -> None:
-    # hermes_cli/plugins.py:397-405 (roadmap bug 8): a property, evaluated per access.
-    assert hermes.lines(PLUGINS, 397, 405) == (
+    # hermes_cli/plugins.py:397-406 (roadmap bug 8): a property, evaluated per access. When the
+    # lookup raises it answers "default", the same text as the default profile's own name.
+    assert hermes.lines(PLUGINS, 397, 406) == (
         "    @property\n"
         "    def profile_name(self) -> str:\n"
         '        """Active profile name (``"default"``, the ``~/.hermes/profiles/<name>`` id, or ``"custom"``),\n'
@@ -128,7 +129,23 @@ def test_profile_name_is_derived_from_the_active_home_at_every_read(hermes: Pinn
         "        try:\n"
         "            from hermes_cli.profiles import get_active_profile_name\n"
         "            return get_active_profile_name()\n"
-        "        except Exception:"
+        "        except Exception:\n"
+        '            return "default"'
+    )
+
+
+def test_the_lookup_behind_profile_name_answers_default_only_for_the_root_home(hermes: PinnedSource) -> None:
+    """``current_profile`` accepts a "default" only when this lookup, asked again, names the default profile."""
+    assert _arguments(hermes.function(PROFILES, "get_active_profile_name")) == []
+    # hermes_cli/profiles.py:1347-1353
+    assert hermes.lines(PROFILES, 1347, 1353) == (
+        "def get_active_profile_name() -> str:\n"
+        '    """Profile name inferred from HERMES_HOME: ``"default"`` when unset or ``~/.hermes``, the\n'
+        '    name under ``~/.hermes/profiles/<name>``, ``"custom"`` for any other path."""\n'
+        "    from hermes_constants import get_hermes_home\n"
+        "    resolved = get_hermes_home().resolve()\n"
+        "    if resolved == _get_default_hermes_home().resolve():\n"
+        '        return "default"'
     )
 
 

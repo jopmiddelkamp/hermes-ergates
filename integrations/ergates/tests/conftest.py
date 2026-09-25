@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import sys
 import threading
+import types
 
 import pytest
 
@@ -47,6 +49,14 @@ def raw_bytes(store: ControlStore) -> bytes:
     """The database file plus its write-ahead log, exactly as they sit on disk."""
     files = (store.path, store.path.with_name(store.path.name + "-wal"))
     return b"".join(item.read_bytes() for item in files if item.exists())
+
+
+def hermes_profile_lookup(monkeypatch, lookup) -> None:
+    """Stand in for Hermes's ``hermes_cli.profiles.get_active_profile_name``, where the adapter imports it."""
+    profiles = types.ModuleType("hermes_cli.profiles")
+    profiles.get_active_profile_name = lookup
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.profiles", profiles)
 
 
 class FakeCron:

@@ -2,7 +2,8 @@
 
 Pins what the gate relies on: a `{"action": "block", "message": str}` return
 vetoes the tool, a callback that raises is skipped (fail OPEN, so the Ergates
-callback must catch everything itself), and a timed-out callback blocks.
+callback must catch everything itself), a `register()` that raises loses every
+registration (so it must not raise), and a timed-out callback blocks.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import ast
 from pinned import PinnedSource
 
 DISPATCH = "hermes_cli/plugins_dispatch.py"
+LOADER = "hermes_cli/plugins_loader.py"
 PLUGINS = "hermes_cli/plugins.py"
 
 
@@ -58,6 +60,20 @@ def test_a_raising_callback_fails_open(hermes: PinnedSource) -> None:
     # Only the warning: no block directive is appended and nothing is re-raised.
     assert len(handler.body) == 1
     assert ast.unparse(handler.body[0].value.func) == "logger.warning"
+
+
+def test_a_register_that_raises_loses_every_registration_the_gate_included(hermes: PinnedSource) -> None:
+    """Registering the gate first would not save it: a raise anywhere in
+    register() disposes of everything the plugin registered. So ``tool.register``
+    never raises for the control store; it opens the store at first use."""
+    # hermes_cli/plugins_loader.py:315 and 321-324
+    assert hermes.lines(LOADER, 315, 315) == "                register_fn(PluginContext(manifest, self))"
+    assert hermes.lines(LOADER, 321, 324) == (
+        "        except Exception as exc:\n"
+        "            owned = [r for r in self._registration_order if r.plugin_key == plugin_key]\n"
+        "            self._dispose_registrations(owned)\n"
+        "            self._forget_registrations(owned)"
+    )
 
 
 def test_a_timed_out_or_skipped_callback_fails_closed(hermes: PinnedSource) -> None:

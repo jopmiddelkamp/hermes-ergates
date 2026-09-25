@@ -63,7 +63,6 @@ the profile's `config.yaml`:
 | `ntfy.topic` | unset (push disabled) | ntfy topic to publish attention events to |
 | `ntfy.token` | unset | ntfy publish token (Bearer), or `user:pass` for Basic |
 | `ntfy.connection_id` | unset | app connection id used to build the `Click` deep link |
-| `ntfy.default_profile` | unset | profile name for the deep link, **only** when `ctx.profile_name` is unavailable |
 | `attention.completed_platforms` | `["cron"]` | platforms whose finished turns push "A routine finished" (decision D9); `[]` turns them off |
 
 No credentials are ever read from, or written into, this repository or the
