@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { FakeWebSocket, fakeSocketFactory, flush, installFakeWebSocket } from '@test/fake-gateway/fake-websocket'
 
@@ -64,10 +64,10 @@ describe('SocketSession', () => {
     const states: string[] = []
     session.onState(s => states.push(s))
     FakeWebSocket.instances[0]?.serverClose(1006)
-    await flush(40)
+    // Wait for the reconnect itself: a fixed pause was too short on a busy machine.
+    await vi.waitFor(() => expect(states).toEqual(['open', 'closed', 'connecting', 'open']))
     expect(FakeWebSocket.instances).toHaveLength(2)
     expect(FakeWebSocket.instances[1]?.url).toContain('ticket=t2')
-    expect(states).toEqual(['open', 'closed', 'connecting', 'open'])
     expect(session.terminal).toBe(false)
     session.close()
   })
@@ -78,11 +78,12 @@ describe('SocketSession', () => {
     installFakeWebSocket({})
     const session = await SocketSession.open({ baseUrl: 'http://127.0.0.1:9119', profile: 'default', credential: async () => ({ token: 'tok' }), socketFactory: fakeSocketFactory, backoffMs: [5] })
     FakeWebSocket.instances[0]?.serverClose(1006)
-    await flush(40)
+    // Wait for each reconnect itself: a fixed pause was too short on a busy machine.
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2))
+    await vi.waitFor(() => expect(session.state).toBe('open'))
     FakeWebSocket.instances[1]?.serverClose(1006)
-    await flush(40)
-    expect(FakeWebSocket.instances).toHaveLength(3)
-    expect(session.state).toBe('open')
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(3))
+    await vi.waitFor(() => expect(session.state).toBe('open'))
     expect(session.lastError).toBeNull()
     session.close()
   })
