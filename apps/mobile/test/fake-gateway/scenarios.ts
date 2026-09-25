@@ -27,7 +27,7 @@ import {
   type TranscriptWindow
 } from '@/features/chat/agent-traffic/window'
 import { openCanonicalChat } from '@/features/chat/canonical-chat'
-import type { OutboxItem } from '@/features/chat/outbox'
+import type { OutboxItem } from '@/state/outbox'
 import { SendQueue, type OutboxStore } from '@/features/chat/send-queue'
 import { initialSessionState, sessionReducer, type SessionAction, type SessionState } from '@/features/chat/session-reducer'
 import { HISTORY_STALE_ROUNDS, pendingCardActions, resyncSession } from '@/features/chat/session-sync'

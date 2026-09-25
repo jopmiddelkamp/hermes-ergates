@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { UNSENT_RETENTION_MS, type OutboxItem } from '@/features/chat/outbox'
-
 import { createDeviceStore, defaultPrefs, draftKey, waitForHydration, type Connection, type PersistedDeviceState } from './device-store'
+import { UNSENT_RETENTION_MS, type OutboxItem } from './outbox'
 import { MemorySecretStore, createMemoryStorageJson, secretKey } from './persistence'
 
 function newStore() {

@@ -19,7 +19,7 @@
 import { isGatewayError, userMessage } from '@/gateway/errors'
 import type { SubmitResult } from '@/gateway/types'
 
-import { isUnsent, pressSend, reconnect as reconnectItem, submitResult, userRetry, type OutboxItem, type OutboxStatus } from './outbox'
+import { isUnsent, pressSend, reconnect as reconnectItem, submitResult, userRetry, type OutboxItem, type OutboxStatus } from '@/state/outbox'
 import type { DeliveryState, SessionAction } from './session-reducer'
 
 /** The device store's outbox, narrowed to what the queue needs. */

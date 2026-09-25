@@ -13,10 +13,10 @@
 import { create } from 'zustand'
 import { persist, type PersistStorage } from 'zustand/middleware'
 
-import { expired, recoverAfterRestart, type OutboxItem } from '@/features/chat/outbox'
-import type { SecretStore } from '@/gateway/real/secrets'
+import type { SecretStore } from '@/gateway/secrets'
 
 import { orgActions, type Organization, type Section } from './organization'
+import { expired, recoverAfterRestart, type OutboxItem } from './outbox'
 import { createAsyncStorageJson, DEVICE_STORAGE_KEY, secretKey, secureSecretStore } from './persistence'
 
 export interface Connection {

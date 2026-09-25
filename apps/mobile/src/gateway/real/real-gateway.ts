@@ -8,10 +8,9 @@
 
 import type { WebSocketLike } from '@vendor/hermes/shared/json-rpc-gateway'
 
-import { normalizeTranscriptPage } from '@/features/chat/agent-traffic/transcript'
-
 import { GatewayError, isGatewayError } from '../errors'
 import type { FilesApi, GatewayConnection, GatewayPort, ProfilesApi, RoutinesApi, SessionsApi, ToolsApi } from '../port'
+import { normalizeTranscriptPage } from '../transcript'
 import type * as T from '../types'
 import { logoutRequest, mintTicket, passwordLogin, readStatus, whoAmI } from './auth'
 import { HttpClient, type HttpAuthMode, type HttpAuthState } from './http'

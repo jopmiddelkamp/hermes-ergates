@@ -1,41 +1,6 @@
 [
   {
     "type": "dependency",
-    "from": "src/state/device-store.ts",
-    "to": "src/gateway/real/secrets.ts",
-    "unresolvedTo": "@/gateway/real/secrets",
-    "dependencyTypes": [
-      "aliased",
-      "aliased-tsconfig",
-      "aliased-tsconfig-paths",
-      "local",
-      "type-only",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "adr029-1-adapter-behind-port"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/state/persistence.ts",
-    "to": "src/gateway/real/secrets.ts",
-    "unresolvedTo": "@/gateway/real/secrets",
-    "dependencyTypes": [
-      "aliased",
-      "aliased-tsconfig",
-      "aliased-tsconfig-paths",
-      "local",
-      "export"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "adr029-1-adapter-behind-port"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/features/agents/create.ts",
     "to": "src/features/chat/canonical-chat.ts",
     "unresolvedTo": "../chat/canonical-chat",
@@ -916,40 +881,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/gateway/real/real-gateway.ts",
-    "to": "src/features/chat/agent-traffic/transcript.ts",
-    "unresolvedTo": "@/features/chat/agent-traffic/transcript",
-    "dependencyTypes": [
-      "aliased",
-      "aliased-tsconfig",
-      "aliased-tsconfig-paths",
-      "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "adr029-1-feature-index-from-outside"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/state/device-store.ts",
-    "to": "src/features/chat/outbox.ts",
-    "unresolvedTo": "@/features/chat/outbox",
-    "dependencyTypes": [
-      "aliased",
-      "aliased-tsconfig",
-      "aliased-tsconfig-paths",
-      "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "adr029-1-feature-index-from-outside"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/ui/bot-actions-items.ts",
     "to": "src/features/agents/roster.ts",
     "unresolvedTo": "@/features/agents/roster",
@@ -1106,92 +1037,6 @@
     "rule": {
       "severity": "error",
       "name": "adr029-1-feature-index-from-outside"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/gateway/real/real-gateway.ts",
-    "to": "src/features/chat/agent-traffic/transcript.ts",
-    "unresolvedTo": "@/features/chat/agent-traffic/transcript",
-    "dependencyTypes": [
-      "aliased",
-      "aliased-tsconfig",
-      "aliased-tsconfig-paths",
-      "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "adr029-1-gateway-points-inward"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/state/device-store.test.ts",
-    "to": "src/features/chat/outbox.ts",
-    "unresolvedTo": "@/features/chat/outbox",
-    "dependencyTypes": [
-      "aliased",
-      "aliased-tsconfig",
-      "aliased-tsconfig-paths",
-      "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "adr029-1-store-points-inward"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/state/device-store.ts",
-    "to": "src/features/chat/outbox.ts",
-    "unresolvedTo": "@/features/chat/outbox",
-    "dependencyTypes": [
-      "aliased",
-      "aliased-tsconfig",
-      "aliased-tsconfig-paths",
-      "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "adr029-1-store-points-inward"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/state/device-store.ts",
-    "to": "src/gateway/real/secrets.ts",
-    "unresolvedTo": "@/gateway/real/secrets",
-    "dependencyTypes": [
-      "aliased",
-      "aliased-tsconfig",
-      "aliased-tsconfig-paths",
-      "local",
-      "type-only",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "adr029-2-store-holds-no-hermes-data"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/state/persistence.ts",
-    "to": "src/gateway/real/secrets.ts",
-    "unresolvedTo": "@/gateway/real/secrets",
-    "dependencyTypes": [
-      "aliased",
-      "aliased-tsconfig",
-      "aliased-tsconfig-paths",
-      "local",
-      "export"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "adr029-2-store-holds-no-hermes-data"
     }
   },
   {

@@ -7,8 +7,8 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import type { OutboxItem } from '@/features/chat/outbox'
 import type { GatewayEventFrame } from '@/gateway/types'
+import type { OutboxItem } from '@/state/outbox'
 
 import { flush } from '@test/fake-gateway/fake-websocket'
 import turnPong from '@test/fixtures/turn-pong.json'

@@ -5,9 +5,9 @@
 
 import React, { createContext, useContext, useMemo, useRef } from 'react'
 
-import type { GatewayPort } from './port'
+import type { ConnectedGateway } from './port'
 import { RealGateway } from './real/real-gateway'
-import type { SecretStore } from './real/secrets'
+import type { SecretStore } from './secrets'
 
 export interface ConnectionRecord {
   id: string
@@ -21,9 +21,9 @@ export interface ConnectionRecord {
 
 export interface GatewayRegistry {
   /** Returns the gateway for a saved connection, creating it on first use. */
-  get(connection: ConnectionRecord): RealGateway
+  get(connection: ConnectionRecord): ConnectedGateway
   /** Builds a gateway for a connection that is not saved yet (the Connect screen). */
-  probe(id: string, baseUrl: string): RealGateway
+  probe(id: string, baseUrl: string): ConnectedGateway
   /** Drops the gateway and closes its sockets (sign-out, connection removal). */
   forget(id: string): void
 }
@@ -75,7 +75,7 @@ export function useGatewayRegistry(): GatewayRegistry {
 }
 
 /** The port for a saved connection; stable across renders for the same id and URL. */
-export function useGateway(connection: ConnectionRecord): GatewayPort & { restore(): Promise<unknown> } {
+export function useGateway(connection: ConnectionRecord): ConnectedGateway {
   const registry = useGatewayRegistry()
   return useMemo(() => registry.get(connection), [registry, connection.id, connection.baseUrl])
 }

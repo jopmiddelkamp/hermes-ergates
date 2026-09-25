@@ -139,3 +139,10 @@ export interface GatewayPort {
   tools: ToolsApi
   files: FilesApi
 }
+
+/**
+ * What the registry hands to screens and features: the port, plus `restore()`,
+ * which reloads the saved credential before the first call after a cold start.
+ * Nothing outside `src/gateway` sees the adapter class (ADR-029 rule 1).
+ */
+export type ConnectedGateway = GatewayPort & { restore(): Promise<unknown> }

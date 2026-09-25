@@ -1,6 +1,7 @@
 /**
  * Outbox state machine for composer messages (docs/05 section 5).
- * Pure functions; the device store persists the items.
+ * Pure functions; the device store persists the items. Drafts and the outbox
+ * are device-owned data, so they live with the store (ADR-029 rule 2).
  */
 
 export type OutboxStatus = 'draft' | 'queued_unsent' | 'submitting' | 'acknowledged' | 'unconfirmed' | 'failed'

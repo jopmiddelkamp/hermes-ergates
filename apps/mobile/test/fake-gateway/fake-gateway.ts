@@ -11,9 +11,9 @@
  * Vitest.
  */
 
-import { normalizeTranscriptPage } from '@/features/chat/agent-traffic/transcript'
 import { GatewayError } from '@/gateway/errors'
 import type { ConnectionFailure, ConnectionState, FilesApi, GatewayConnection, GatewayPort, ProfilesApi, RoutinesApi, SessionsApi, ToolsApi } from '@/gateway/port'
+import { normalizeTranscriptPage } from '@/gateway/transcript'
 import type * as T from '@/gateway/types'
 
 import assetAvatarFixture from '../fixtures/asset-avatar.json'

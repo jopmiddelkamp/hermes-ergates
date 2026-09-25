@@ -18,8 +18,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { createJSONStorage, type PersistStorage, type StateStorage } from 'zustand/middleware'
 
-import type { SecretStore } from '@/gateway/real/secrets'
-export { MemorySecretStore } from '@/gateway/real/secrets'
+import type { SecretStore } from '@/gateway/secrets'
+export { MemorySecretStore } from '@/gateway/secrets'
 
 export const DEVICE_STORAGE_KEY = 'ergates-device-v1'
 
