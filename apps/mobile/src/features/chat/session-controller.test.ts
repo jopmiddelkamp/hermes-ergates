@@ -63,6 +63,42 @@ describe('createSessionController', () => {
     expect(controller.getView().state.liveSessionId).toBe('live0001')
   })
 
+  it('never re-opens a closed controller when a reconnect resolves to a reaped session late', async () => {
+    const gateway = new FakeGateway()
+    const connectSpy = vi.spyOn(gateway, 'connect')
+    const controller = controllerFor(gateway)
+    await controller.open()
+    expect(gateway.calls.title).toHaveLength(1)
+    expect(connectSpy).toHaveBeenCalledTimes(1)
+
+    // The gateway restarted and forgot the live session id.
+    await gateway.sessions.close(controller.getView().state.liveSessionId ?? '')
+
+    // Hold `session.activate` in flight so the test can close the chat while
+    // the resync is still resolving.
+    let release = (): void => {}
+    const gate = new Promise<void>(resolve => {
+      release = resolve
+    })
+    vi.spyOn(gateway.sessions, 'activate').mockImplementation(async () => {
+      await gate
+      throw new GatewayError('not_found', 'The session was not found.')
+    })
+
+    const pending = controller.reconnect()
+    await flush(1)
+    // The user left the chat while the reconnect was still in flight.
+    controller.close()
+    release()
+    await pending
+    await flush(20)
+
+    // A cancelled reconnect must never re-open the chat: no second `connect`,
+    // no second `session.title` mint, and so no second shared-outbox flush.
+    expect(gateway.calls.title).toHaveLength(1)
+    expect(connectSpy).toHaveBeenCalledTimes(1)
+  })
+
   it('offers a new sign-in when the socket closes for good', async () => {
     const gateway = new FakeGateway()
     const controller = controllerFor(gateway)

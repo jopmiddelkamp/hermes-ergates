@@ -334,6 +334,14 @@ export function createSessionController(options: SessionControllerOptions): Sess
   }
 
   async function reconnect(): Promise<void> {
+    // Captured, not read live: `close()` cancels this same object (`detach`
+    // flips `attempt.cancelled`) without touching the local reference, so a
+    // reconnect started before `close()` can tell it was abandoned even after
+    // `attempt` itself has moved on to null or a fresh `open()`.
+    const run = attempt
+    if (!run) {
+      return
+    }
     const current = connection
     const live = liveId
     if (!current || !live || resyncing) {
@@ -349,6 +357,9 @@ export function createSessionController(options: SessionControllerOptions): Sess
         return
       }
     }
+    if (run.cancelled) {
+      return
+    }
     resyncing = true
     try {
       const result = await resyncSession({
@@ -360,6 +371,9 @@ export function createSessionController(options: SessionControllerOptions): Sess
         sleep: options.sleep,
         now
       })
+      if (run.cancelled) {
+        return
+      }
       if (result.stale) {
         // The gateway restarted, or reaped the session: the id we hold is gone.
         // Re-run the open path, which resolves the canonical chat again.
