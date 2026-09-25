@@ -49,7 +49,8 @@ src/gateway/    GatewayPort contract (port.ts: ConnectedGateway, BOT_CHAT_TITLE)
                 transcript normalizer, secret-store contract, real adapter (HTTP, auth, socket), registry
 src/features/   one folder per feature, each with a public index.ts: chat (reducer, session controller,
                 canonical chat, send queue), agents (roster, editor, agent proposals and their
-                provisioning), routines, files, voice, settings
+                provisioning), routines, files, voice, settings, attention (push deep link,
+                notification settings); `app/+native-intent.tsx` sends a push link to `app/open.tsx`
 src/state/      Zustand device store: connections, pins, sections, unread, drafts, outbox, prefs
 src/theme/      vendored Hermes palettes resolved for React Native; skin sync
 src/ui/         shared components

@@ -26,8 +26,11 @@ The stock Hermes ntfy adapter never sets a ``Click`` header;
 ``Priority``, ``X-Tags`` and a fixed body -- without sending it. The body is
 always ``You have a new request``: a push carries identifiers and a generic
 title, never a command, a prompt or an approval decision (docs/04 sections
-6-7). ntfy's publish API has no client-settable message id, so ``event_id``
-is bookkeeping only and never enters the request.
+6-7). The event id goes out as ntfy's ``X-Sequence-ID``: a push sent again
+after a lost answer is the same event, and an ntfy client that supports
+sequence ids (the Android app from 1.22.2 with server 2.16.0 or later; not
+the iOS app as of 1.7.0) replaces the first notification instead of showing
+a second one. The app opens the same chat from either notification.
 """
 
 from __future__ import annotations
@@ -35,6 +38,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import re
 import socket
 import time
 import urllib.parse
@@ -54,6 +58,9 @@ APPROVAL_TITLE = "Hermes needs your approval"
 COMPLETION_TITLE = "A routine finished"
 _TITLES = {APPROVAL: APPROVAL_TITLE, COMPLETION: COMPLETION_TITLE}
 _ECHO_TAG = "hermes-agent"
+
+# ntfy's rule for a sequence id (server/server.go `sequenceIDRegex`); anything else is a 400.
+_SEQUENCE_ID_RE = re.compile(r"^[-_A-Za-z0-9]{1,64}$")
 
 RETRY_BACKOFF_SECONDS: tuple[int, ...] = (30, 120, 600)
 MAX_ATTEMPTS = 5
@@ -111,6 +118,8 @@ def build_ntfy_publish(
     headers["Click"] = click_url
     headers["X-Tags"] = _ECHO_TAG
     headers["Priority"] = "default"
+    if _SEQUENCE_ID_RE.match(event_id or ""):
+        headers["X-Sequence-ID"] = event_id
     return {"url": f"{server.rstrip('/')}/{topic}", "headers": headers, "body": GENERIC_BODY, "event_id": event_id}
 
 

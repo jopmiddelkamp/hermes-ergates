@@ -299,7 +299,10 @@ of that profile (ADR-032).
 - A worker leases an outbox row for 60 s before it sends, so two workers
   never send one row at once, and a worker that dies mid-send leaves a lease
   that runs out. Failed attempts back off 30 s, 120 s, 600 s, 600 s; the
-  fifth failure gives up. Push is at least once.
+  fifth failure gives up. Push is at least once. Each push carries its event
+  id as ntfy's `X-Sequence-ID`, so a push sent again replaces the first one
+  in the ntfy Android app (1.22.2 or later, server 2.16.0 or later); the iOS
+  app shows both. Either one opens the same chat.
 - The body is always `You have a new request`; the title is `Hermes needs
   your approval` or `A routine finished`; the `Click` link is
   `ergates://chat/<session>?connection=<id>&profile=<name>`. Errors are

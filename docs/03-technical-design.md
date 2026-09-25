@@ -51,7 +51,7 @@ flowchart TB
 apps/mobile/
   app/                     # expo-router screens and sheets: layout and wiring only, no data calls
   src/gateway/             # GatewayPort contract; native adapters for HTTP/cookies, tickets, sockets; replay; error mapping
-  src/features/            # chat, agents, routines, files, settings; rooms/board later; one public index per feature
+  src/features/            # chat, agents, routines, files, settings, attention; rooms/board later; one public index per feature
   src/state/               # Zustand device store: connections, pins, sections, collapsed state, watermarks, drafts
   src/theme/               # native semantic tokens, palette resolution, preferences
   vendor/hermes/           # minimal upstream client + pure theme files, license, pin

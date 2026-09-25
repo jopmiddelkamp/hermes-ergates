@@ -70,6 +70,8 @@ function SettingsBody({ connection, onClose }: { connection: NonNullable<ReturnT
         </View>
         <InfoRow label="Sign-in" value={connection.authMode === 'token' ? 'Session token (private loopback)' : 'Username and password'} />
         <InfoRow label="Backend" value={status.data ? `Hermes ${status.data.version}` : status.isError ? 'Unreachable' : 'Checking…'} />
+        {/* Push links name this id; the operator sets it as `ntfy.connection_id` on the server. */}
+        <InfoRow label="Connection id (for push links)" value={connection.id} />
       </Group>
 
       <Group title="Appearance">

@@ -288,7 +288,8 @@ function Chat({ devSend, devInject, devFocus }: { devSend?: string; devInject?: 
   return (
     <View style={[styles.screen, { backgroundColor: theme.colors.background, paddingTop: insets.top }]}>
       <View style={[styles.header, { paddingHorizontal: theme.pagePadding, borderBottomColor: theme.colors.border, backgroundColor: theme.colors.background }]}>
-        <IconButton name="chevron-left" accessibilityLabel="Back" outlined onPress={() => router.back()} />
+        {/* A chat opened from a push notification has nothing beneath it: Back goes Home. */}
+        <IconButton name="chevron-left" accessibilityLabel="Back" outlined onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} />
         <Pressable onPress={() => router.push({ pathname: '/agent/[profile]', params: { profile } })} accessibilityRole="button" accessibilityLabel={`${name}, details`} style={[styles.identity, { borderColor: theme.colors.border, backgroundColor: theme.colors.popover }]}>
           <Avatar name={name} color={bot?.color} imageUri={avatarUri} size={30} />
           <Text style={[styles.name, { color: theme.colors.foreground }]} numberOfLines={1}>

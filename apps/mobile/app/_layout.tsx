@@ -122,6 +122,8 @@ function ThemedStack() {
       >
         <Stack.Screen name="index" />
         <Stack.Screen name="connect" />
+        {/* A push deep link lands here first (app/+native-intent.tsx), then replaces itself with the chat. */}
+        <Stack.Screen name="open" options={{ animation: 'none' }} />
         <Stack.Screen name="search" options={{ presentation: 'modal' }} />
         <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
         <Stack.Screen name="new-agent" options={{ presentation: 'modal' }} />

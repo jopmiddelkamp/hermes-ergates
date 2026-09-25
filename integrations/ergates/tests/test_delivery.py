@@ -117,9 +117,26 @@ def test_build_ntfy_publish_targets_the_topic_with_title_click_tags_and_priority
 
     assert spec["url"] == "https://ntfy.example.internal/ergates-alerts"
     assert spec["headers"] == {"Title": APPROVAL_TITLE, "Click": "ergates://chat/s1", "X-Tags": "hermes-agent",
-                               "Priority": "default"}
+                               "Priority": "default", "X-Sequence-ID": "evt-1"}
     assert spec["body"] == GENERIC_BODY == "You have a new request"
     assert spec["event_id"] == "evt-1"
+
+
+def test_a_resent_push_carries_its_event_id_as_the_ntfy_sequence_id():
+    # Push is at least once: a retry after a lost answer is the same event, and
+    # ntfy clients that support sequence ids replace the first notification.
+    event_id = "0b1f3a2c-6d4e-4f5a-9b8c-7d6e5f4a3b2c"
+    first = build_ntfy_publish("https://x", "t", "", title="T", click_url="c", event_id=event_id)
+    again = build_ntfy_publish("https://x", "t", "", title="T", click_url="c", event_id=event_id)
+
+    assert first["headers"]["X-Sequence-ID"] == again["headers"]["X-Sequence-ID"] == event_id
+
+
+@pytest.mark.parametrize("event_id", ["", "has space", "x" * 65, "a/b"])
+def test_an_event_id_ntfy_would_refuse_as_a_sequence_id_is_left_out(event_id):
+    spec = build_ntfy_publish("https://x", "t", "", title="T", click_url="c", event_id=event_id)
+
+    assert "X-Sequence-ID" not in spec["headers"]
 
 
 def test_the_body_stays_generic_even_when_a_caller_misuses_the_title():
