@@ -128,6 +128,7 @@ function ThemedStack() {
         <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
         <Stack.Screen name="new-agent" options={{ presentation: 'modal' }} />
         <Stack.Screen name="hidden-bots" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="notifications" options={{ presentation: 'modal' }} />
         {/* One entry: `app/chat/[profile]/_layout.tsx` owns the stack for the chat, Activity and the read-only transcript. */}
         <Stack.Screen name="chat/[profile]" />
       </Stack>

@@ -134,6 +134,7 @@ function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId
           <MenuRow label="Routines" onPress={() => router.push({ pathname: '/agent/[profile]/routines', params: { profile } })} />
           <MenuRow label="Tools & connectors" onPress={() => router.push({ pathname: '/agent/[profile]/tools', params: { profile } })} />
           <MenuRow label="Memory" onPress={() => router.push({ pathname: '/agent/[profile]/memory', params: { profile } })} />
+          <MenuRow label="Notifications" onPress={() => router.push({ pathname: '/notifications', params: { profile } })} />
         </Card>
 
         <Card>

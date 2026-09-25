@@ -117,6 +117,15 @@ function SettingsBody({ connection, onClose }: { connection: NonNullable<ReturnT
           <Text style={[styles.rowLabel, { color: theme.colors.foreground }]}>Hidden bots</Text>
           <Icon name="chevron-right" size={18} color={theme.colors.mutedForeground} />
         </Pressable>
+        <Pressable
+          onPress={() => router.push({ pathname: '/notifications', params: { profile: '*' } })}
+          accessibilityRole="button"
+          accessibilityLabel="Notifications for all agents"
+          style={styles.row}
+        >
+          <Text style={[styles.rowLabel, { color: theme.colors.foreground }]}>Notifications for all agents</Text>
+          <Icon name="chevron-right" size={18} color={theme.colors.mutedForeground} />
+        </Pressable>
       </Group>
 
       <Group title="About">
