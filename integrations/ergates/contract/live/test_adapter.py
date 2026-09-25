@@ -26,6 +26,7 @@ from ergates.hermes_adapter import (
 from ergates.paths import hermes_root, store_path
 from ergates.reminders import ReminderService, routine_name
 from ergates.store import ControlStore
+from ergates.tool import create_reminder_handler
 
 PLUGIN_DIR = Path(__file__).resolve().parents[2]
 
@@ -129,7 +130,7 @@ def test_hermes_cron_uses_the_profile_own_store_and_finds_the_job_by_its_exact_n
 
     assert elapsed < 5
     assert job == {"id": job["id"], "name": name}
-    assert cron.get_job("bram", job["id"]) == job
+    assert cron.get_job("bram", job["id"]) == {**job, "completed": False}
     assert cron.find_job_ids_by_name("bram", name) == [job["id"]]
     assert cron.find_job_ids_by_name("bram", "[bot:bram] invoices") == []
     assert name in (home / "cron" / "jobs.json").read_text(encoding="utf-8")
@@ -200,3 +201,34 @@ def test_review_focus_1_the_reminder_service_on_hermes_cron_makes_one_job(root, 
     name = routine_name("sam", "Invoices", "req-1", outcomes[0].receipt["payload_hash"])
     assert HermesCron().find_job_ids_by_name("sam", name) == [outcomes[0].receipt["job_id"]]
     assert json.dumps([outcome.receipt for outcome in outcomes]).count("Check the invoices") == 0
+
+
+def test_the_reminder_tool_makes_a_one_shot_again_after_hermes_ran_it(root, make_profile):
+    """Hermes keeps a one-shot that ran as a completed job for 7 days. The agent
+    tool keys its receipt by the payload, so the same request after the run must
+    make a new job instead of answering the completed one as ``existing``."""
+    from cron.jobs import claim_dispatch, mark_job_run
+
+    home = make_profile("tess")
+    service = ReminderService(ControlStore(store_path(root)), HermesCron())
+    args = {"schedule": "in 30m", "prompt": "Call the dentist.", "timezone": "Europe/Amsterdam", "label": "Dentist"}
+
+    def ask() -> dict:
+        return json.loads(create_reminder_handler(dict(args), service=service, profile="tess",
+                                                  check_schedule=check_schedule))
+
+    first = ask()
+    ran = first["receipt"]["job_id"]
+    with _profile_home("tess"):  # what the scheduler does around one run of a one-shot
+        assert claim_dispatch(ran) is True
+        assert mark_job_run(ran, True) is True
+    assert HermesCron().get_job("tess", ran)["completed"] is True
+
+    second = ask()
+    third = ask()
+
+    assert (first["status"], second["status"], third["status"]) == ("created", "created", "existing")
+    assert second["receipt"]["job_id"] != ran
+    assert third["receipt"]["job_id"] == second["receipt"]["job_id"]
+    jobs = json.loads((home / "cron" / "jobs.json").read_text(encoding="utf-8"))["jobs"]
+    assert {job["id"]: job["state"] for job in jobs} == {ran: "completed", second["receipt"]["job_id"]: "scheduled"}

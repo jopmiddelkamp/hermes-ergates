@@ -88,6 +88,10 @@ class FakeCron:
         """What the Routines screen does through native cron (docs/11 section 4.3)."""
         self.jobs.pop(job_id, None)
 
+    def complete_job(self, job_id: str) -> None:
+        """What Hermes does after a one-shot runs: it keeps the job, marked completed, for 7 days."""
+        self.jobs[job_id]["completed"] = True
+
     def create_job(self, profile, *, schedule, prompt, name):
         self.create_calls.append({"profile": profile, "schedule": schedule, "prompt": prompt, "name": name})
         hook, self.on_create = self.on_create, None

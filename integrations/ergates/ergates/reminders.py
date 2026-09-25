@@ -11,6 +11,12 @@ cases safe:
 - A job deleted natively (Routines screen): only the request that still
   holds the version that saw the job missing creates it again (roadmap
   bug 1).
+- A one-shot that already ran: Hermes keeps it as a completed job (7 days
+  by default). For a receipt keyed by its payload (no request id: the
+  agent tool) that job counts as gone, so the same request after the run
+  makes a new reminder. A receipt with a request id keeps it: the app sends
+  a new id per attempt, so the same id again is a retry of a request
+  already served.
 - A create whose answer was lost: the receipt is ``uncertain``, and the next
   request reconciles it through the job's unique name instead of creating
   blindly. A ``creating`` receipt older than :data:`IN_FLIGHT_SECONDS` is
@@ -76,7 +82,9 @@ class CronPort(Protocol):
 
     def create_job(self, profile: str, *, schedule: str, prompt: str, name: str) -> dict: ...
 
-    def get_job(self, profile: str, job_id: str) -> dict | None: ...  # None = no such job; raise = could not tell
+    # None = no such job; raise = could not tell. ``"completed": True`` = a job
+    # that already ran its last time (Hermes keeps a one-shot that ran for 7 days).
+    def get_job(self, profile: str, job_id: str) -> dict | None: ...
 
     def find_job_ids_by_name(self, profile: str, name: str) -> list[str]: ...
 
@@ -168,6 +176,21 @@ def _validate(profile, schedule, timezone, prompt, request_id, label) -> None:
         raise ReminderError("request_id must be 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit")
     if label is not None and not isinstance(label, str):
         raise ReminderError("label must be a string")
+
+
+def _counts_as_gone(row, job: dict | None) -> bool:
+    """Whether ``job``, as ``CronPort.get_job`` answered it, no longer serves receipt ``row``.
+
+    A job cron does not have is gone. A completed job (a one-shot Hermes
+    already ran and keeps for 7 days) is gone only for a receipt without a
+    request id: that receipt is keyed by its payload, so the same request
+    after the run asks for a new reminder. A receipt with a request id keeps
+    its completed job: the app sends a new id per attempt, so the same id
+    again is a retry of a request that was served.
+    """
+    if job is None:
+        return True
+    return row["request_id"] is None and job.get("completed") is True
 
 
 def _view(row: sqlite3.Row | dict) -> dict:
@@ -301,9 +324,9 @@ class ReminderService:
         return self._settle(row, CREATED, str(job_id), "created")
 
     def _verify(self, row, schedule: str, prompt: str) -> ReminderOutcome | None:
-        """Trust a ``created`` receipt only while cron still has its job."""
+        """Trust a ``created`` receipt only while cron still has its job (see :func:`_counts_as_gone`)."""
         try:
-            gone = self._cron.get_job(row["profile"], row["job_id"]) is None
+            gone = _counts_as_gone(row, self._cron.get_job(row["profile"], row["job_id"]))
         except Exception as exc:
             logger.warning("reminders: lookup of job %r failed (%s); keeping the receipt", row["job_id"], type(exc).__name__)
             gone = False
@@ -343,12 +366,24 @@ class ReminderService:
         except Exception as exc:
             logger.warning("reminders: cannot reconcile receipt %r (%s)", row["id"], type(exc).__name__)
             return self._settle(row, UNCERTAIN, None, "uncertain")
+        if row["request_id"] is None:
+            # The same rule as _verify: a job this receipt's payload made and
+            # Hermes already ran is not its reminder.
+            job_ids = [job_id for job_id in job_ids if not self._job_counts_as_gone(row, job_id)]
         if len(job_ids) == 1:
             return self._settle(row, CREATED, str(job_ids[0]), "existing")
         if not job_ids:
             return self._create(row, schedule, prompt)
         logger.warning("reminders: %d cron jobs carry the name of receipt %r", len(job_ids), row["id"])
         return self._settle(row, UNCERTAIN, None, "uncertain")
+
+    def _job_counts_as_gone(self, row, job_id: str) -> bool:
+        """:func:`_counts_as_gone` for ``job_id``; False when cron cannot tell."""
+        try:
+            return _counts_as_gone(row, self._cron.get_job(row["profile"], job_id))
+        except Exception as exc:
+            logger.warning("reminders: lookup of job %r failed (%s); keeping it as a match", job_id, type(exc).__name__)
+            return False
 
     def _settle(self, row, state: str, job_id: str | None, status: str) -> ReminderOutcome:
         with self._store.transaction() as conn:

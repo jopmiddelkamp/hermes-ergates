@@ -229,6 +229,81 @@ def test_a_natively_deleted_job_is_created_again_once(service, cron):
     assert len(cron.create_calls) == 2
 
 
+def test_a_one_shot_that_already_ran_is_made_again_for_a_request_without_an_id(service, cron):
+    """Hermes keeps a one-shot that ran as a completed job for 7 days. Keyed by its
+    payload (the agent tool's path), the same request after that run is a new
+    reminder, not the old one: answering `existing` would schedule nothing."""
+    first = service.create(PROFILE, "in 30m", TIMEZONE, PROMPT)
+    cron.complete_job(first.receipt["job_id"])
+
+    second = service.create(PROFILE, "in 30m", TIMEZONE, PROMPT)
+    third = service.create(PROFILE, "in 30m", TIMEZONE, PROMPT)
+
+    assert (first.status, second.status, third.status) == ("created", "created", "existing")
+    assert second.receipt["id"] == first.receipt["id"]
+    assert second.receipt["job_id"] not in (None, first.receipt["job_id"])
+    assert third.receipt["job_id"] == second.receipt["job_id"]
+    assert len(cron.create_calls) == 2
+
+
+def test_a_one_shot_that_already_ran_stays_existing_for_a_request_with_an_id(service, cron):
+    """The app sends a new request id per attempt, so the same id again is a retry
+    of a request that was served: its completed job is its answer."""
+    first = service.create(PROFILE, "in 30m", TIMEZONE, PROMPT, request_id="outbox-1")
+    cron.complete_job(first.receipt["job_id"])
+
+    again = service.create(PROFILE, "in 30m", TIMEZONE, PROMPT, request_id="outbox-1")
+
+    assert again.status == "existing"
+    assert again.receipt["job_id"] == first.receipt["job_id"]
+    assert len(cron.create_calls) == 1
+
+
+def test_a_request_without_an_id_never_adopts_a_one_shot_that_already_ran(service, cron):
+    """Reconciling by name follows the same rule: for a payload-keyed receipt a
+    completed job with its name is not its reminder, however many there are."""
+    cron.fail_create = "after"
+    lost = service.create(PROFILE, "in 30m", TIMEZONE, PROMPT)
+    cron.fail_create = None
+    name = routine_name(PROFILE, None, lost.receipt["id"], lost.receipt["payload_hash"])
+    for job_id in [*cron.jobs, cron.add_job(PROFILE, name)]:
+        cron.complete_job(job_id)
+
+    again = service.create(PROFILE, "in 30m", TIMEZONE, PROMPT)
+
+    assert lost.status == "uncertain"
+    assert again.status == "created"
+    assert again.receipt["job_id"] == "job-3"
+    assert len(cron.create_calls) == 2
+
+
+def test_a_request_with_an_id_adopts_its_one_shot_that_already_ran(service, cron):
+    cron.fail_create = "after"
+    lost = service.create(PROFILE, "in 30m", TIMEZONE, PROMPT, request_id="outbox-1")
+    cron.fail_create = None
+    cron.complete_job("job-1")
+
+    again = service.create(PROFILE, "in 30m", TIMEZONE, PROMPT, request_id="outbox-1")
+
+    assert (lost.status, again.status) == ("uncertain", "existing")
+    assert again.receipt["job_id"] == "job-1"
+    assert len(cron.create_calls) == 1
+
+
+def test_a_request_without_an_id_keeps_a_named_job_it_cannot_look_up(service, cron):
+    """"Could not tell" is never "completed": the one match is adopted as before."""
+    cron.fail_create = "after"
+    service.create(PROFILE, "in 30m", TIMEZONE, PROMPT)
+    cron.fail_create = None
+    cron.fail_lookup = True
+
+    again = service.create(PROFILE, "in 30m", TIMEZONE, PROMPT)
+
+    assert again.status == "existing"
+    assert again.receipt["job_id"] == "job-1"
+    assert len(cron.create_calls) == 1
+
+
 def test_a_failing_lookup_keeps_the_receipt_instead_of_duplicating(service, cron):
     """"Could not tell" is never "gone"."""
     first = service.create(*ARGS)

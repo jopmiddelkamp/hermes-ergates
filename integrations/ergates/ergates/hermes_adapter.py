@@ -175,13 +175,21 @@ class HermesCron:
         return {"id": _created_job_id(raw), "name": name}
 
     def get_job(self, profile: str, job_id: str) -> dict | None:
+        """The job's id, name and ``completed``; ``None`` when cron has no such job.
+
+        ``completed`` is True for a job Hermes retired after its last run: a
+        one-shot that ran stays in ``jobs.json`` with ``state: "completed"``
+        for 7 days by default (``contract/test_hermes_adapter.py`` pins both).
+        """
         try:
             from cron.jobs import get_job
         except ImportError as exc:
             raise CronUnavailable("Hermes cron is not importable in this process") from exc
         with _profile_home(profile):
             job = get_job(job_id)
-        return None if job is None else {"id": str(job["id"]), "name": job.get("name")}
+        if job is None:
+            return None
+        return {"id": str(job["id"]), "name": job.get("name"), "completed": job.get("state") == "completed"}
 
     def find_job_ids_by_name(self, profile: str, name: str) -> list[str]:
         """Ids of every job, paused ones included, whose name is exactly ``name``."""

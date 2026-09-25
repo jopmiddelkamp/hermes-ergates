@@ -155,8 +155,8 @@ REMINDER_SCHEMA: Dict[str, Any] = {
     "description": (
         "Create a reminder: a Hermes cron job in this agent's profile that runs the prompt on "
         "the schedule. Asking again with the same schedule, time zone and prompt returns the "
-        "reminder that already exists instead of making a second one. Use this, not "
-        "cronjob_manage, to create reminders."
+        "reminder that already exists instead of making a second one; a one-time reminder that "
+        "already ran is made again. Use this, not cronjob_manage, to create reminders."
     ),
     "parameters": {
         "type": "object",
@@ -202,9 +202,11 @@ def create_reminder_handler(
     The same checks as ``POST /reminders`` run first, so a schedule Hermes
     refuses is an error, never an uncertain create. There is no request id:
     the receipt id is the payload hash, so the same schedule, time zone and
-    prompt in one profile is one reminder however often the model asks. A
-    store failure is an error naming the exception class, as in
-    :func:`propose_handler`; asking again after it never makes a second job.
+    prompt in one profile is one reminder however often the model asks --
+    until a one-shot has run: then the same request makes a new one
+    (``reminders._counts_as_gone``). A store failure is an error naming the
+    exception class, as in :func:`propose_handler`; asking again after it
+    never makes a second job.
     """
     if not isinstance(args, dict):
         return json.dumps({"error": "the arguments must be an object"})

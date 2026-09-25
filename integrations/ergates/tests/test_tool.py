@@ -688,6 +688,24 @@ def test_the_reminder_tool_creates_once_and_returns_the_same_reminder_again(stor
     assert cron.create_calls[0]["name"].startswith("[bot:thijs] Invoices · ")
 
 
+def test_the_reminder_tool_makes_a_one_shot_again_once_hermes_ran_it(store, cron):
+    """Hermes keeps a one-shot that ran as a completed job for 7 days. The model
+    asking for the same one-shot again wants a new reminder, not that record."""
+    service = ReminderService(store, cron)
+
+    def ask():
+        return json.loads(create_reminder_handler(_reminder_args(schedule="in 30m"), service=service,
+                                                  profile="thijs", check_schedule=_no_check))
+
+    first = ask()
+    cron.complete_job(first["receipt"]["job_id"])
+    second = ask()
+
+    assert (first["status"], second["status"]) == ("created", "created")
+    assert second["receipt"]["job_id"] != first["receipt"]["job_id"]
+    assert len(cron.create_calls) == 2
+
+
 @pytest.mark.parametrize(("args", "message"), [
     ("not an object", "the arguments must be an object"),
     (_reminder_args(timezone="Mars/Olympus"), "timezone must be an IANA time zone name, for example Europe/Amsterdam"),

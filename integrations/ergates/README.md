@@ -143,7 +143,8 @@ the first and answers the same receipt.
 - `ergates_create_reminder` creates a reminder in the calling agent's
   profile with the same checks as `POST /reminders`. It sends no request
   id, so the same schedule, time zone and prompt in one profile is one
-  reminder however often the model asks.
+  reminder however often the model asks, until a one-shot has run: the
+  same request after that makes a new one.
 - The `pre_tool_call` hook (roadmap contract C6, `ergates/policy.py`)
   blocks every tool of a profile whose accepted proposal is still being
   provisioned, and blocks `cronjob_manage` with `action: create` (agents
@@ -216,11 +217,17 @@ screen, so Hermes's prompt scan and scheduler registration apply.
   waits for the first creator (up to 5 s) and returns the same receipt.
 - **A job deleted natively** (Routines screen) is created again once, by
   the one request that still holds the version that saw it missing.
+- **A one-shot that already ran** stays in Hermes cron as a completed job
+  for 7 days by default. Without a request id (the agent tool) it counts
+  as deleted, so the same request after the run makes a new reminder. With
+  a request id it stays the receipt's job: the app sends a new id per
+  attempt, so the same id again is a retry of a request that was served.
 - **Every create is reconciled by name first**: the job name
   (`[bot:<profile>] <label> · <8 hex>`) is unique per receipt and payload.
   One match is adopted, none is created once, several leave the receipt
-  `uncertain`. A create whose answer was lost, or a `creating` receipt
-  older than 60 s, is reconciled the same way.
+  `uncertain`; without a request id, completed jobs do not count. A create
+  whose answer was lost, or a `creating` receipt older than 60 s, is
+  reconciled the same way.
 - **Timezone is advisory.** Hermes 0.21.2 has no per-job timezone, so the
   zone stays in the idempotency key and comes back as `timezone_advisory`;
   a reminder fires in the server's timezone.

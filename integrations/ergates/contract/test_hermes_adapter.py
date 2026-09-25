@@ -179,6 +179,48 @@ def test_cron_lookups_and_schedule_checks(hermes: PinnedSource) -> None:
     assert hermes.lines(JOBS, 1757, 1757) == "    name = name or label_source[:50].strip()"
 
 
+def test_a_one_shot_that_ran_is_kept_as_a_completed_job_for_seven_days(hermes: PinnedSource) -> None:
+    """``HermesCron.get_job`` reports ``completed`` from the job's state, and the
+    reminder service counts a completed job as gone for a receipt keyed by its
+    payload (the agent tool's path): the same request after the run is a new
+    reminder, not a 7-day-old record."""
+    # cron/jobs.py:1729-1731: a one-shot runs once.
+    assert hermes.lines(JOBS, 1730, 1731) == (
+        '    if parsed_schedule["kind"] == "once" and repeat is None:\n'
+        "        repeat = 1"
+    )
+    # cron/jobs.py:2267-2271 and 2289-2290: after its run the job is retired in place, not removed.
+    assert hermes.lines(JOBS, 2267, 2271) == (
+        "        if finite and completed >= times:\n"
+        "            # Limit reached: retain a terminal record instead of popping it, so the status just\n"
+        "            # written stays inspectable in `cronjob list`; the retention sweep prunes it later.\n"
+        "            _complete_job_record(job)\n"
+        "            return"
+    )
+    assert hermes.lines(JOBS, 2289, 2290) == "    else:\n        _complete_job_record(job)  # one-shot: terminal completion"
+    # cron/jobs.py:1464-1466
+    assert hermes.lines(JOBS, 1464, 1466) == (
+        "def _complete_job_record(job: Dict[str, Any]) -> None:\n"
+        '    """Retire *job* in place as a terminal completion (record kept for `cronjob list`)."""\n'
+        '    job.update(enabled=False, state="completed", next_run_at=None)'
+    )
+    # cron/jobs.py:2610-2612: the retention sweep removes it only after 7 days.
+    assert hermes.assigned(JOBS, "COMPLETED_ONESHOT_RETENTION_DAYS") == 7
+    # cron/jobs.py:1815-1818, 474 and 492-494: get_job returns the record with "completed" kept.
+    assert hermes.lines(JOBS, 1815, 1818) == (
+        "def get_job(job_id: str) -> Optional[Dict[str, Any]]:\n"
+        '    """Get a job by ID."""\n'
+        '    job = next((j for j in load_jobs() if j["id"] == job_id), None)\n'
+        "    return _normalize_job_record(job) if job is not None else None"
+    )
+    assert hermes.lines(JOBS, 474, 474) == '    normalized["state"] = effective_job_state(normalized)'
+    assert hermes.lines(JOBS, 492, 494) == (
+        '    stored = _coerce_job_text(job.get("state")).strip()\n'
+        '    if stored in {"completed", "error"}:\n'
+        "        return stored"
+    )
+
+
 def test_a_create_ends_well_inside_the_reminder_in_flight_window(hermes: PinnedSource) -> None:
     """The only wait inside a create is the jobs lock, bounded at 30 s; the
     built-in scheduler registers nothing. A second identical request takes
