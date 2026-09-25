@@ -8,6 +8,7 @@ import pytest
 
 from conftest import FakeClock, raw_bytes, rows
 from ergates.proposals import (
+    HERMES_RESERVED_PROFILE_NAMES,
     PROPOSAL_EXPIRY,
     PROPOSAL_KIND,
     PROPOSAL_RETENTION_GRACE_SECONDS,
@@ -63,6 +64,25 @@ def test_validate_proposal_rejects_a_name_with_a_trailing_newline():
     Hermes creates as "pim", and the gate would admit "pim" while it is set up."""
     with pytest.raises(ProposalError):
         validate_proposal(_valid_args(name="pim\n"))
+
+
+@pytest.mark.parametrize("name", ["hermes", "default", "test", "tmp", "root", "sudo"])
+def test_validate_proposal_rejects_a_name_hermes_reserves(name):
+    """``profiles.create`` refuses these, so an accepted proposal could never
+    finish and would keep the name reserved with no way to release it."""
+    with pytest.raises(ProposalError) as raised:
+        validate_proposal(_valid_args(name=name))
+    assert raised.value.code == "invalid"
+    assert "reserved" in str(raised.value)
+
+
+def test_the_reserved_names_are_exactly_the_ones_the_test_above_checks():
+    # `contract/test_reserved_profile_names.py` keeps this set equal to the pin.
+    assert HERMES_RESERVED_PROFILE_NAMES == frozenset({"hermes", "default", "test", "tmp", "root", "sudo"})
+
+
+def test_validate_proposal_accepts_a_name_that_only_contains_a_reserved_one():
+    assert validate_proposal(_valid_args(name="hermes-helper"))["agent"]["name"] == "hermes-helper"
 
 
 def test_validate_proposal_rejects_a_name_starting_with_a_hyphen():

@@ -29,7 +29,7 @@ from .attention import AttentionService
 from .delivery import DeliveryWorker, send_ntfy
 from .operations import PROMPT_REFUSED, reminder_problem
 from .paths import hermes_root, store_path
-from .proposals import ProposalError, ProposalService, validate_proposal
+from .proposals import HERMES_RESERVED_PROFILE_NAMES, ProposalError, ProposalService, validate_proposal
 from .reminders import ReminderError, ReminderService
 from .settings import push_settings
 from .store import ControlStore, StoreError
@@ -53,7 +53,8 @@ PROPOSE_SCHEMA: Dict[str, Any] = {
                 "type": "string",
                 "description": (
                     "Unique lowercase profile identifier, e.g. 'thijs'. "
-                    "Must match ^[a-z0-9][a-z0-9-]{1,31}$."
+                    "Must match ^[a-z0-9][a-z0-9-]{1,31}$ and must not be a name "
+                    f"Hermes reserves: {', '.join(sorted(HERMES_RESERVED_PROFILE_NAMES))}."
                 ),
             },
             "title": {

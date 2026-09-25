@@ -39,6 +39,12 @@ PROPOSAL_KIND = "ergates.agent-proposal.v1"
 NAME_PATTERN_DESCRIPTION = "^[a-z0-9][a-z0-9-]{1,31}$"
 _NAME_RE = re.compile(NAME_PATTERN_DESCRIPTION)
 
+# The profile names Hermes refuses to create: ``_RESERVED_NAMES`` in
+# ``hermes_cli/profiles.py`` (``default`` is the built-in profile). Hermes keeps
+# them in a private constant, so this is a copy;
+# ``contract/test_reserved_profile_names.py`` keeps it equal to the pin.
+HERMES_RESERVED_PROFILE_NAMES = frozenset({"hermes", "default", "test", "tmp", "root", "sudo"})
+
 TITLE_MAX_LEN = 60
 ROLE_MAX_LEN = 40
 BRIEFING_MAX_LEN = 4000
@@ -117,6 +123,9 @@ def validate_proposal(args: Dict[str, Any]) -> Dict[str, Any]:
     name = args["name"]
     if not _NAME_RE.fullmatch(name):
         raise ProposalError(f"name must match {NAME_PATTERN_DESCRIPTION}")
+    if name in HERMES_RESERVED_PROFILE_NAMES:
+        # An accept would reserve a name Hermes then refuses to create.
+        raise ProposalError(f"name {name!r} is reserved by Hermes; pick another")
 
     title = args["title"]
     if len(title) > TITLE_MAX_LEN:
