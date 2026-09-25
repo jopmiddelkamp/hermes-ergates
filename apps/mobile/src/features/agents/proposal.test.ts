@@ -109,6 +109,26 @@ describe('proposalView', () => {
     expect(proposalView(input({ receipt: receipt('accepted'), outcome: failedAccept }))).toMatchObject({ status: 'failed', actions: ['retry'] })
   })
 
+  it('offers only retry for a later-step failure, even while a stale cached receipt still reads proposed', () => {
+    const failedCreate = { kind: 'failed', step: 'profile_created', message: 'No connection to the gateway.', terminal: false } as const
+    expect(proposalView(input({ receipt: receipt('proposed'), outcome: failedCreate }))).toMatchObject({ status: 'failed', actions: ['retry'] })
+  })
+
+  it('lets a settled receipt win over a non-final failure of an earlier run', () => {
+    // Accept failed offline, then the user rejected: the card must not keep
+    // offering "Try again" for an accept the server now refuses.
+    const failedAccept = { kind: 'failed', step: 'accept', message: 'No connection to the gateway.', terminal: false } as const
+    for (const state of ['rejected', 'expired', 'complete'] as const) {
+      expect(proposalView(input({ receipt: receipt(state), outcome: failedAccept }))).toEqual({ hidden: true, status: 'closed', text: null, actions: [] })
+    }
+    const failedStep = { kind: 'failed', step: 'configured', message: 'Hermes did not apply: toolsets.', terminal: false } as const
+    expect(proposalView(input({ receipt: receipt('complete'), outcome: failedStep })).hidden).toBe(true)
+    // A run on this screen that ended on its own terms still reports itself.
+    expect(proposalView(input({ receipt: receipt('complete'), outcome: { kind: 'complete', profile: 'pim' } }))).toMatchObject({ status: 'complete', actions: ['open_chat'] })
+    const refused = { kind: 'failed', step: 'accept', message: 'This proposal expired. Ask the agent to propose it again.', terminal: true } as const
+    expect(proposalView(input({ receipt: receipt('expired'), outcome: refused }))).toMatchObject({ status: 'closed', text: refused.message })
+  })
+
   it('shows an accepted proposal as being set up until the run reports a step', () => {
     expect(proposalView(input({ receipt: receipt('accepted') }))).toMatchObject({ status: 'working', text: 'Setting up Pim…', actions: [] })
     expect(proposalView(input({ receipt: receipt('proposed'), busy: true }))).toMatchObject({ status: 'working', actions: [] })

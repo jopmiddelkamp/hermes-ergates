@@ -109,7 +109,11 @@ export function useProposal(proposal: AgentProposal): ProposalCardState {
   const reject = useCallback(async () => {
     setBusy(true)
     try {
-      await port.ergates.rejectProposal(id)
+      const settled = await port.ergates.rejectProposal(id)
+      // The reject landed: an earlier failed accept is over, and the card
+      // shows the server's answer at once, not a stale `proposed` read.
+      setOutcome(null)
+      client.setQueryData(proposalKey(connectionId, id), settled)
       removeRun(id)
     } finally {
       setBusy(false)

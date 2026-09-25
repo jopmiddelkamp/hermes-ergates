@@ -110,7 +110,16 @@ export interface ProposalViewInput {
 
 const view = (status: ProposalView['status'], text: string | null, actions: ProposalAction[] = []): ProposalView => ({ hidden: false, status, text, actions })
 
-/** What a proposal card says and offers. The server's receipt decides; a run on this screen refines it. */
+/** Receipt states no further run can change. */
+const SETTLED_STATES = new Set<ProposalReceipt['state']>(['complete', 'expired', 'rejected'])
+
+/**
+ * What a proposal card says and offers. The server's receipt decides; a run on
+ * this screen refines it, except that a settled receipt wins over a failure
+ * that asked for another try: after a failed accept the user may reject, or
+ * another device may finish the setup, and "Try again" would then only meet a
+ * refusal.
+ */
 export function proposalView({ proposal, receipt, receiptError, step, outcome, busy }: ProposalViewInput): ProposalView {
   const title = proposal.agent.title
   if (step) {
@@ -119,7 +128,8 @@ export function proposalView({ proposal, receipt, receiptError, step, outcome, b
   if (busy) {
     return view('working', 'Working…')
   }
-  if (outcome) {
+  const superseded = outcome?.kind === 'failed' && !outcome.terminal && receipt !== undefined && SETTLED_STATES.has(receipt.state)
+  if (outcome && !superseded) {
     switch (outcome.kind) {
       case 'complete':
         return view('complete', `${title} is ready.`, ['open_chat'])
@@ -132,10 +142,11 @@ export function proposalView({ proposal, receipt, receiptError, step, outcome, b
           return view('closed', outcome.message)
         }
         const what = STEP_TEXT[outcome.step]
-        // A non-terminal failure while the server still reads `proposed` (only
-        // the `accept` step can fail there) leaves the proposal open: offer
-        // Reject alongside Try again, not just the latter until a remount.
-        const actions: ProposalAction[] = receipt?.state === 'proposed' ? ['retry', 'reject'] : ['retry']
+        // A non-terminal accept failure while the server still reads
+        // `proposed` leaves the proposal open: offer Reject alongside Try
+        // again. A later step can only fail after an accept landed, so a
+        // `proposed` receipt there is a stale cached read: no Reject.
+        const actions: ProposalAction[] = outcome.step === 'accept' && receipt?.state === 'proposed' ? ['retry', 'reject'] : ['retry']
         return view('failed', `${what.charAt(0).toUpperCase()}${what.slice(1)} failed. ${outcome.message}`, actions)
       }
     }
@@ -162,8 +173,6 @@ export function proposalView({ proposal, receipt, receiptError, step, outcome, b
   }
 }
 
-const FORGET_STATES = new Set<ProposalReceipt['state']>(['complete', 'expired', 'rejected'])
-
 /**
  * True once the device's stored setup run for this proposal is no longer
  * useful: the server settled it terminally (this device may not have been
@@ -174,7 +183,7 @@ const FORGET_STATES = new Set<ProposalReceipt['state']>(['complete', 'expired', 
  */
 export function shouldForgetRun(receipt: ProposalReceipt | undefined, receiptError: unknown): boolean {
   if (receipt) {
-    return FORGET_STATES.has(receipt.state)
+    return SETTLED_STATES.has(receipt.state)
   }
   // Matches the `hidden` branch above: a C3 `not_found` means the server
   // pruned the receipt; a bare 404 means the route itself is missing.
