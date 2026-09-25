@@ -66,6 +66,7 @@ def operations() -> Operations:
                 plugin_enabled=hermes_adapter.plugin_enabled,
                 enable_plugin=hermes_adapter.enable_plugin,
                 check_schedule=hermes_adapter.check_schedule,
+                check_prompt=hermes_adapter.check_prompt,
                 templates=templates_dir(root),
             )
         return _operations

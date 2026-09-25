@@ -131,10 +131,13 @@ proposal answers 200 with its receipt).
 
 `POST /reminders` checks, in order: the fields (a `timezone` must be an IANA
 zone; a `label` is at most 64 printable characters and never defaults to
-prompt text), that the profile exists, and that Hermes cron accepts the
-schedule. Only then does it create, so a schedule Hermes refuses is a 400,
-never an uncertain create. A second identical request waits up to 5 s for
-the first and answers the same receipt.
+prompt text), that the profile exists, that Hermes cron accepts the
+schedule, and that Hermes cron's prompt scan (invisible Unicode, "do not
+tell the user" and other injection phrases) accepts the prompt. Only then
+does it create, so a schedule or prompt Hermes refuses is a 400 with a
+fixed message, never an uncertain create the app would resend. A second
+identical request waits up to 5 s for the first and answers the same
+receipt.
 
 ## Tools and the tool gate
 

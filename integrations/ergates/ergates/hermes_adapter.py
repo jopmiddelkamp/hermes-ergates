@@ -145,6 +145,26 @@ def check_schedule(profile: str, schedule: str) -> None:
             raise ValueError("the one-shot time is in the past")
 
 
+def check_prompt(prompt: str) -> None:
+    """Raise ``ValueError`` when Hermes cron's prompt scan would refuse ``prompt`` in a create.
+
+    ``cronjob(action="create")``, which :class:`HermesCron` calls, runs the
+    private ``tools.cronjob_prompt_scan._scan_cron_prompt`` on the prompt as
+    given and answers an error instead of a job when it reports one
+    (invisible Unicode, "do not tell the user" and other injection or
+    exfiltration phrases). The scan needs no profile. It refuses the same
+    prompt on every try, so ``POST /reminders`` and the reminder tool ask
+    here first: a refused prompt is a 400, never an uncertain create the app
+    would keep retrying. The error is fixed text, never Hermes's reason,
+    which names what matched. ``contract/test_hermes_adapter.py`` pins the
+    scan and its call in the create.
+    """
+    from tools.cronjob_prompt_scan import _scan_cron_prompt
+
+    if _scan_cron_prompt(prompt):
+        raise ValueError("Hermes cron's prompt scan refuses this prompt")
+
+
 class HermesCron:
     """``reminders.CronPort`` on Hermes's own cron, scoped to one profile per call.
 

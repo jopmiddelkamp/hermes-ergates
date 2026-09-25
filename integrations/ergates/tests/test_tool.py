@@ -674,13 +674,21 @@ def _no_check(profile, schedule):
     return None
 
 
+def _no_prompt_check(prompt):
+    return None
+
+
+def _ask(args, service, *, profile="thijs", check_schedule=_no_check, check_prompt=_no_prompt_check):
+    """The reminder tool's answer, parsed."""
+    return json.loads(create_reminder_handler(args, service=service, profile=profile,
+                                              check_schedule=check_schedule, check_prompt=check_prompt))
+
+
 def test_the_reminder_tool_creates_once_and_returns_the_same_reminder_again(store, cron):
     service = ReminderService(store, cron)
 
-    first = json.loads(create_reminder_handler(_reminder_args(), service=service, profile="thijs",
-                                               check_schedule=_no_check))
-    again = json.loads(create_reminder_handler(_reminder_args(), service=service, profile="thijs",
-                                               check_schedule=_no_check))
+    first = _ask(_reminder_args(), service)
+    again = _ask(_reminder_args(), service)
 
     assert (first["status"], again["status"]) == ("created", "existing")
     assert first["receipt"]["job_id"] == again["receipt"]["job_id"]
@@ -693,13 +701,9 @@ def test_the_reminder_tool_makes_a_one_shot_again_once_hermes_ran_it(store, cron
     asking for the same one-shot again wants a new reminder, not that record."""
     service = ReminderService(store, cron)
 
-    def ask():
-        return json.loads(create_reminder_handler(_reminder_args(schedule="in 30m"), service=service,
-                                                  profile="thijs", check_schedule=_no_check))
-
-    first = ask()
+    first = _ask(_reminder_args(schedule="in 30m"), service)
     cron.complete_job(first["receipt"]["job_id"])
-    second = ask()
+    second = _ask(_reminder_args(schedule="in 30m"), service)
 
     assert (first["status"], second["status"]) == ("created", "created")
     assert second["receipt"]["job_id"] != first["receipt"]["job_id"]
@@ -713,9 +717,7 @@ def test_the_reminder_tool_makes_a_one_shot_again_once_hermes_ran_it(store, cron
     (_reminder_args(prompt=""), "prompt is required and must be a non-empty string"),
 ])
 def test_the_reminder_tool_refuses_bad_arguments_before_cron(store, cron, args, message):
-    service = ReminderService(store, cron)
-
-    result = json.loads(create_reminder_handler(args, service=service, profile="thijs", check_schedule=_no_check))
+    result = _ask(args, ReminderService(store, cron))
 
     assert result == {"error": message}
     assert cron.create_calls == []
@@ -725,8 +727,7 @@ def test_the_reminder_tool_refuses_a_schedule_hermes_refuses(store, cron):
     def refuse(profile, schedule):
         raise ValueError("Invalid schedule")
 
-    result = json.loads(create_reminder_handler(_reminder_args(schedule="soon"), service=ReminderService(store, cron),
-                                                profile="thijs", check_schedule=refuse))
+    result = _ask(_reminder_args(schedule="soon"), ReminderService(store, cron), check_schedule=refuse)
 
     assert result == {"error": "schedule is not one Hermes cron accepts"}
     assert cron.create_calls == []
@@ -736,17 +737,25 @@ def test_the_reminder_tool_refuses_a_schedule_out_of_range_like_post_reminders(s
     def overflow(profile, schedule):
         raise OverflowError("date value out of range")
 
-    result = json.loads(create_reminder_handler(_reminder_args(schedule="in 99999999999m"),
-                                                service=ReminderService(store, cron), profile="thijs",
-                                                check_schedule=overflow))
+    result = _ask(_reminder_args(schedule="in 99999999999m"), ReminderService(store, cron), check_schedule=overflow)
 
     assert result == {"error": "schedule is not one Hermes cron accepts"}
     assert cron.create_calls == []
 
 
+def test_the_reminder_tool_refuses_a_prompt_hermes_cron_refuses(store, cron):
+    """Hermes's create would refuse it on every try: an error, never an uncertain reminder."""
+    def refuse(prompt):
+        raise ValueError(f"Blocked: {prompt!r} contains invisible unicode U+200B")
+
+    result = _ask(_reminder_args(prompt="Pay\u200b the rent."), ReminderService(store, cron), check_prompt=refuse)
+
+    assert result == {"error": "prompt is not one Hermes cron accepts"}
+    assert cron.create_calls == [] and rows(store, "reminder_receipts") == []
+
+
 def test_the_reminder_tool_reports_a_service_refusal_as_an_error(store, cron):
-    result = json.loads(create_reminder_handler(_reminder_args(), service=ReminderService(store, cron),
-                                                profile="Not A Profile", check_schedule=_no_check))
+    result = _ask(_reminder_args(), ReminderService(store, cron), profile="Not A Profile")
 
     assert result == {"error": "profile must be a Hermes profile name"}
 
@@ -757,8 +766,7 @@ def test_the_reminder_tool_reports_a_store_failure_as_an_error(store, cron, capl
     store.close()
 
     with caplog.at_level(logging.WARNING, logger="ergates.tool"):
-        result = json.loads(create_reminder_handler(_reminder_args(), service=ReminderService(store, cron),
-                                                    profile="thijs", check_schedule=_no_check))
+        result = _ask(_reminder_args(), ReminderService(store, cron))
 
     assert result == {"error": "the reminder could not be recorded (StoreError)"}
     assert "StoreError" in caplog.text
@@ -770,6 +778,7 @@ def test_register_wires_the_reminder_tool_to_the_profile_hermes_reports(tmp_path
     cron = FakeCron()
     monkeypatch.setattr(hermes_adapter, "HermesCron", lambda: cron)
     monkeypatch.setattr(hermes_adapter, "check_schedule", _no_check)
+    monkeypatch.setattr(hermes_adapter, "check_prompt", _no_prompt_check)
     ctx = _MultiplexedCtx("nora")
     tool.register(ctx)
 

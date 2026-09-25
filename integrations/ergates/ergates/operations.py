@@ -46,6 +46,7 @@ _REMINDER_STATUS = {"created": 201, "existing": 200, "uncertain": 202}
 _REMINDER_ERROR_STATUS = {"invalid": 400, "unknown_profile": 404}
 _NOT_AN_OBJECT = "the request body must be a JSON object"
 _STEP_STATUS_NOT_STRINGS = "step and status must be strings"
+PROMPT_REFUSED = "prompt is not one Hermes cron accepts"
 
 
 @dataclass(frozen=True)
@@ -117,13 +118,14 @@ class Operations:
         self, store: ControlStore, *, cron: CronPort,
         profile_exists: Callable[[str], bool], plugin_enabled: Callable[[str], bool],
         enable_plugin: Callable[[str], None], check_schedule: Callable[[str, str], None],
-        templates: Path, clock: Callable[[], float] = time.time,
+        check_prompt: Callable[[str], None], templates: Path, clock: Callable[[], float] = time.time,
     ) -> None:
         self._store = store
         self._profile_exists = profile_exists
         self._plugin_enabled = plugin_enabled
         self._enable_plugin = enable_plugin
         self._check_schedule = check_schedule
+        self._check_prompt = check_prompt
         self._templates = Path(templates)
         self._reminders = ReminderService(store, cron, clock=clock)
         self._proposals = ProposalService(store, clock=clock)
@@ -233,9 +235,10 @@ class Operations:
 
         Order: the body's fields (400) -- profile, request_id and the rest --
         then the profile's existence (404), then the schedule as Hermes cron
-        reads it (400), so a malformed field is always a 400 and never races
-        an unknown profile for which status wins, and Hermes is never asked
-        about a schedule the request already fails on some other field.
+        reads it (400), then the prompt as Hermes cron's scan reads it (400),
+        so a malformed field is always a 400 and never races an unknown
+        profile for which status wins, and Hermes is never asked about a
+        schedule or prompt the request already fails on some other field.
         """
         if not isinstance(body, dict):
             raise ReminderError(_NOT_AN_OBJECT)
@@ -263,6 +266,11 @@ class Operations:
             # this also catches it directly so a check_schedule that does not (a
             # future adapter, or a test double) never turns into an unhandled 500.
             raise ReminderError("schedule is not one Hermes cron accepts") from None
+        try:
+            self._check_prompt(body["prompt"])
+        except ValueError:
+            # Fixed text: the scan's reason names what matched in the prompt.
+            raise ReminderError(PROMPT_REFUSED) from None
         return {
             "profile": profile, "schedule": body["schedule"], "timezone": body["timezone"],
             "prompt": body["prompt"], "request_id": request_id, "label": body.get("label"),

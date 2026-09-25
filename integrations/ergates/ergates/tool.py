@@ -27,7 +27,7 @@ from typing import Any, Callable, Dict, Optional
 from . import hermes_adapter, policy
 from .attention import AttentionService
 from .delivery import DeliveryWorker, send_ntfy
-from .operations import reminder_problem
+from .operations import PROMPT_REFUSED, reminder_problem
 from .paths import hermes_root, store_path
 from .proposals import ProposalError, ProposalService, validate_proposal
 from .reminders import ReminderError, ReminderService
@@ -195,18 +195,19 @@ def create_reminder_handler(
     service: ReminderService,
     profile: str,
     check_schedule: Callable[[str, str], None],
+    check_prompt: Callable[[str], None],
     **_kwargs: Any,
 ) -> str:
     """Create or return the reminder of one request in ``profile``; always a JSON string.
 
-    The same checks as ``POST /reminders`` run first, so a schedule Hermes
-    refuses is an error, never an uncertain create. There is no request id:
-    the receipt id is the payload hash, so the same schedule, time zone and
-    prompt in one profile is one reminder however often the model asks --
-    until a one-shot has run: then the same request makes a new one
-    (``reminders._counts_as_gone``). A store failure is an error naming the
-    exception class, as in :func:`propose_handler`; asking again after it
-    never makes a second job.
+    The same checks as ``POST /reminders`` run first, so a schedule or a
+    prompt Hermes cron refuses is an error, never an uncertain create. There
+    is no request id: the receipt id is the payload hash, so the same
+    schedule, time zone and prompt in one profile is one reminder however
+    often the model asks -- until a one-shot has run: then the same request
+    makes a new one (``reminders._counts_as_gone``). A store failure is an
+    error naming the exception class, as in :func:`propose_handler`; asking
+    again after it never makes a second job.
     """
     if not isinstance(args, dict):
         return json.dumps({"error": "the arguments must be an object"})
@@ -221,6 +222,10 @@ def create_reminder_handler(
     except (ValueError, OverflowError):
         # hermes_adapter.check_schedule maps OverflowError itself; POST /reminders catches both too.
         return json.dumps({"error": "schedule is not one Hermes cron accepts"})
+    try:
+        check_prompt(args["prompt"])
+    except ValueError:
+        return json.dumps({"error": PROMPT_REFUSED})
     try:
         outcome = service.create(profile, args["schedule"], args["timezone"], args["prompt"], label=label)
     except ReminderError as exc:
@@ -456,7 +461,8 @@ def register(ctx: Any) -> None:
         except _OPEN_ERRORS as exc:
             return _not_recorded("reminder", exc)
         return create_reminder_handler(
-            args, service=reminders, profile=profile, check_schedule=hermes_adapter.check_schedule, **kwargs,
+            args, service=reminders, profile=profile, check_schedule=hermes_adapter.check_schedule,
+            check_prompt=hermes_adapter.check_prompt, **kwargs,
         )
 
     def handle_pre_approval(**kwargs: Any) -> None:

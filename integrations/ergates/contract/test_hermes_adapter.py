@@ -28,6 +28,7 @@ JOBS = "cron/jobs.py"
 CRONJOB = "tools/cronjob_tools.py"
 PROVIDER = "cron/scheduler_provider.py"
 RPC = "tui_gateway/methods_tools.py"
+PROMPT_SCAN = "tools/cronjob_prompt_scan.py"
 
 
 def _arguments(function: ast.FunctionDef) -> list[str]:
@@ -168,6 +169,30 @@ def test_cron_create_is_the_cronjob_function_behind_the_cron_manage_rpc(hermes: 
     assert hermes.lines(CRONJOB, 591, 591) == (
         '        "success": True, "job_id": job["id"], "name": job["name"], "skill": job.get("skill"),'
     )
+
+
+def test_a_create_refuses_what_the_private_prompt_scan_reports(hermes: PinnedSource) -> None:
+    """``check_prompt`` calls the scan ``cronjob(action="create")`` runs on the
+    prompt as given, so ``POST /reminders`` and the reminder tool answer 400 for
+    a prompt the create would refuse on every try. The scan is private: this pin
+    is what notices a rename or a new meaning of its answer."""
+    scan = hermes.function(PROMPT_SCAN, "_scan_cron_prompt")
+    assert _arguments(scan) == ["prompt"]
+    # tools/cronjob_prompt_scan.py:121-123: an error string when blocked, else "".
+    assert hermes.lines(PROMPT_SCAN, 121, 123) == (
+        "def _scan_cron_prompt(prompt: str) -> str:\n"
+        '    """Strict scan of the USER-SUPPLIED prompt (create/update + runtime defense-in-depth).\n'
+        '    Returns an error string when blocked, else "". Invisible unicode is reported first, in'
+    )
+    # tools/cronjob_prompt_scan.py:29: one of the phrases it refuses.
+    assert hermes.lines(PROMPT_SCAN, 29, 29) == """    (r'do\\s+not\\s+tell\\s+the\\s+user', "deception_hide"),"""
+    # tools/cronjob_tools.py:46, 545-546 and 558-559: the create scans the prompt first and
+    # answers the scan's error instead of creating a job.
+    assert hermes.lines(CRONJOB, 46, 46) == "from tools.cronjob_prompt_scan import _scan_cron_prompt"
+    assert hermes.function(CRONJOB, "_action_create").lineno == 526
+    assert hermes.lines(CRONJOB, 545, 546) == "    error = (\n        (prompt and _scan_cron_prompt(prompt))"
+    assert hermes.lines(CRONJOB, 558, 559) == "    if error:\n        return tool_error(error, success=False)"
+    assert hermes.lines(CRONJOB, 827, 827) == '_JOBLESS_ACTIONS = {"create": _action_create, "list": _action_list}'
 
 
 def test_cron_lookups_and_schedule_checks(hermes: PinnedSource) -> None:
