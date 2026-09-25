@@ -1,16 +1,15 @@
 # Ergates deployment (single VPS)
 
-## Status: validated-by-review draft, not a live-tested deployment
+## Status: checked by CI, not yet run on a VPS
 
-`docker-compose.yml` has been checked for compose syntax
-(`docker compose -f deploy/docker-compose.yml config`) and reviewed against
-the wiring contract in `docs/03-technical-design.md` section 9 and
-`docs/11-implementation-readiness.md` section 4. **It has not been run on a
-VPS.** Do not treat anything here as a completed deployment; treat it as the
-starting point for the P0 validation spike that document calls for. The
-"Unverified gates" section below is not a footnote -- it is the list of
-things that must be proven true before this stack is trusted with real
-data.
+`scripts/ci-local.sh deploy` (the CI `deploy` job) runs
+`docker compose config` on `docker-compose.yml` and
+`tests/test_static.py`, which checks the wiring contract of
+`docs/03-technical-design.md` section 9 as rules: published ports, networks
+and the egress proxy, image digests, plugin and template mounts, profile
+settings, templates. **It has not been run on a VPS.** `VERIFY.md` is the
+list of live checks that must pass before this stack holds real data; it
+is not a footnote.
 
 ## Layout
 
@@ -387,43 +386,19 @@ Not yet performed against this stack. Before relying on backups:
 4. Record how long the restore took and anything that had to be fixed by
    hand. Repeat quarterly, or after any change to the backup procedure.
 
-## Unverified gates (explicit list)
+## Live checks
 
-These are called out, not hidden, because this file is a draft:
-
-1. **Docker socket group access under the s6 privilege drop.** `group_add`
-   in `docker-compose.yml` sets a supplementary group on the container's
-   PID 1; the supervised `hermes` process is reached only after s6 drops
-   privileges via `s6-setuidgid`, and that drop may not preserve the
-   supplementary group (03 section 9). Confirm with
-   `docker compose exec hermes-serve id` and
-   `docker compose exec hermes-serve docker ps` before trusting it.
-2. **The ntfy event source.** 11 section 4.2: "ntfy's `send()` alone does
-   not subscribe to events from `hermes serve`." Nothing in this draft
-   proves that approval-created/resolved/expired events actually reach
-   `integrations/ergates`'s hooks while every app socket is disconnected.
-3. **iOS locked-phone delivery.** Reachability of this private ntfy server
-   from a locked iPhone over Tailscale, after the public upstream wake-up,
-   is untested (11 section 4.2; docs.ntfy.sh/config/#ios-instant-notifications).
-4. **Workspace path alignment for `terminal.backend: docker` profiles.**
-   03 section 9: a host bind mount like `/srv/hermes:/opt/data` does not
-   automatically make `/opt/data/sandboxes/...` a valid host path for a
-   container that itself launches sibling containers through the host
-   daemon. Not proven here.
-5. **The pinned images have not been started.** Every image is pinned by
-   digest, read from the registry on 2026-09-25, but no container has run
-   from them yet.
-6. **Squid and HAProxy have not parsed their configs on a real run.**
-   `deploy/tests/test_static.py` checks the rules as text; the programs
-   themselves have not read `proxy/squid.conf` or `ingress/haproxy.cfg`,
-   and no denied request has been observed.
-7. **Backup/restore** above is a written procedure, not yet an executed
-   drill.
-8. **The plugin mount, the installer and the periodic sweep have not been
-   run in this stack.** The contract tests run `python -m ergates.install`
-   and the plugin against the pinned Hermes, but neither the mount nor the
-   `docker compose exec ...` lines have run against a container. First-run
-   step 4 (`python -m ergates.install --check`) proves the mount half.
+`VERIFY.md` holds every check that needs the real VPS, a phone and a real
+model, with a place to record each result: Squid and HAProxy parsing their
+configs, Docker socket access under the image's privilege drop, egress and
+ingress isolation, the plugin install and the sweep, the two concurrency
+checks of Hermes's in-flight hook guard, locked-phone and repeated pushes,
+notification settings, deep links, the encrypted device data, provisioning,
+tool revocation, approval events with no app connected, sandbox workspace
+paths, the restore drill, the Hermes image version against the
+integration's contract pin, a green CI run on a real remote, and a closing
+set of app-only checks (proposal cards, offline chat sends) that do not
+depend on this deployment.
 
 ## Corrections applied after review
 

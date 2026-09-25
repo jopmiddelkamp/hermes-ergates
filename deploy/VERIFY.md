@@ -1,0 +1,445 @@
+# Live checks for the owner
+
+Continuous integration proves what can be proven without a VPS, a phone and
+a real model: the unit suites, the contract suites against the pinned
+Hermes, and the static checks of `deploy/`. The checks below need the real
+thing. Run them on the VPS (and a phone on the same tailnet) before the
+stack holds real data, and again after every Hermes image update. Record
+the date and the result under each check; a failed check is a finding, not
+a footnote.
+
+Commands run from `deploy/` on the VPS. `EXEC` below is short for
+`docker compose exec -T -u hermes -e PYTHONPATH=/opt/data/plugins/ergates hermes-serve`.
+
+## Before the first start
+
+### V1 Squid and HAProxy accept their configs
+
+```bash
+docker compose run --rm --no-deps --entrypoint squid egress-proxy -k parse -f /etc/squid/squid.conf
+docker compose run --rm --no-deps --entrypoint haproxy ingress -c -f /usr/local/etc/haproxy/haproxy.cfg
+```
+
+Expected: squid prints no `ERROR` or `FATAL` line; haproxy prints
+`Configuration file is valid`.
+
+`-k parse` only validates syntax; it never starts Squid, so it never opens
+`/var/log/squid/access.log` and proves nothing about a real run. Start it
+for real and check its log too:
+
+```bash
+docker compose up -d egress-proxy
+docker compose logs egress-proxy | grep FATAL || echo "no FATAL line"
+```
+
+Expected: `no FATAL line` (a log Squid cannot open after dropping to the
+`proxy` user stops it at start with one).
+
+Result:
+
+## The stack
+
+### V2 The controllers can use the Docker socket
+
+```bash
+docker compose exec hermes-serve id hermes
+docker compose exec -u hermes hermes-serve docker ps
+docker compose exec -u hermes hermes-gateway docker ps
+```
+
+Expected: `id` lists the socket's group; both `docker ps` calls list the
+running containers. The image's own setup adds the group at boot; this
+proves it survives the privilege drop.
+
+Result:
+
+### V3 Egress goes through the proxy and nowhere else
+
+```bash
+docker compose exec -u hermes hermes-serve curl -sS -o /dev/null -w '%{http_code}\n' https://ntfy.sh
+docker compose exec -u hermes hermes-serve curl -sS -o /dev/null -w '%{http_code}\n' https://example.com
+docker compose exec -u hermes hermes-serve curl -sS -o /dev/null -w '%{http_code}\n' https://1.1.1.1
+docker compose exec -u hermes hermes-serve curl -sS --noproxy '*' --max-time 10 -o /dev/null https://ntfy.sh
+docker compose exec -u hermes hermes-serve curl -sS -o /dev/null -w '%{http_code}\n' http://ntfy.sh
+docker compose logs --tail 20 egress-proxy
+```
+
+Expected: the first prints `200`; `example.com` and `1.1.1.1` fail with
+`CONNECT tunnel failed, response 403`; the `--noproxy` call fails (no
+route out, or the name does not resolve); plain `http://` is refused with
+`403`. The proxy log shows `TCP_DENIED` lines for the refused ones. Repeat
+the second and fourth line from `hermes-gateway`, and from `ntfy` with its
+busybox `wget` (the image is Alpine without `curl`):
+`docker compose exec ntfy wget -q -O /dev/null https://example.com` fails.
+
+The `internal` network's isolated gateway (Docker Engine 28.0 or later,
+`driver_opts: com.docker.network.bridge.gateway_mode_ipv4: isolated`, IPv6
+off) is what keeps a client on that network from reaching a host service
+such as sshd even if it ignores the proxy settings entirely. Confirm it
+assigns no gateway address, from the VPS host (not inside a container --
+the image may not carry `ip`/`iproute2`):
+
+```bash
+docker inspect ergates-hermes-serve --format '{{range $net, $cfg := .NetworkSettings.Networks}}{{$net}} gateway={{$cfg.Gateway}}{{"\n"}}{{end}}'
+```
+
+Expected: the `internal` network's line shows `gateway=` with nothing after
+it. If a gateway address does show (an older Engine, or the option silently
+ignored), that is a finding: confirm it is at least unreachable,
+
+```bash
+docker compose exec -u hermes hermes-serve curl -sS --connect-timeout 3 --noproxy '*' -o /dev/null -w '%{http_code}\n' "http://<that address>:22"
+```
+
+expecting no HTTP code at all (connection refused or timed out, not a
+response), and raise the Engine version with the owner. Either way, service
+names on `internal` must still resolve and connect directly, proxy or not:
+
+```bash
+docker compose exec -u hermes hermes-serve curl -sS --connect-timeout 3 -o /dev/null -w '%{http_code}\n' http://egress-proxy:3128
+```
+
+Expected: a real HTTP status (Squid's own `403` for a non-CONNECT request
+counts), not a resolution or connection failure -- the isolation removes
+the path to the host, not to sibling services.
+
+Result:
+
+### V4 Only the Tailscale IP answers, and only with auth
+
+From a device on the tailnet, and from one off it (the VPS's public IP):
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' http://<TAILSCALE_IP>:9119/api/plugins/ergates/health
+curl -sS -o /dev/null -w '%{http_code}\n' http://<PUBLIC_IP>:9119/api/plugins/ergates/health
+```
+
+Expected: `401` on the tailnet (Hermes's dashboard auth, before any Ergates
+code runs); the public address does not connect. The app signs in over the
+tailnet and its chat opens, so the WebSocket passes the ingress.
+
+The `401` above is the cookie gate, not a token curl can carry on its own:
+the dashboard bind is non-loopback, so every request needs the session
+cookie `/login` sets, wherever it originates from, including inside a
+container. Confirm the other half of the gate by signing in at
+`http://<TAILSCALE_IP>:9119/login` in a browser with the dashboard trio
+from `.env`: the same health URL now answers `200` in that browser.
+
+Result:
+
+### V5 The plugin is in every profile, and the routes are mounted
+
+```bash
+$EXEC python -m ergates.install --check; echo "exit $?"
+```
+
+Expected: `templates=installed`, one `plugin=enabled` line per profile, and
+`exit 0`. Then, signed in in the app, open the concierge and ask it to
+propose a bookkeeper; the proposal card appears (the routes answer).
+
+`hermes-gateway` is where the hooks and the tool gate actually fire, and it
+has no templates mount, so its own `--check` needs an explicit
+`--templates` to get past the missing default `/opt/ergates/templates` and
+reach the per-profile lines:
+
+```bash
+docker compose exec -T -u hermes -e PYTHONPATH=/opt/data/plugins/ergates hermes-gateway python -m ergates.install --check --templates /opt/data/plugins/ergates; echo "exit $?"
+```
+
+Expected: the same `plugin=enabled` line per profile that `hermes-serve`
+printed. The exit code here is not `0` -- the plugin's own source folder has
+no `*.json` templates to match the installed set, and that is fine; this
+run is only about the plugin lines. Re-run `python -m ergates.install`
+(without `--check`, on `hermes-serve`) after every `git pull` of this
+repository and after making a profile by hand: templates and plugin
+enablement only change on a re-run, never automatically.
+
+Result:
+
+### V6 The sweep runs as `hermes`, and refuses root
+
+```bash
+$EXEC python -m ergates.flush
+docker compose exec -T -e PYTHONPATH=/opt/data/plugins/ergates hermes-serve python -m ergates.flush; echo "exit $?"
+tail -5 /var/log/ergates-flush.log
+```
+
+Expected: one `ergates.flush: retried=...` line; the root run prints
+`refusing to run as root` and `exit 2`; the cron log gains a line every two
+minutes.
+
+The one-line summary also proves the image's `python` can `import
+hermes_cli` and PyYAML (the sweep needs `HermesCron` and the root's
+settings) and that a `hermes` user exists to run it as -- either missing
+would show up here as a traceback instead of that line.
+
+Result:
+
+## Concurrency the unit tests cannot reach
+
+### V7 Two sessions of one profile call tools at the same moment
+
+Hermes guards every `pre_tool_call` callback against running twice at once.
+At the pin (`hermes_cli/plugins_dispatch.py:210-217`) the guard's key is the
+hook name and the callback, with no session in it, and for `pre_tool_call`
+a skipped callback becomes a block (`plugins_dispatch.py:188-191`). So two
+sessions of one gateway process that call a tool in the same instant can
+block each other with `pre_tool_call plugin callback timed out or is still
+running`. The Ergates callback takes milliseconds, so the window is small;
+this check measures it.
+
+1. Open two Bot Chats of one specialist (two sessions of one profile).
+2. In both, at the same second, send: "Call the todo tool 20 times in a
+   row, adding items 1 to 20, then tell me how many calls were blocked."
+3. `docker compose logs hermes-gateway hermes-serve | grep -c "skipped after previous timeout or while still running"`
+
+Expected: every call succeeds, and the count is `0`. Any skip is a finding:
+record how often, and raise it with the owner (a fix needs Hermes to key the
+guard by session, or a plugin-side change to the hook's wiring).
+
+Result:
+
+### V8 Two routines that finish at the same moment both push
+
+`post_llm_call` has the same guard, without the block: a skipped callback
+means a finished routine records no event and sends no push.
+
+1. In the app, create two routines in two profiles, both due in the same
+   minute (a one-shot `in 3m` for each, saved within a few seconds).
+2. Wait for both to run.
+3. `$EXEC python -c "import sqlite3; c = sqlite3.connect('/opt/data/ergates/control.sqlite3'); print(c.execute(\"select kind, profile, state from attention_events where kind = 'completion' order by created_at desc limit 4\").fetchall())"`
+
+Expected: two new `completion` rows and two "A routine finished" pushes.
+One row means the guard dropped a push: record it as a finding.
+
+Result:
+
+## The phone
+
+### V9 A push reaches a locked iPhone
+
+Before subscribing the phone, confirm its ntfy app's server URL is typed
+exactly as `NTFY_BASE_URL` in `.env` (`http://<TAILSCALE_IP>:<NTFY_PORT>`)
+-- a MagicDNS name works fine for browsing but silently breaks the iOS
+wake-up, which hashes the base URL Hermes was configured with into every
+poll request.
+
+With Tailscale connected on the phone, the ntfy app subscribed to
+`ergates-attention` with the device's read-only token, and the phone
+locked for at least five minutes: ask a specialist to run a shell command
+that needs approval (`terminal`, for example `ls /`).
+
+Expected: within a minute the locked phone shows "Hermes needs your
+approval" / "You have a new request". Tapping it opens the Ergates app in
+that specialist's chat, where the approval card waits. Repeat on Android.
+
+Result:
+
+### V10 A push sent twice
+
+Stop ntfy for three minutes around an approval so the first send fails and
+the sweep sends it again (`docker compose stop ntfy`, ask for an approval,
+wait, `docker compose start ntfy`, wait for the next sweep).
+
+Expected: Android shows one notification (the second replaces the first by
+its event id); iOS shows two. Both open the same chat. The retried publish
+carries an `X-Sequence-ID` header; ntfy v2.28.0 answers it normally, not
+`400` -- check the app's own log of the retried request, or
+`docker compose logs ntfy`, if either platform shows the wrong count.
+
+Result:
+
+### V11 Notification settings
+
+In the app, mute one specialist, then ask it for an approval: no push, the
+approval card still appears in the app. Set quiet hours around the current
+time for another specialist and let one of its routines finish: the push
+arrives when the quiet hours end, not before. The hours you enter are the
+time zone Hermes is configured for, not the phone's.
+
+Then open notification settings with no agent selected (mute or quiet
+hours "for all") and save there: the setting applies to every specialist
+that has no override of its own.
+
+Result:
+
+### V12 Deep links, cold and warm
+
+On the simulator (`xcrun simctl openurl booted '<link>'`) and on a phone,
+with the app closed and with it open:
+
+- `ergates://chat/<session>?connection=<your connection id>&profile=<name>`
+  opens that profile's chat;
+- the same link with an unknown connection id opens connection selection;
+- from a cold start, Back goes to Home, not to a synthesized chat screen;
+- a cold start of the same link, with a connection and profile already
+  stored on the device, loads that profile's card directly -- never
+  "Sign-in required.".
+
+Result:
+
+### V13 The device data is encrypted at rest
+
+`expo-crypto` is a native module, so a build that adds it needs a new dev
+client, not a JS reload:
+
+```bash
+cd apps/mobile && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 npx expo run:ios
+```
+
+Install it over the data from the previous version and do TWO cold
+launches, not one: the first launch reads the legacy plaintext blob and
+re-saves it sealed; only the second exercises decryption (`TextDecoder`).
+
+Expected after the second launch: connections, drafts and unfinished agent
+setups are all still there. On the simulator, nothing in the app's storage
+holds a draft's text in the clear:
+
+```bash
+dir="$(xcrun simctl get_app_container booted dev.ergates.mobile data)/Library/Application Support/dev.ergates.mobile/RCTAsyncLocalStorage_V1"
+grep -rl "ergates-sealed-v1:" "$dir"
+grep -rl "<a word from one of your drafts>" "$dir"
+```
+
+The first `grep` names a file; the second finds none.
+
+Separately, with the phone locked before this build is ever opened, launch
+the app while it is locked: it reads empty and saves nothing
+(expo-secure-store "not found", not an error). Unlock and relaunch: the
+stored data is back.
+
+Result:
+
+## Agents and permissions
+
+### V14 A proposal becomes a working agent
+
+Accept a proposal in the app and watch the five setup steps finish. Once
+the agent is ready, have it use one of its tools: the template's plugin
+setting must survive `profiles.configure`, and `mirror_credentials: false`
+must still reach the model provider -- a specialist that cannot call its
+provider is a silent setup failure, not a missing feature.
+
+Then start another proposal and kill the app three times, reopening the
+concierge chat after each: right after "profile created", right after a
+step report, and right after the briefing turn is sent. Each time, setup
+continues at the next step, and the end state is one profile and one
+briefing, never two.
+
+In the new agent's first reply, check whether a tool call was refused with
+"This agent is still being set up". The briefing turn starts before the app
+reports it and the proposal completes, and the tool gate blocks the agent's
+tools until then; a refusal here is that known open design question, and
+worth recording with how often it happens.
+
+Result:
+
+### V15 A toolset taken away is refused at the next call
+
+In a running Bot Chat of a specialist made from `general-assistant`, ask for
+a web search (it works). Remove `web` from its toolsets in the app. Ask
+again in the same chat, and ask it to delegate the search to a sub-agent.
+
+Expected: both refused with "This tool is turned off for this agent."
+(docs/04 section 3, "Revoked connector remains usable").
+
+Result:
+
+### V16 A routine from the app, saved twice
+
+Create a routine; while the answer is uncertain (turn the phone's network
+off right after Save), tap Save again once the network is back (the button
+now reads "Try again", not "Save" -- tap that).
+
+Expected: the Routines list, which reads Hermes cron itself, shows exactly
+one routine, not two. The list hides the ` · <8 hex>` tag the server adds
+to the cron label, and renaming the routine afterward keeps the same job
+(no new tag, no second entry). On a device build, confirm
+`Intl.DateTimeFormat().resolvedOptions().timeZone` in the routine screen
+resolves to a real IANA name (for example `Europe/Amsterdam`), not `UTC`
+and not empty.
+
+Separately, right after restarting the controllers (a fresh `hermes serve`
+process), create one reminder from the app over Tailscale and time it: the
+first reminder create after a fresh start must still finish within 60
+seconds.
+
+Result:
+
+## Operations
+
+### V17 Approval events arrive while no app is connected
+
+Close the app everywhere, ask for an approval from a routine (a routine
+whose prompt runs a shell command), and wait.
+
+Expected: the push arrives; this is the event source docs/11 section 4.2
+asks about.
+
+Result:
+
+### V18 Sandbox workspace paths line up
+
+In a specialist's chat, have the agent write a file in its workspace with
+the shell, then read it back in a new session. Check on the host that the
+file sits under the reviewed workspace path of `data/hermes`.
+
+Result:
+
+### V19 Backup and restore drill
+
+Follow deploy/README.md "Backup" and "Restore drill" on a disposable host.
+
+Result:
+
+### V20 The Hermes image and the contract pin
+
+```bash
+docker compose exec hermes-serve hermes --version
+```
+
+The integration's contract tests run against Hermes `d76856cc`; the image
+is release `v2026.9.11`, 155 commits earlier. Record the version, and
+decide whether to move the pin to a release that has an image (rerun
+`scripts/ci-local.sh contract` after the move) or to build the image from
+the pin.
+
+Result:
+
+### V21 A green CI run on a real remote
+
+Push this branch to a real Git remote once and open the Actions run for it.
+
+Expected: every job in `.github/workflows/ci.yml` -- `lint`, `mobile`
+(including its ESLint step), `integration`, `contract` (including
+`contract/live`, within its own timeout), `deploy` -- finishes green. A
+local `scripts/ci-local.sh` run is not a substitute for this: it reuses a
+warm `node_modules` and does not prove a clean-runner install.
+
+Result:
+
+## App checks on a device
+
+These do not depend on the deployment above; they are the remaining live
+checks against the mobile app itself.
+
+### V22 Proposal cards render live and stay usable
+
+Accept a proposal and watch its card while it is live: `tool.complete` for
+`ergates_propose_agent` carries the decoded result, and the card renders
+the same way after leaving the chat and reopening it (the history row's
+`toolName` and `result` reproduce it). Cards render upright under the
+newest message, and stay tappable with the on-screen keyboard open.
+
+Result:
+
+### V23 Offline and overlapping chat sends
+
+In a chat, turn off the phone's network and send two messages, then turn
+the network back on: the second message shows queued and does not
+interrupt or reorder the first (`queued_unsent` until reconnect, then sent
+in order). Separately, start a send that is slow to acknowledge, leave the
+chat screen and come back before it resolves: exactly one submit reaches
+the server, and the bubble resolves once, not twice.
+
+Result:

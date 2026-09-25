@@ -6,7 +6,7 @@
 # the reviewed workspace volumes, effective toolsets and MCP include lists;
 # a profile is not ready until those are configured and tested." Do not
 # deploy this file as-is; fill in the sections marked TODO after the P0
-# spike proves them, and see deploy/README.md for the full unverified-gates
+# spike proves them, and see deploy/VERIFY.md for the full live-checks
 # list.
 
 gateway:

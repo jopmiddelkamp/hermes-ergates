@@ -274,3 +274,43 @@ def test_hermes_serve_mounts_the_templates_read_only_outside_the_data_volume() -
     """The installer copies them into /opt/data/ergates/templates as the hermes user; a bind
     mount inside /opt/data would make Docker create /opt/data/ergates owned by root."""
     assert TEMPLATE_MOUNT in SERVICES["hermes-serve"]["volumes"]
+
+
+# Each live check of VERIFY.md and a phrase it must keep: the checks earlier
+# work could not automate, so none may drop out unnoticed. V21-V23 (a green
+# CI run on a real remote, and two app-only checks) were carried over from
+# earlier reviews and did not fit any of V1-V20.
+VERIFY_CHECKS = {
+    "V1": "-k parse",
+    "V2": "docker ps",
+    "V3": "TCP_DENIED",
+    "V4": "401",
+    "V5": "ergates.install --check",
+    "V6": "refusing to run as root",
+    "V7": "plugins_dispatch.py:210-217",
+    "V8": "post_llm_call",
+    "V9": "locked",
+    "V10": "replaces the first",
+    "V11": "quiet hours",
+    "V12": "ergates://chat/",
+    "V13": "ergates-sealed-v1:",
+    "V14": "five setup steps",
+    "V15": "This tool is turned off for this agent.",
+    "V16": "Save again",
+    "V17": "no app is connected",
+    "V18": "workspace",
+    "V19": "Restore drill",
+    "V20": "d76856cc",
+    "V21": "a real Git remote",
+    "V22": "stay tappable",
+    "V23": "queued_unsent",
+}
+
+
+def test_verify_lists_every_live_check_with_a_place_for_its_result() -> None:
+    sections = re.split(r"^### ", (DEPLOY / "VERIFY.md").read_text(encoding="utf-8"), flags=re.MULTILINE)[1:]
+    assert [section.split(" ", 1)[0] for section in sections] == list(VERIFY_CHECKS)
+    for section in sections:
+        check = section.split(" ", 1)[0]
+        assert VERIFY_CHECKS[check] in section, check
+        assert "\nResult:" in section, check

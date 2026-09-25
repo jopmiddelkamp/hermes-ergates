@@ -8,7 +8,7 @@
 # section 9. This is intentionally an incomplete profile: workspace
 # volumes, the effective toolset and MCP include list are per-specialist and
 # are a P0 deliverable, not something a static template can supply -- see
-# deploy/README.md for the full unverified-gates list.
+# deploy/VERIFY.md for the full live-checks list.
 
 # No `gateway.multiplex_profiles` key here: that setting belongs only to the
 # default/launch profile (deploy/profiles/concierge/config.yaml), which
