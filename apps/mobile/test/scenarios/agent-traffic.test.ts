@@ -1,16 +1,17 @@
 /**
- * Scenarios for bot-to-bot traffic: the REST transcript window the hook drives
- * (spec 5.5/5.8), live evidence that survives a snapshot which omits it, and the
- * stale-snapshot reschedule.
+ * Scenarios for bot-to-bot traffic: the REST transcript window the chat screen
+ * drives (spec 5.5/5.8), live evidence that survives a snapshot which omits it,
+ * and the stale-snapshot reschedule.
  *
- * The driver runs the SAME pure modules the hook does (`window.ts`,
- * `exchange.ts`, the reducer); only React's effects are replaced (ADR-029 rule 3).
+ * The session is the real `createSessionController`; the transcript window runs
+ * the same pure `window.ts` rules as `use-transcript.ts` (ADR-029 rule 3).
  */
 import { describe, expect, it } from 'vitest'
 
 import { buildExchanges, collectEvidence, exchangeCopy } from '@/features/chat/agent-traffic/exchange'
 import type { RosterPeer } from '@/features/chat/agent-traffic/types'
 import { FIRST_PAGE_LIMIT, TAIL_LIMIT } from '@/features/chat/agent-traffic/window'
+import { createSessionController } from '@/features/chat/session-controller'
 import type { GatewayEventFrame, HistoryMessage, TranscriptQuery, TranscriptRawPage } from '@/gateway/types'
 
 import { flush } from '@test/fake-gateway/fake-websocket'
@@ -18,7 +19,8 @@ import historyFixture from '@test/fixtures/history.json'
 import liveJson from '@test/fixtures/agent-traffic/receipt-live-json.json'
 
 import { FakeGateway, type FakeScript } from '../fake-gateway/fake-gateway'
-import { runSession } from '../fake-gateway/scenarios'
+import { memoryOutbox } from '../fake-gateway/memory-outbox'
+import { transcriptWindow } from '../fake-gateway/transcript-window'
 
 const roster: RosterPeer[] = [
   { profile: 'default', name: 'Hermes', hasAvatar: true },
@@ -34,27 +36,29 @@ const REFUSED_TURN: GatewayEventFrame[] = [
   { type: 'message.complete', seq: 4, payload: { text: 'Could not reach zed.', status: 'complete' } }
 ]
 
-describe('a refused send with no process (scenario q)', () => {
+describe('a refused send with no process', () => {
   it('asks for a tail, reconciles it with the REST page, and reads as unreachable', async () => {
     const gateway = new FakeGateway({ onSubmit: () => REFUSED_TURN })
-    const driver = await runSession(gateway, 'thijs')
+    const controller = createSessionController({ port: gateway, profile: 'thijs', connectionId: 'c-test', outbox: memoryOutbox() })
+    await controller.open()
+    const transcript = transcriptWindow(gateway, controller, 'thijs')
 
-    await driver.send('Send a short hello to zed')
+    await controller.send('Send a short hello to zed')
     await flush(20)
 
     // Two triggers: the `message_agent` completion and the local turn's completion (spec 5.8).
-    expect(driver.getState().tailWanted).toBe(2)
+    expect(controller.getView().state.tailWanted).toBe(2)
 
-    await driver.fetchInitial()
-    await driver.fetchTail()
+    await transcript.fetchInitial()
+    await transcript.fetchTail()
 
     // The first tail page overlaps the loaded window, so the run stops after one page.
     expect(gateway.calls.transcript.count).toBe(2)
     expect(gateway.calls.transcript.lastQuery).toMatchObject({ limit: TAIL_LIMIT, offset: 0, order: 'latest' })
 
-    const loaded = driver.transcript()
+    const loaded = transcript.current()
     expect(loaded.loaded).toBe(true)
-    const build = buildExchanges(collectEvidence(driver.getState().items, loaded.rows), { roster, window: loaded })
+    const build = buildExchanges(collectEvidence(controller.getView().state.items, loaded.rows), { roster, window: loaded })
     const refused = build.exchanges.find(x => x.anchor.toolCallId === 'call_r')
     expect(refused).toBeDefined()
     expect(refused?.phase).toBe('settled')
@@ -70,22 +74,24 @@ describe('a live receipt across a snapshot that omits it', () => {
     // An EMPTY snapshot, not the recorded one: the strongest form of "history does
     // not carry it yet".
     const gateway = new FakeGateway({ history: () => [] })
-    const driver = await runSession(gateway, 'thijs')
+    const controller = createSessionController({ port: gateway, profile: 'thijs', connectionId: 'c-test', outbox: memoryOutbox() })
+    await controller.open()
+    const live = controller.getView().state.liveSessionId ?? ''
 
-    gateway.connectionFor('thijs').emit({ type: 'status.update', session_id: driver.liveSessionId, seq: 30, payload: { kind: 'process', text: liveJson.text } })
-    const live = driver.getState().items.filter(i => i.kind === 'receipt')
-    expect(live).toHaveLength(1)
-    expect(live[0]).toMatchObject({ live: true })
+    gateway.connectionFor('thijs').emit({ type: 'status.update', session_id: live, seq: 30, payload: { kind: 'process', text: liveJson.text } })
+    const receipts = controller.getView().state.items.filter(i => i.kind === 'receipt')
+    expect(receipts).toHaveLength(1)
+    expect(receipts[0]).toMatchObject({ live: true })
     // The notification itself is a tail trigger, even for a receipt we already hold.
-    expect(driver.getState().tailWanted).toBe(1)
+    expect(controller.getView().state.tailWanted).toBe(1)
 
     // Absence from a snapshot is not evidence of absence: the live receipt is all
     // that is left after an empty one.
-    await driver.refetchHistory()
-    expect(driver.getState().items.map(i => i.kind)).toEqual(['receipt'])
+    await controller.refetchHistory()
+    expect(controller.getView().state.items.map(i => i.kind)).toEqual(['receipt'])
 
-    driver.dispatch({ type: 'transcript/reconciled', toolCallIds: [], processIds: [processId] })
-    expect(driver.getState().items.filter(i => i.kind === 'receipt')).toHaveLength(0)
+    controller.dispatchReconciled({ toolCallIds: [], processIds: [processId] })
+    expect(controller.getView().state.items.filter(i => i.kind === 'receipt')).toHaveLength(0)
   })
 })
 
@@ -100,28 +106,34 @@ describe('a snapshot that went stale in flight (spec 5.8)', () => {
       { role: 'assistant', text: 'Kevin is free on Tuesday.', row_id: 9001, timestamp: 1789203999 }
     ]
     const gateway = new FakeGateway({ history: call => (call === 1 ? gate.then(() => undefined) : newer) })
-    const driver = await runSession(gateway, 'thijs')
+    const controller = createSessionController({ port: gateway, profile: 'thijs', connectionId: 'c-test', outbox: memoryOutbox() })
+    await controller.open()
     const connection = gateway.connectionFor('thijs')
+    const live = controller.getView().state.liveSessionId ?? ''
 
-    const pending = driver.refetchHistory()
+    const pending = controller.refetchHistory()
     await flush(1)
 
     // A turn we did not start completes while the snapshot is in flight: the
     // snapshot predates it and would remove it.
-    connection.emit({ type: 'message.start', session_id: driver.liveSessionId, seq: 40 })
-    connection.emit({ type: 'message.complete', session_id: driver.liveSessionId, seq: 41, payload: { text: 'Kevin is free on Tuesday.', status: 'complete' } })
+    connection.emit({ type: 'message.start', session_id: live, seq: 40 })
+    connection.emit({ type: 'message.complete', session_id: live, seq: 41, payload: { text: 'Kevin is free on Tuesday.', status: 'complete' } })
     release()
     await pending
+    await flush(20)
 
-    expect(gateway.calls.history).toBe(2)
-    expect(driver.getState().replay.needsHistoryRefetch).toBe(false)
-    // The newer snapshot carries only the answer's durable row, no new input row
-    // for the live answer to anchor to (spec 12.3, ruling 5): the match is
-    // ambiguous, so the live item is retained alongside the durable one instead
-    // of being silently rolled back.
-    const arrived = driver.getState().items.filter(i => i.kind === 'assistant' && i.text === 'Kevin is free on Tuesday.')
-    expect(arrived).toHaveLength(2)
-    expect(arrived.some(i => (i as { rowId?: number }).rowId === 9001)).toBe(true)
+    // Three reads: the held snapshot (discarded as stale), the refetch the
+    // foreign turn's completion asked the controller for, and the re-read of
+    // the discarded snapshot.
+    expect(gateway.calls.history).toBe(3)
+    expect(controller.getView().state.replay.needsHistoryRefetch).toBe(false)
+    // The held snapshot predates the answer and was not allowed to roll it back.
+    // The first accepted snapshot kept the live answer next to its durable row
+    // (an ambiguous match, spec 12.3 ruling 5); the second one confirms the same
+    // row, so only the durable answer is left.
+    const arrived = controller.getView().state.items.filter(i => i.kind === 'assistant' && i.text === 'Kevin is free on Tuesday.')
+    expect(arrived).toHaveLength(1)
+    expect(arrived[0]).toMatchObject({ rowId: 9001 })
   })
 })
 
@@ -144,17 +156,19 @@ describe('a tail that has not reached the loaded boundary', () => {
       }
     }
     const gateway = new FakeGateway(script)
-    const driver = await runSession(gateway, 'thijs')
+    const controller = createSessionController({ port: gateway, profile: 'thijs', connectionId: 'c-test', outbox: memoryOutbox() })
+    await controller.open()
+    const transcript = transcriptWindow(gateway, controller, 'thijs')
 
-    await driver.fetchInitial()
-    await driver.fetchTail()
+    await transcript.fetchInitial()
+    await transcript.fetchTail()
 
     expect(queries.map(q => [q.limit, q.offset])).toEqual([
       [FIRST_PAGE_LIMIT, 0],
       [TAIL_LIMIT, 0],
       [TAIL_LIMIT, TAIL_LIMIT]
     ])
-    const loaded = driver.transcript()
+    const loaded = transcript.current()
     // 1-60 and 101-150, joined by 51-100: the ten rows the second page repeats merge away.
     expect(loaded.rows).toHaveLength(150)
     expect(loaded.newestLoadedRowId).toBe(150)

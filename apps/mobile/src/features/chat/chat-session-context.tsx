@@ -24,7 +24,7 @@ import { assembleTimeline, type ActivityEntry, type TimelineInput, type Timeline
 import type { RosterPeer } from './agent-traffic/types'
 import { useTranscriptWindow, type TranscriptController } from './agent-traffic/use-transcript'
 import type { LiveTurn } from './session-reducer'
-import { useSession, type SessionController } from './use-session'
+import { useSession, type UseSessionResult } from './use-session'
 
 export interface ChatSessionValue {
   connectionId: string
@@ -35,7 +35,7 @@ export interface ChatSessionValue {
   name: string
   avatarUri: string | null
   roster: RosterPeer[]
-  session: SessionController
+  session: UseSessionResult
   transcript: TranscriptController
   timeline: TimelineResult
   activity: ActivityEntry[]

@@ -8,14 +8,17 @@
  */
 import { describe, expect, it } from 'vitest'
 
+import { createSessionController } from '@/features/chat/session-controller'
 import type { GatewayEventFrame } from '@/gateway/types'
 
 import { flush } from '@test/fake-gateway/fake-websocket'
 
 import { FakeGateway, type FakeScript } from '../fake-gateway/fake-gateway'
-import { runSession } from '../fake-gateway/scenarios'
+import { memoryOutbox } from '../fake-gateway/memory-outbox'
 
-describe('reconnect rebind (scenario b)', () => {
+const noSleep = async (): Promise<void> => undefined
+
+describe('reconnect rebind', () => {
   it('activates before replaying and restores the pending approval card', async () => {
     const script: FakeScript = {
       activate: {
@@ -23,28 +26,30 @@ describe('reconnect rebind (scenario b)', () => {
       }
     }
     const gateway = new FakeGateway(script)
-    const driver = await runSession(gateway, 'thijs')
+    const controller = createSessionController({ port: gateway, profile: 'thijs', connectionId: 'c-test', outbox: memoryOutbox() })
+    await controller.open()
     const conn = gateway.connectionFor('thijs')
-    expect(driver.getState().items.some(i => i.kind === 'approval')).toBe(false)
+    expect(controller.getView().state.items.some(i => i.kind === 'approval')).toBe(false)
 
     conn.simulateDrop()
-    await driver.settled()
+    await flush(20)
 
     const rebind = conn.methods().indexOf('session.activate')
     const replay = conn.methods().indexOf('session.events.since')
     expect(rebind).toBeGreaterThanOrEqual(0)
     expect(replay).toBeGreaterThan(rebind)
     expect(gateway.calls.activate).toBe(1)
-    expect(driver.getState().items.find(i => i.kind === 'approval')).toMatchObject({ requestId: 'ap1', state: 'pending' })
+    expect(controller.getView().state.items.find(i => i.kind === 'approval')).toMatchObject({ requestId: 'ap1', state: 'pending' })
   })
 
   it('retries a 4009 "settling" activate once, then rebinds', async () => {
     const gateway = new FakeGateway({ activateSettling: 1 })
-    const driver = await runSession(gateway, 'thijs')
+    const controller = createSessionController({ port: gateway, profile: 'thijs', connectionId: 'c-test', outbox: memoryOutbox(), sleep: noSleep })
+    await controller.open()
     const conn = gateway.connectionFor('thijs')
 
     conn.simulateDrop()
-    await driver.settled()
+    await flush(20)
 
     expect(gateway.calls.activate).toBe(2)
     expect(conn.methods().filter(m => m === 'session.activate')).toHaveLength(2)
@@ -60,19 +65,21 @@ describe('reconnect rebind (scenario b)', () => {
       activate: { running: true, status: 'streaming', inflight: { user: 'ping', assistant: 'half an answer', streaming: true } }
     }
     const gateway = new FakeGateway(script)
-    const driver = await runSession(gateway, 'thijs')
-    await driver.send('ping')
+    const controller = createSessionController({ port: gateway, profile: 'thijs', connectionId: 'c-test', outbox: memoryOutbox() })
+    await controller.open()
+    await controller.send('ping')
     await flush(20)
-    expect(driver.getState().live).toMatchObject({ streaming: true, assistantText: 'half ' })
+    expect(controller.getView().state.live).toMatchObject({ streaming: true, assistantText: 'half ' })
 
     gateway.connectionFor('thijs').simulateDrop()
-    await driver.settled()
+    await flush(20)
 
-    expect(driver.getState().live).toMatchObject({ streaming: true, assistantText: 'half an answer' })
-    expect(driver.getState().replay.needsHistoryRefetch).toBe(false)
+    expect(controller.getView().state.live).toMatchObject({ streaming: true, assistantText: 'half an answer' })
+    expect(controller.getView().state.replay.needsHistoryRefetch).toBe(false)
+    expect(gateway.calls.history).toBe(0)
   })
 
-  it('asks for durable history when the turn ended while the socket was down', async () => {
+  it('reads durable history when the turn ended while the socket was down', async () => {
     const script: FakeScript = {
       onSubmit: () => [
         { type: 'message.start', seq: 1 },
@@ -80,16 +87,19 @@ describe('reconnect rebind (scenario b)', () => {
       ] as GatewayEventFrame[]
     }
     const gateway = new FakeGateway(script)
-    const driver = await runSession(gateway, 'thijs')
-    await driver.send('ping')
+    const controller = createSessionController({ port: gateway, profile: 'thijs', connectionId: 'c-test', outbox: memoryOutbox() })
+    await controller.open()
+    await controller.send('ping')
     await flush(20)
 
     gateway.connectionFor('thijs').simulateDrop()
-    await driver.settled()
+    await flush(20)
 
     // activate reports running:false: the completion frame was lost with the
     // socket, so the durable transcript is the only place the answer exists.
-    expect(driver.getState().live.streaming).toBe(false)
-    expect(driver.getState().replay.needsHistoryRefetch).toBe(true)
+    // The reducer asks for it and the controller reads it at once.
+    expect(controller.getView().state.live.streaming).toBe(false)
+    expect(gateway.calls.history).toBe(1)
+    expect(controller.getView().state.replay.needsHistoryRefetch).toBe(false)
   })
 })

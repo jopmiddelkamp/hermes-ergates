@@ -2,8 +2,8 @@
  * FakeGateway: an in-memory GatewayPort double driven by a small script.
  *
  * It mimics the recorded backend shapes closely enough for scenario tests to
- * exercise the real `sessionReducer` and `openCanonicalChat` without a
- * network. Every profile/session RPC is answered from `test/fixtures/*.json`
+ * drive the real `createSessionController` without a network. Every
+ * profile/session RPC is answered from `test/fixtures/*.json`
  * (see docs/superpowers/research/2026-09-13-recorded-backend-shapes.md);
  * only `prompt.submit` and replay are scriptable per test.
  *
@@ -198,6 +198,16 @@ export class FakeConnection implements GatewayConnection {
   /** Test hook: a brief transport blip - closed, then open again. */
   simulateDrop(): void {
     this.setState('closed')
+    this.setState('open')
+  }
+
+  /** Test hook: the socket is down until `simulateOnline`. */
+  simulateOffline(): void {
+    this.setState('closed')
+  }
+
+  /** Test hook: the socket is back after `simulateOffline`. */
+  simulateOnline(): void {
     this.setState('open')
   }
 
