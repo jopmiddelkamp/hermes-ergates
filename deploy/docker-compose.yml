@@ -118,10 +118,8 @@ services:
     # (binwiederhier/ntfy@sha256:...) once validated. Tag observed at draft
     # time (2026-09-13): v2.28.0.
     #
-    # NOTE: the task brief for this file named the image "binhs/ntfy"; no
-    # such repository exists on Docker Hub. binwiederhier/ntfy is the actual
-    # upstream ntfy server image (confirmed against hub.docker.com and
-    # docs.ntfy.sh at draft time) and is used here instead.
+    # binwiederhier/ntfy is the upstream ntfy server image (confirmed against
+    # hub.docker.com and docs.ntfy.sh at draft time).
     image: binwiederhier/ntfy:v2.28.0
     container_name: ergates-ntfy
     restart: unless-stopped

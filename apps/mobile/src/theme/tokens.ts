@@ -16,7 +16,7 @@ export interface MobileTheme {
   /**
    * Horizontal page gutter. Applied by `Screen` and `Sheet` only — rows,
    * section headings and the chat list sit inside an already-padded page and
-   * must not add it again (I2).
+   * must not add it again.
    */
   pagePadding: 20
   /** Minimum hit area for controls, in points. */

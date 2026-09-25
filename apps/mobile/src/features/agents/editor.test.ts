@@ -37,7 +37,7 @@ describe('planSave', () => {
   })
   it('keeps an inherited appearance on a rename and claims it only with an avatar change', () => {
     // `custom: false`/absent means Hermes Desktop derives the appearance; a
-    // rename must not freeze it (M12).
+    // rename must not freeze it.
     const auto: EditBotBase = {
       ...base,
       summary: { ...summary, ui_meta: { 'hermes-bots': { title: 'Kevin', hidden: false } }, ui_meta_revisions: { 'hermes-bots': 3 } }

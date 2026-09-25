@@ -122,7 +122,7 @@ export interface EncodeAttempt {
 /**
  * Encodes at each quality in turn and stops at the first result within `max`.
  * The encoder is injected so the loop is testable without the native image
- * manipulator (I9).
+ * manipulator.
  */
 export async function encodeUnderCap(
   encode: (quality: number) => Promise<string>,
@@ -150,7 +150,7 @@ export interface PickedAvatar {
 }
 
 /**
- * Avatar picker (docs/10 "Edit Bot on mobile", plan Task 14): square crop in
+ * Avatar picker (docs/10 "Edit Bot on mobile"): square crop in
  * the system editor, downscale to `AVATAR_MAX_DIMENSION` on the long side,
  * then JPEG at 0.8 and, if that is still over the cap, 0.6. A full-resolution
  * photo would otherwise be rejected by `validate()` with no way to shrink it.

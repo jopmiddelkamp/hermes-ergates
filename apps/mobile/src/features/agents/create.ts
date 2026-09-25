@@ -13,7 +13,7 @@ export const PROFILE_NAME_RE = /^[a-z0-9][a-z0-9-]{1,31}$/
 /**
  * Initials-avatar disc colors. A new agent picks one deterministically from its
  * profile name, so the roster is glanceable on Home and Hermes Desktop reads a
- * real `color` next to the `custom: true` it also writes (M11). Same hash as
+ * real `color` next to the `custom: true` it also writes. Same hash as
  * the desktop profile rail; a fixed hex list instead of a computed hue because
  * the mobile Avatar measures contrast against it.
  */

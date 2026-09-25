@@ -87,7 +87,7 @@ function Chat({ devSend, devInject, devFocus }: { devSend?: string; devInject?: 
 
   // Approval/clarify answers reject (unlike `send`, which never throws), so
   // every call site goes through this instead of `void`-ing the promise: a
-  // dropped socket used to look exactly like an un-tapped card (I10). No
+  // dropped socket used to look exactly like an un-tapped card. No
   // automatic retry — ADR-027 keeps retries an explicit tap.
   const runWithAlert = useCallback((title: string, fn: () => Promise<unknown>) => {
     void fn().catch(err => Alert.alert(title, userMessage(err)))
@@ -186,7 +186,7 @@ function Chat({ devSend, devInject, devFocus }: { devSend?: string; devInject?: 
       onFinal: text => {
         // Read the draft as it is now: the callback handed to `start` is frozen
         // at that moment, so a captured `draft` dropped earlier results and
-        // anything typed after the mic began (I4).
+        // anything typed after the mic began.
         const current = useDeviceStore.getState().drafts[draftKey(connectionId, profile)] ?? ''
         setDraft(connectionId, profile, [current.trim(), text.trim()].filter(Boolean).join(' '))
         setInterim('')
@@ -200,7 +200,7 @@ function Chat({ devSend, devInject, devFocus }: { devSend?: string; devInject?: 
   }, [connectionId, profile, setDraft])
 
   // Leaving the chat must stop the microphone: nothing else cancels it, so the
-  // recognizer kept listening after Back with no visible indicator (I5).
+  // recognizer kept listening after Back with no visible indicator.
   useEffect(
     () => () => {
       // Leaving the chat must never leave the microphone open; a failed module load is not an error here.

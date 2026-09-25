@@ -201,7 +201,7 @@ function RoutineEditor({
           />
           {/* Hermes interprets a schedule in the gateway's configured timezone and
               `cron.manage add` takes no per-job zone at the pin (cron/jobs.py
-              `create_job`), so the input cannot promise the device's zone (I15).
+              `create_job`), so the input cannot promise the device's zone.
               `next_run` is an absolute instant, so it is still displayed here in
               the device's zone. */}
           <Text style={[styles.hint, { color: theme.colors.mutedForeground }]}>

@@ -159,7 +159,7 @@ export function planSave(d: EditBotDraft): SavePlan {
   if (sections.has('metadata')) {
     // `custom` means "the user chose this bot's appearance", so it is only
     // claimed when the avatar or appearance actually changed; a rename must not
-    // freeze the appearance Hermes Desktop derives automatically (M12).
+    // freeze the appearance Hermes Desktop derives automatically.
     const existing = botsMeta(d.base.summary)
     const meta: HermesBotsMeta = { ...existing, title: d.name.trim() }
     if (d.avatar.kind !== 'keep') {

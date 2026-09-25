@@ -39,7 +39,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   const home = useHome(gateway, connectionId)
   // Per-action selectors, never `useDeviceStore()`: the whole-store selector
   // re-rendered this screen (and its whole roster list) on every keystroke
-  // typed in the chat below it (I3). Action references are stable.
+  // typed in the chat below it. Action references are stable.
   const pin = useDeviceStore(s => s.pin)
   const unpin = useDeviceStore(s => s.unpin)
   const markRead = useDeviceStore(s => s.markRead)
@@ -80,7 +80,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
     setMenu({ bot, anchor })
   }
 
-  /** Device-local leftovers of a deleted profile, so recreating the name starts clean (M13). */
+  /** Device-local leftovers of a deleted profile, so recreating the name starts clean. */
   const forgetLocalState = (profile: string) => {
     unpin(connectionId, profile)
     moveToSection(connectionId, profile, null)

@@ -37,7 +37,7 @@ export default function ToolsScreen() {
       onBack={() => router.back()}
       // Edit goes through Edit Bot, not straight to the capabilities subpage:
       // Save and the dirty guard live on `edit.tsx`, so a direct push would
-      // silently discard the staged change (I1).
+      // silently discard the staged change.
       onEditCapabilities={() => router.push({ pathname: '/agent/[profile]/edit', params: { profile } })}
     />
   )

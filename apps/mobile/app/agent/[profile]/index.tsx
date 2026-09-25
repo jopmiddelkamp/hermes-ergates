@@ -44,7 +44,7 @@ function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId
   const gateway = useGateway(connection)
   const home = useHome(gateway, connectionId)
   // Per-action selectors, never `useDeviceStore()`: a whole-store subscription
-  // re-rendered this screen on every unrelated store write (I3).
+  // re-rendered this screen on every unrelated store write.
   const pin = useDeviceStore(s => s.pin)
   const unpin = useDeviceStore(s => s.unpin)
   const markRead = useDeviceStore(s => s.markRead)
@@ -66,7 +66,7 @@ function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId
     menuAnchorRef.current?.measureInWindow((x, y, width, height) => setMenu({ bot, anchor: { x, y, width, height } }))
   }
 
-  /** Device-local leftovers of a deleted profile, so recreating the name starts clean (M13). */
+  /** Device-local leftovers of a deleted profile, so recreating the name starts clean. */
   const forgetLocalState = (deleted: string) => {
     unpin(connectionId, deleted)
     moveToSection(connectionId, deleted, null)

@@ -55,7 +55,7 @@ export function Sheet({ title, onClose, headerLeft, headerRight, children }: She
         </View>
         {/* Sheets carry forms (New Agent, Edit Bot, Routine); iOS ScrollViews do
             not move for the keyboard on their own, so the lower fields and the
-            primary button would sit under it (I12). */}
+            primary button would sit under it. */}
         <KeyboardAvoidingView style={styles.scroll} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView
             style={styles.scroll}

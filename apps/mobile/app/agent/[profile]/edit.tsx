@@ -162,7 +162,7 @@ function EditBotForm({
   const onChoosePhoto = async () => {
     try {
       // `pickAvatar` crops square and compresses under the 2,000,000-byte asset
-      // cap; the chat attachment picker sends photos at full resolution (I9).
+      // cap; the chat attachment picker sends photos at full resolution.
       const picked = await pickAvatar()
       if (picked) {
         update({ avatar: { kind: 'set', dataUrl: picked.dataUrl } })

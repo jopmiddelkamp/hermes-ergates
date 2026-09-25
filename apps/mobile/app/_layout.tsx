@@ -84,7 +84,7 @@ function DevInitialRoute() {
 /**
  * TanStack's `focusManager` has no `document` in React Native and so reports
  * "focused" forever, which kept the roster and routine `refetchInterval`
- * polling while the app was backgrounded (M19). AppState is the RN equivalent.
+ * polling while the app was backgrounded. AppState is the RN equivalent.
  */
 function useAppStateFocus(): void {
   useEffect(() => {

@@ -107,7 +107,7 @@ export function ActionMenu({ visible, anchor, items, onClose }: ActionMenuProps)
 
 const styles = StyleSheet.create({
   backdrop: {
-    // Explicit exception (task-8 rules): only literal color allowed in src/ui.
+    // The one literal color in src/ui: a translucent backdrop, the same on every theme.
     backgroundColor: 'rgba(0,0,0,0.25)'
   },
   shadowWrapper: {

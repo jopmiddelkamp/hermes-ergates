@@ -1,7 +1,6 @@
-"""Bonus coverage for ergates.tool: propose_handler and the approval-attention hooks.
+"""Tests for ergates.tool: propose_handler and the approval-attention hooks.
 
-Not enumerated in the task brief's test list (journal/proposals/reminders/attention),
-but added because propose_handler and the two approval hooks are the load-bearing
+propose_handler and the two approval hooks are the load-bearing
 glue described in 11 section 4.1-4.2 ("never creates a profile", "journals with
 state 'proposed'", "writes a pending attention event ... and publishes to ntfy
 when configured").

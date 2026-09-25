@@ -54,7 +54,7 @@ describe('deleteAgent', () => {
     const { port: p, calls } = port()
     const result = await deleteAgent(p, 'kevin', false)
     // Pause first so nothing fires mid-delete, remove second so the
-    // confirmation copy ("removes its routines") is true (I11). An
+    // confirmation copy ("removes its routines") is true. An
     // already-paused routine is only removed.
     expect(calls).toEqual(['pause:j-active', 'remove:j-active', 'remove:j-paused', 'profile'])
     expect(result).toEqual({

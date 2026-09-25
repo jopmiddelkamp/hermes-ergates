@@ -87,7 +87,7 @@ function EditModel({ connection, profile }: { connection: NonNullable<ReturnType
                     label={m}
                     selected={draft.provider === p.slug && draft.model === m}
                     // Clear the custom row too, or both rows read as selected
-                    // and the custom field stays open (M3).
+                    // and the custom field stays open.
                     onPress={() => {
                       setCustomFor(null)
                       update({ provider: p.slug, model: m })

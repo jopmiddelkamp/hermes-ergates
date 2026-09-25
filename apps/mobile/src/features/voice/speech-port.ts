@@ -40,7 +40,7 @@ function supportsOnDevice(): boolean {
 /**
  * The listeners of the recognition session that is running now. Module-level so
  * every teardown path drops them: `end`, `error` and `cancel` all clear them,
- * and a new `start` clears any leftovers before subscribing (I5 — a leaked
+ * and a new `start` clears any leftovers before subscribing (a leaked
  * `result` listener produced duplicate `onFinal` calls on the next session).
  */
 let activeSubs: { remove(): void }[] = []
@@ -90,7 +90,7 @@ export const realSpeech: SpeechPort = {
       })
     ]
     // On-device recognition when the platform supports it, which is what the
-    // composer's disclosure and the Info.plist string promise (I6).
+    // composer's disclosure and the Info.plist string promise.
     ExpoSpeechRecognitionModule.start({
       lang: options.lang,
       interimResults: true,

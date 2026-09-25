@@ -28,7 +28,11 @@ integrations/ergates/
     attention.py        # ntfy publish requests, deep link, retention/expiry
     tool.py             # ctx.register_tool / ctx.register_hook wiring
     flush.py            # `python -m ergates.flush`: periodic retries + retention
-  tests/               # pytest suite (one file per module above, plus tool.py)
+  tests/               # pytest suite (one file per module above, plus tool.py);
+                       # test_hermes_boundary.py fails when a module other than
+                       # ergates/hermes_adapter.py or dashboard/api.py imports Hermes
+  contract/            # contract tests: facts read from the pinned Hermes source
+                       # (HERMES_SOURCE); run by `scripts/ci-local.sh contract`
 ```
 
 ## Install
@@ -313,10 +317,14 @@ Hermes runtime that ships it, and every other code path works without it.
 
 ```bash
 cd integrations/ergates
-uv venv --python 3.11
-uv pip install -e '.[test]'
-uv run --python 3.11 pytest
+uv run --python 3.11 --with pytest --with pytest-cov --with pyyaml pytest
 
-# or, without a persistent venv:
-uv run --python 3.11 --with pytest pytest
+# the CI gate: the same run with branch coverage of ergates/, at least 90%
+uv run --python 3.11 --with pytest --with pytest-cov --with pyyaml pytest --cov --cov-fail-under=90
 ```
+
+The contract tests read the Hermes source at the pin and need a checkout of it.
+From the repository root, `scripts/ci-local.sh contract` prepares one under
+`.cache/hermes-pin` (a detached `git worktree add` from your Hermes clone) and
+runs them; or point `HERMES_SOURCE` at a clean checkout of
+`d76856cc6971b6e0e1903b5369498bcc4bb83a60`.
