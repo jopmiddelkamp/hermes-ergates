@@ -204,6 +204,50 @@ describe('provisionAgent', () => {
     expect(calls.submit).toHaveLength(1)
   })
 
+  it('clears the uncertain briefing mark to failed when Hermes refuses the submit, and a later run sends it once more', async () => {
+    const { deps, ergates, calls } = hermes()
+    const refusing: ProvisionDeps = {
+      ...deps,
+      submit: async (_live, text) => {
+        calls.submit.push(text)
+        throw new GatewayError('rpc', 'session not found', { code: 4004 })
+      }
+    }
+
+    const first = await provisionAgent(refusing, PROPOSAL)
+    expect(first).toMatchObject({ kind: 'failed', step: 'briefing', code: 4004, terminal: false })
+    expect(steps(ergates).slice(-2)).toEqual(['briefing:uncertain', 'briefing:failed'])
+    expect((await ergates.getProposal('p-pim')).step_status.briefing).toBe('failed')
+
+    // A definite refusal means the briefing never reached the chat: the next
+    // run (a deliberate tap) sends it again without asking.
+    expect(await provisionAgent(deps, PROPOSAL)).toEqual({ kind: 'complete', profile: 'pim' })
+    expect(calls.submit).toEqual([PROPOSAL.briefing, PROPOSAL.briefing])
+  })
+
+  for (const kind of ['timeout', 'network'] as const) {
+    it(`keeps the uncertain briefing mark when the submit ends in a ${kind} error, and never sends it again unasked`, async () => {
+      const { deps, ergates, calls } = hermes()
+      const lost: ProvisionDeps = {
+        ...deps,
+        submit: async (_live, text) => {
+          calls.submit.push(text)
+          throw new GatewayError(kind, 'The gateway did not answer.')
+        }
+      }
+
+      const first = await provisionAgent(lost, PROPOSAL)
+      expect(first).toMatchObject({ kind: 'failed', step: 'briefing', terminal: false })
+      expect(steps(ergates).slice(-1)).toEqual(['briefing:uncertain'])
+      expect((await ergates.getProposal('p-pim')).step_status.briefing).toBe('uncertain')
+
+      // The chat does not show the briefing: the next run asks the user.
+      expect(await provisionAgent(deps, PROPOSAL)).toEqual({ kind: 'confirm_briefing', profile: 'pim' })
+      expect(calls.submit).toEqual([PROPOSAL.briefing])
+      expect((await ergates.getProposal('p-pim')).step_status.briefing).toBe('uncertain')
+    })
+  }
+
   it('marks a timed-out step uncertain and reconciles it on the next run', async () => {
     const { deps, ergates, calls } = hermes()
     const createProfile = deps.createProfile
