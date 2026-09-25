@@ -170,7 +170,7 @@ export function deliveryFromReason(reason: string | undefined): Delivery {
 }
 
 // ---------------------------------------------------------------------------
-// Body reading (spec 5.2, rulings 5 and 6)
+// Body reading (spec 5.2)
 // ---------------------------------------------------------------------------
 
 function outcomeReading(delivery: Delivery, reply: Reply, extra?: { status?: string; reason?: string; error?: string; deliveryId?: string }): OutcomeReading {
@@ -256,7 +256,7 @@ function readCliTextBody(body: string, exitCode: number | 'unknown', trimmed: bo
   return exitCode === 0 ? outcomeReading('settled', { kind: 'empty' }) : outcomeReading('unknown', { kind: 'none' })
 }
 
-/** Reads a parsed receipt's body per the grammar's ordered branches (spec 5.2, rulings 5 and 6). */
+/** Reads a parsed receipt's body per the grammar's ordered branches (spec 5.2). */
 export function readBody(receipt: ParsedReceipt, opts: { pairedResultHasDeliveryId: boolean }): BodyReading {
   const { body, trimmed } = receipt
 

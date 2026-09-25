@@ -163,7 +163,10 @@ interface RetainedAnchor {
   beforeRowId: number | undefined
   /** The turn that holds the retained answer — the fallback candidate. */
   turnIndex: number
-  /** Whether any turn's head falls in the candidate range; precomputed once (review issue 4). */
+  /**
+   * Whether any turn's head falls in the candidate range. Computed once per retained answer, so the
+   * per-turn check in `mayCorrespondToRetained` does not scan every turn head again for each turn.
+   */
   anyCandidate: boolean
 }
 
@@ -174,7 +177,7 @@ function inCandidateRange(head: number | undefined, live: { afterRowId: number |
   return live.beforeRowId === undefined || head <= live.beforeRowId
 }
 
-/** Live sealed answers no durable row explains yet (spec 12.3 fallback, ruling 7). */
+/** Live sealed answers no durable row explains yet (spec 12.3 fallback). */
 function retainedLiveAnchors(items: ChatItem[], turns: Turn[]): RetainedAnchor[] {
   const retained: RetainedAnchor[] = []
   const heads = turns.map(turn => rowIdOf(items[turn.start]!))
@@ -196,9 +199,9 @@ function retainedLiveAnchors(items: ChatItem[], turns: Turn[]): RetainedAnchor[]
 /**
  * Could a durable turn be the home of a retained live answer? Then it is unknown and stays expanded.
  *
- * The candidates are bounded on both sides by row ids, never by position (ruling, Critical 1a): a
- * turn older than the live turn's start cannot hold its answer, and neither can one that began
- * after the snapshot that first retained it. When no turn falls in the range, the turn that holds
+ * The candidates are bounded on both sides by row ids, never by position: a turn older than the
+ * live turn's start cannot hold its answer, and neither can one that began after the snapshot that
+ * first retained it. When no turn falls in the range, the turn that holds
  * the retained item is the only candidate.
  */
 function mayCorrespondToRetained(items: ChatItem[], turns: Turn[], index: number, retained: RetainedAnchor[]): boolean {
@@ -335,7 +338,7 @@ function foldTurn(items: ChatItem[], turn: Turn, opts: FoldOptions): Folded | un
   return { exchange, hidden }
 }
 
-/** Spec 12.3 last paragraph and ruling 12: the session's last turn is the last one a user, bot message or event started. */
+/** Spec 12.3, last paragraph: the session's last turn is the last one a user, bot message or event started. */
 function lastConversationTurn(items: ChatItem[], turns: Turn[]): number {
   for (let i = turns.length - 1; i >= 0; i -= 1) {
     const kind = items[turns[i]!.start]!.kind
@@ -372,7 +375,7 @@ function foldTurns(items: ChatItem[], input: TimelineInput): Map<number, Folded>
   const idleConfirmed = input.idleConfirmed && !input.inflightError
   const lastProvenHistorical = hasConfirmedCompletionAfter(items, turns, last)
   for (const [index, turn] of turns.entries()) {
-    // A receipt or a notice after the last conversation turn is not a turn of its own (ruling 12).
+    // A receipt or a notice after the last conversation turn is not a turn of its own.
     if (index > last) continue
     const fold = foldTurn(items, turn, {
       roster: input.roster,
@@ -387,7 +390,7 @@ function foldTurns(items: ChatItem[], input: TimelineInput): Map<number, Folded>
 }
 
 // ---------------------------------------------------------------------------
-// Placement (spec 5.5 anchor, ruling 9)
+// Placement (spec 5.5 anchor)
 // ---------------------------------------------------------------------------
 
 /** The index of the item an exchange or a receipt sits behind; -1 means "before every item". */
@@ -427,7 +430,7 @@ interface PlacedReceipt {
   detail: string
 }
 
-/** Unpaired and not-loaded receipts render as a notice, in place of their row (spec 5.5, ruling 4). */
+/** Unpaired and not-loaded receipts render as a notice, in place of their row (spec 5.5). */
 function placeUnpairedReceipts(items: ChatItem[], build: ReturnType<typeof buildExchanges>): Map<number, PlacedReceipt[]> {
   const placed = new Map<number, PlacedReceipt[]>()
   for (const receipt of build.unpaired) {
@@ -441,7 +444,7 @@ function placeUnpairedReceipts(items: ChatItem[], build: ReturnType<typeof build
   return placed
 }
 
-/** Items an exchange already speaks for, plus the rows that are never rendered at all (ruling 3 and 4). */
+/** Items an exchange already speaks for, plus the rows that are never rendered at all. */
 function hiddenItemIds(items: ChatItem[], members: Set<string>, folded: Map<number, Folded>): Set<string> {
   const hidden = new Set<string>()
   for (const item of items) {
@@ -557,7 +560,7 @@ function assemble(input: TimelineInput): Assembled {
     const previous = mergeInto
     // Same peer and nothing visible in between: the rows sum up into one "N messages with <peer>" row,
     // whatever their direction; an input row that was folded into an exchange draws no line and so
-    // does not break the run (owner request 2026-09-14, supersedes the same-direction ruling).
+    // does not break the run (owner request 2026-09-14; runs used to merge only in one direction).
     if (previous !== null && peerKey(previous.exchange.peer) === peerKey(exchange.peer)) {
       const merged = mergeConsecutive(previous.exchange, exchange)
       lines[previous.index] = exchangeLine(merged)
@@ -568,7 +571,7 @@ function assemble(input: TimelineInput): Assembled {
       mergeInto = { index: lines.length - 1, exchange }
     }
 
-    // A receipt that only carried a delivery update sits beside the row it belongs to (ruling 4).
+    // A receipt that only carried a delivery update sits beside the row it belongs to.
     if (exchange.notice) {
       const processId = exchange.evidence.processId
       pushNotice(`notice-${exchange.id}`, DELIVERY_UPDATE, (processId !== undefined ? receiptRaw.get(processId) : undefined) ?? '')
@@ -759,7 +762,7 @@ export function identitiesOf(entries: TranscriptEntry[]): string[] {
 /**
  * The one acknowledgement decision (spec 12.1), pure so the hook around it only wires state:
  * the opening presentation acknowledges everything on screen (even zero entries — a screen opened
- * empty that later pages in arrivals must not acknowledge them, ruling), a pending reveal
+ * empty that later pages in arrivals must not acknowledge them), a pending reveal
  * acknowledges exactly what it exposed, and anything else — an arrival while the screen stays
  * mounted — acknowledges nothing.
  */
@@ -775,7 +778,7 @@ export function acknowledgementBatch(
 
 /**
  * The entries a reveal exposed: those before the earliest entry already presented. Arrivals while the
- * screen is mounted append after the latest entry, so they are never returned (spec 12.1, ruling 15).
+ * screen is mounted append after the latest entry, so they are never returned (spec 12.1).
  */
 export function unpresentedOlder(entries: TranscriptEntry[], presented: ReadonlySet<string>): TranscriptEntry[] {
   const first = entries.findIndex(entry => presented.has(entry.key))

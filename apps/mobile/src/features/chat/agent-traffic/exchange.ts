@@ -461,13 +461,13 @@ export function buildExchanges(evidence: Evidence, opts: { roster: RosterPeer[];
 }
 
 // ---------------------------------------------------------------------------
-// Copy (spec 5.4, rulings 11 and 12) — derived, never stored
+// Copy (spec 5.4) — derived, never stored
 // ---------------------------------------------------------------------------
 
 const UNKNOWN_OUTCOME = 'Delivery outcome unknown'
 const LATEST_OUTCOME_UNAVAILABLE = ' · latest outcome unavailable'
 
-/** The roster display name (ruling 12); a peer with neither a name nor a handle is still named, never blank. */
+/** The roster display name; a peer with neither a name nor a handle is still named, never blank. */
 export function peerName(peer: PeerRef): string {
   return peer.display.name || peer.handle || 'an unknown teammate'
 }
@@ -504,7 +504,7 @@ export function memberStates(x: Pick<Exchange, 'phase' | 'state' | 'bodies' | 'g
   return x.group?.states ?? [{ phase: x.phase, state: x.state, bodies: x.bodies }]
 }
 
-/** Spec 12.4: openable when any member holds a recorded body; a send still in flight holds none yet (ruling). */
+/** Spec 12.4: openable when any member holds a recorded body; a send still in flight holds none yet. */
 export function isOpenable(x: Pick<Exchange, 'phase' | 'state' | 'bodies' | 'group'>): boolean {
   return memberStates(x).some(m => m.phase !== 'sending' && m.bodies >= 1)
 }
@@ -512,7 +512,7 @@ export function isOpenable(x: Pick<Exchange, 'phase' | 'state' | 'bodies' | 'gro
 type SuffixBucket = 'waiting' | 'failed' | 'refused' | 'cancelled' | 'unknown'
 const SUFFIX_ORDER: SuffixBucket[] = ['waiting', 'failed', 'refused', 'cancelled', 'unknown']
 
-/** Which suffix bucket one member falls into (ruling 2); settled replies and admitted sends fall into none. */
+/** Which suffix bucket one member falls into; settled replies and admitted sends fall into none. */
 function suffixBucket(m: MemberState): SuffixBucket | null {
   if (m.phase === 'sending') return 'waiting'
   const { delivery, reply, latestOutcomeUnavailable } = m.state
@@ -549,7 +549,7 @@ export function exchangeCopy(x: Pick<Exchange, 'state' | 'phase' | 'peer' | 'bod
 }
 
 // ---------------------------------------------------------------------------
-// Merging consecutive exchanges with the same peer (spec 5.4, ruling 11)
+// Merging consecutive exchanges with the same peer (spec 5.4)
 // ---------------------------------------------------------------------------
 
 /**

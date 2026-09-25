@@ -75,7 +75,7 @@ describe('replay recovery', () => {
     // The refetch is authoritative: it rebuilds from durable history rather than
     // appending, so it is built from the fixture's recorded turns. But the
     // unrelated fixture carries no new input row the live "pong" answer could
-    // anchor to (spec 12.3, ruling 5): the match is ambiguous, so the live bubble
+    // anchor to (spec 12.3): the match is ambiguous, so the live bubble
     // is retained rather than silently dropped.
     expect(state.items.some(i => i.kind === 'assistant' && i.text === 'pong')).toBe(true)
     expect(state.items.some(i => i.kind === 'tool' && i.name === 'vision_analyze')).toBe(true)

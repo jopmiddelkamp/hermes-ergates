@@ -71,7 +71,7 @@ describe('openCanonicalChat', () => {
     })
     const opened = await openCanonicalChat(port, 'default', linh)
     expect(opened.snapshot).toEqual({ status: 'idle', running: false, inflight: null, hydrating: true, auto_continue: undefined })
-    // A chat we just minted has no resume payload at all (ruling 16).
+    // A chat we just minted has no resume payload at all.
     expect((await openCanonicalChat(stubPort({}), 'thijs', thijs)).snapshot).toBeNull()
   })
 

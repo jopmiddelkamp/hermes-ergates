@@ -24,7 +24,7 @@ export default function ActivityScreen() {
   const { bot, profile, activity } = useChatSession()
 
   // Evidence first, reasoning last: what the chat did is why this screen is opened; reasoning is the
-  // longest and the least often wanted, so it sits at the bottom (ruling).
+  // longest and the least often wanted, so it sits at the bottom.
   const groups: { key: ActivityEntry['kind']; title: string; entries: ActivityEntry[] }[] = [
     { key: 'exchange', title: 'Messages', entries: activity.filter(e => e.kind === 'exchange') },
     { key: 'notice', title: 'Notices', entries: activity.filter(e => e.kind === 'notice') },
@@ -68,7 +68,7 @@ export default function ActivityScreen() {
 /**
  * Reasoning is long and secondary: collapsed by default, the whole row toggles it. Collapsed, the row
  * shows the first line of the reasoning itself — the word "Reasoning" alone says nothing about which
- * of several rows this is — with a chevron for the state (ruling).
+ * of several rows this is — with a chevron for the state.
  */
 function ReasoningRow({ entry }: { entry: ActivityEntry }) {
   const theme = useTheme()

@@ -129,7 +129,7 @@ describe('a snapshot that went stale in flight (spec 5.8)', () => {
     expect(controller.getView().state.replay.needsHistoryRefetch).toBe(false)
     // The held snapshot predates the answer and was not allowed to roll it back.
     // The first accepted snapshot kept the live answer next to its durable row
-    // (an ambiguous match, spec 12.3 ruling 5); the second one confirms the same
+    // (an ambiguous match, spec 12.3); the second one confirms the same
     // row, so only the durable answer is left.
     const arrived = controller.getView().state.items.filter(i => i.kind === 'assistant' && i.text === 'Kevin is free on Tuesday.')
     expect(arrived).toHaveLength(1)

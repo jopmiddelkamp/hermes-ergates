@@ -339,7 +339,7 @@ describe("buildTimeline: the answer to this bot's own dispatch stays expanded (H
   })
 })
 
-describe('buildTimeline: consecutive merge (spec 5.4, ruling on adjacency)', () => {
+describe('buildTimeline: consecutive merge (spec 5.4, adjacency)', () => {
   it('merges two sends to the same peer that end up adjacent', () => {
     const { lines } = buildTimeline(input({ items: senderItems(), rows: senderRows() }))
     const merged = lines.find(line => line.key === 'x-call_nRwha9TQ0oE9AugWq67WcB4K')
@@ -389,7 +389,7 @@ describe('buildTimeline: consecutive merge (spec 5.4, ruling on adjacency)', () 
   })
 })
 
-describe('buildTimeline: notices (ruling 10)', () => {
+describe('buildTimeline: notices', () => {
   const ITEMS: ChatItem[] = [
     { kind: 'user', id: 'h-user-9', rowId: 9, text: 'ask Kevin', at: 1789375700 },
     { kind: 'assistant', id: 'h-assistant-10', rowId: 10, text: '', at: 1789375701, reasoning: 'calling message_agent' },
@@ -688,7 +688,7 @@ describe('completion evidence (spec 12.3)', () => {
   })
 
   it('a turn newer than the retained bound folds while the bounded candidates stay expanded', () => {
-    // The snapshot that first retained the live answer ended at row 14 (ruling, Critical 1a):
+    // The snapshot that first retained the live answer ended at row 14:
     // only turns whose head lies in (12, 14] can be its home. The later turn folds normally.
     const items = [bot(11, 'hi'), answer(12, 'hello'), bot(13, 'again'), answer(14, 'sure'), bot(17, 'more'), answer(18, 'yes'), bot(19, 'and now'), liveAnswer('sure', { turnOutcome: 'completed', liveAnchor: { afterRowId: 12, retainedBeforeRowId: 14 } })]
     const { lines } = buildTimeline(input({ items }))
@@ -841,7 +841,7 @@ describe('transcript identities and reveal (spec 12.1 acknowledgement)', () => {
     // (the empty batch): the opening flag, not `presented.size`, decides. And once mounted, a
     // reveal against an empty `presented` set (never opened, or opened with no entries) yields no
     // acknowledgement even though entries have since arrived — an arrival while mounted is never
-    // acknowledged (spec 12.1, ruling 15).
+    // acknowledged (spec 12.1).
     expect(acknowledgementBatch(entries, new Set(), { opening: false, revealPending: true })).toEqual([])
   })
 })

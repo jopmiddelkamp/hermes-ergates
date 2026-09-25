@@ -21,7 +21,7 @@ export type DeliveryState = 'submitting' | 'acknowledged' | 'queued' | 'unconfir
 
 export type TurnOutcome = 'completed' | 'failed' | 'unknown'
 
-/** Where a live turn started, as the reducer knew the chat then (spec 12.3 input-row anchor, ruling 5). */
+/** Where a live turn started, as the reducer knew the chat then (spec 12.3 input-row anchor). */
 export interface LiveAnchor {
   /** The newest durable row id known when the turn started; `null` when none was. */
   afterRowId: number | null
@@ -31,17 +31,16 @@ export interface LiveAnchor {
    * The newest input row already in history when the turn was found already running
    * (`turn/observed-running`, or a running activate the reducer was not streaming through).
    * Hermes runs one turn per session, so that row is the running turn's own input: it was
-   * persisted before we ever looked, and no later refetch will deliver it as "new" (ruling,
-   * Critical 1b).
+   * persisted before we ever looked, and no later refetch will deliver it as "new".
    */
   observedInputRowId?: number
   /**
    * The newest row id of the fresh snapshot that retained this answer for the first time.
    * A turn that starts after it cannot be the home of an answer that was already sealed,
-   * so it bounds the candidate set (ruling, Critical 1a). Never changed afterwards.
+   * so it bounds the candidate set. Never changed afterwards.
    */
   retainedBeforeRowId?: number
-  /** How many reconciliations in a row failed to place this answer (ruling, Critical 1c). */
+  /** How many reconciliations in a row failed to place this answer. */
   retainedRounds?: number
   /**
    * The process id of the live receipt item that was appended just before this turn started
@@ -260,11 +259,11 @@ function turnHasNoAnswer(fresh: ChatItem[], candidateIndex: number): boolean {
 }
 
 /**
- * The input row id of the durable turn a live answer belongs to (spec 12.3, ruling 5): for a local
+ * The input row id of the durable turn a live answer belongs to (spec 12.3): for a local
  * turn, exactly one fresh user row with the local send's text among the new rows; otherwise exactly
  * one new input row of any kind. Anything else is ambiguous and yields `undefined` — except a turn
  * we found already running, whose input row was persisted before we looked: when the snapshot
- * carries no newer input row at all, that recorded row is the anchor (ruling, Critical 1b). Both
+ * carries no newer input row at all, that recorded row is the anchor. Both
  * the newer-than-`afterRowId` set and the `observedInputRowId` fallback exclude a turn already
  * explained by a recorded outcome (rule d).
  */
@@ -318,7 +317,7 @@ function uniqueAnswerIndex(fresh: ChatItem[], start: number): number | undefined
 }
 
 /**
- * Spec 12.3: carry every recorded outcome forward by row id (ruling 8), then move each live sealed
+ * Spec 12.3: carry every recorded outcome forward by row id, then move each live sealed
  * answer's outcome onto its durable row when — and only when — the match is unambiguous. A live
  * answer without such a match is retained, with its outcome, until the next reconciliation.
  */
@@ -371,7 +370,7 @@ export function transferOutcomes(items: ChatItem[], fresh: ChatItem[]): { fresh:
     const rounds = (item.liveAnchor.retainedRounds ?? 0) + 1
     // A completed answer is the one case where dropping is honest: its turn ended well, the
     // durable transcript already holds the same text, and a second failure to place it means
-    // no later reconciliation ever will (ruling, Critical 1c). `failed`/`unknown` are kept.
+    // no later reconciliation ever will. `failed`/`unknown` are kept.
     if (item.turnOutcome === 'completed' && rounds >= 2) continue
     const liveAnchor: LiveAnchor = { ...item.liveAnchor, retainedRounds: rounds }
     if (liveAnchor.retainedBeforeRowId === undefined) {
@@ -415,7 +414,7 @@ export function mergeHistory(items: ChatItem[], fresh: ChatItem[]): ChatItem[] {
     reconciled.filter((i): i is Extract<ChatItem, { kind: 'receipt' }> => i.kind === 'receipt').map(i => i.receipt.headline.processId)
   )
   // A notice carries no id of any kind, so its durable twin can only be found by
-  // its exact text (ruling); the spec forbids text matching only where it names
+  // its exact text; the spec forbids text matching only where it names
   // an id to pair on.
   const freshNoticeDetails = new Set(reconciled.filter((i): i is Extract<ChatItem, { kind: 'notice' }> => i.kind === 'notice').map(i => i.detail))
 

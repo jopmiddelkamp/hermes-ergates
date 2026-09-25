@@ -421,7 +421,7 @@ describe('ownership, revisions, receipts', () => {
     const stale = sessionReducer(s1, { type: 'history/loaded', messages: [], revision: captured })
     expect(stale.items.some(i => i.kind === 'assistant' && i.text === 'new answer')).toBe(true)
     // The fresh snapshot carries no new input row at all, so the live answer's anchor
-    // cannot resolve unambiguously (spec 12.3, ruling 5): it is retained alongside the
+    // cannot resolve unambiguously (spec 12.3): it is retained alongside the
     // durable row rather than folded onto it.
     const fresh = sessionReducer(s1, { type: 'history/loaded', messages: [{ role: 'assistant', text: 'new answer', row_id: 9 }], revision: s1.revision })
     expect(fresh.items).toHaveLength(2)
@@ -559,7 +559,7 @@ describe('turn anchor and outcome (spec 12.3)', () => {
   })
 
   it('a turn found already running anchors on the input row history already holds', () => {
-    // Ruling, Critical 1b: `turn/observed-running` starts a turn whose input row is already
+    // `turn/observed-running` starts a turn whose input row is already
     // durable, so the refetch after its completion brings no NEW input row at all.
     const loaded = run(bound(), [{ type: 'history/loaded', messages: [inbound(11, 'hi'), durable(12, 'assistant', 'hello'), inbound(13, 'again?')] }])
     const observed = sessionReducer(loaded, { type: 'turn/observed-running', at: 900 })
@@ -573,7 +573,7 @@ describe('turn anchor and outcome (spec 12.3)', () => {
   })
 
   it('drops a completed retained answer at the second reconciliation that cannot place it, and keeps a failed one', () => {
-    // Ruling, Critical 1c: a completed answer whose durable twin is already in the transcript
+    // A completed answer whose durable twin is already in the transcript
     // is dropped rather than drawn forever; failed and unknown are never dropped.
     const start = (status: string) => {
       const loaded = run(bound(), [{ type: 'history/loaded', messages: [inbound(11, 'hi'), durable(12, 'assistant', 'hello')] }])

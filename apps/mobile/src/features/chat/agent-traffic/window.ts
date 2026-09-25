@@ -36,7 +36,7 @@ export interface TranscriptWindow {
   loaded: boolean
   /** The last fetch's failure, already safe to render; cleared by the next page that merges. */
   error: string | null
-  /** Backward pages fetched automatically; the manual "Older messages" control does not count (ruling). */
+  /** Backward pages fetched automatically; the manual "Older messages" control does not count. */
   autoPages: number
 }
 
@@ -55,8 +55,8 @@ export type PageKind = 'initial' | 'older' | 'tail'
  * out of rows, so the window has reached the start of the recorded chat —
  * whichever fetch asked for it.
  *
- * `manual: true` merges an "Older messages" tap, which pages without a budget
- * (ruling): it is the only backward page that does not count against `autoPages`.
+ * `manual: true` merges an "Older messages" tap, which pages without a budget:
+ * it is the only backward page that does not count against `autoPages`.
  */
 export function mergePage(w: TranscriptWindow, page: TranscriptPage, kind: PageKind, opts: { manual?: boolean } = {}): TranscriptWindow {
   const byId = new Map<number, TranscriptRow>()

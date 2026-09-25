@@ -1,9 +1,10 @@
 /// <reference types="node" />
 /**
  * Code comments and test titles give the reason, not a planning id: a reader
- * has no upgrade plan or review ledger at hand, so a bug, decision or finding
- * number from one tells them nothing. ADR numbers (docs/08), docs section
- * numbers and Hermes file:line references stay.
+ * has no upgrade plan or review ledger at hand, so a bug, decision, ruling or
+ * review finding number from one tells them nothing. ADR numbers (docs/08),
+ * docs section numbers, Hermes file:line references and upstream issue
+ * numbers stay.
  *
  * The files are parsed with the TypeScript compiler, so a `//` inside a
  * string, a template literal, a regular expression or JSX text is not taken
@@ -17,9 +18,10 @@ import { describe, expect, it } from 'vitest'
 
 const APP = path.resolve(import.meta.dirname, '..')
 const FOLDERS = ['app', 'src', 'test']
-const PLAN_ID = /\broadmap\b|\breview focus\b|\.superpowers\b|\bimplementer-rules\b/i
+const PLAN_ID =
+  /\broadmap\b|\breview focus\b|\.superpowers\b|\bimplementer-rules\b|\brulings?\b|\breview (?:issue|finding|point|comment)s? #?\d+/i
 const PLAN_ID_CASED =
-  /\b(?:[Dd]ecisions?|[Cc]ontracts?) [CD]\d+\b|\b[CD]\d{1,2}\b|\bPlan \d+\b|\bTask \d+\b|\b[Bb]ug \d+\b|\([IM]\d{1,2}\b/
+  /\b(?:[Dd]ecisions?|[Cc]ontracts?) [CD]\d+\b|\b[CD]\d{1,2}\b|\bPlan \d+\b|\bTask \d+\b|\b[Bb]ug \d+\b|\([IM]\d{1,2}\b|\b(?:Critical|Important|Minor) \d+[a-z]?\b/
 const TEST_FUNCTIONS = new Set(['describe', 'it', 'test'])
 
 type Found = { line: number; text: string }
@@ -168,12 +170,35 @@ describe('planning ids', () => {
     'see .superpowers/sdd',
     'implementer-rules',
     'finding (I3)',
-    'finding (M13)'
+    'finding (M13)',
+    'precomputed once (review issue 4)',
+    'Review finding #2',
+    'review point 3',
+    'review comments 12',
+    '(spec 5.4, ruling 11)',
+    'the same-direction ruling',
+    '(ruling, Critical 1a)',
+    'Important 3',
+    'Minor 12'
   ])('are found in %j', text => {
     expect(namesPlanningId(text)).toBe(true)
   })
 
-  it.each(['ADR-031', 'docs/11 section 4.1', 'hermes_cli/plugins.py:397-406', 'HTTP 400', 'SHA-256'])(
+  it.each([
+    'ADR-031',
+    'docs/11 section 4.1',
+    'spec 12.3',
+    'hermes_cli/plugins.py:397-406',
+    'HTTP 400',
+    'SHA-256',
+    'Hermes issue #26847',
+    'fixed upstream in issue #123',
+    'a GitHub issue',
+    'the page it was ISSUED at',
+    'a review comment on the pull request',
+    'the critical path',
+    'a minor version bump'
+  ])(
     'leave %j alone',
     text => {
       expect(namesPlanningId(text)).toBe(false)

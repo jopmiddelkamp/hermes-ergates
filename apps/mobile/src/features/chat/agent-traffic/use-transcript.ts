@@ -8,7 +8,7 @@
  * cache, never persisted (ADR-028), and nothing here calls `prompt.submit`
  * (ADR-027).
  *
- * Scheduling, all of it event-driven (no timer anywhere, ruling 14):
+ * Scheduling, all of it event-driven (no timer anywhere):
  *  - the first page is the Query's own `queryFn`;
  *  - every `tailWanted` bump (a local turn completing, a `status.update
  *    {kind:"process"}`, a `message_agent` completion) runs one tail, continuing
@@ -62,7 +62,7 @@ export const transcriptKey = (connectionId: string, storedSessionId: string) => 
 
 export interface TranscriptController {
   window: TranscriptWindow
-  /** "Older messages": one page further back, without the automatic budget (ruling). */
+  /** "Older messages": one page further back, without the automatic budget. */
   loadOlder(): Promise<void>
   status: 'idle' | 'loading' | 'error'
 }
@@ -115,7 +115,7 @@ export function useTranscriptWindow(port: GatewayPort, opts: UseTranscriptOption
   /** `tailWanted` as of the current render, readable from inside the `queryFn`. */
   const tailWantedRef = useRef(tailWanted)
   tailWantedRef.current = tailWanted
-  /** The last automatic fetch failed: wait for the next trigger instead of spinning (ruling 14). */
+  /** The last automatic fetch failed: wait for the next trigger instead of spinning. */
   const blockedRef = useRef(false)
   /** How many tail pages this trigger has had discarded as stale. */
   const staleTailRef = useRef({ wanted: NO_TAIL_HANDLED, rounds: 0 })

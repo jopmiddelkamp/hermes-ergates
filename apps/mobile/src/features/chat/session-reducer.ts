@@ -358,7 +358,7 @@ function hasLocalSendInFlight(items: ChatItem[]): boolean {
 /**
  * The anchor of a starting turn. When we did not watch the turn start (`observed`), its input row
  * is already durable, so record it: `resolveAnchorRowId` uses it when the refetch delivers no newer
- * input row at all (ruling, Critical 1b).
+ * input row at all.
  */
 function observedAnchor(items: ChatItem[], observed: boolean): LiveAnchor {
   const anchor: LiveAnchor = { afterRowId: maxRowId(items) }
@@ -378,7 +378,7 @@ function observedAnchor(items: ChatItem[], observed: boolean): LiveAnchor {
  * `unownedAs` is `foreign` for a `message.start` we watched arrive, and
  * `unknown` for a turn we merely found running. A turn we merely found running
  * also records the newest input row already in history: that row is its own
- * input (spec 12.3 anchor, ruling Critical 1b), so a later refetch that brings
+ * input (spec 12.3 anchor), so a later refetch that brings
  * no new input row still anchors the answer.
  */
 function startTurn(state: SessionState, unownedAs: 'foreign' | 'unknown', at: number | undefined): SessionState {
@@ -536,7 +536,7 @@ function applyActivate(state: SessionState, result: ActivateResult, at?: number)
       info: result.info ?? state.info,
       inflightError,
       // A turn found running here was never watched starting: record the durable input row it
-      // must have (ruling, Critical 1b). One we were already streaming keeps its anchor.
+      // must have. One we were already streaming keeps its anchor.
       turnAnchor: state.turnAnchor ?? observedAnchor(state.items, !state.live.streaming && !hasLocalSendInFlight(state.items)),
       // Rule (h): a reconnect boundary — the paired turn may have run unseen — discards a
       // pending receipt rather than misattributing it to whatever turn is found running here.

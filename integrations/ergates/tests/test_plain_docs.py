@@ -1,9 +1,10 @@
 """Comments, docstrings, test names and docs of this package give the reason, not a planning id.
 
 A reader of the code has no upgrade plan or review ledger at hand, so a bug,
-decision or finding number from one tells them nothing. ADR numbers (docs/08),
-docs section numbers and Hermes file:line references stay: they point at
-documents in this repository or at the pinned Hermes.
+decision, ruling or review finding number from one tells them nothing. ADR
+numbers (docs/08), docs section numbers, Hermes file:line references and
+upstream issue numbers stay: they point at documents in this repository, at
+the pinned Hermes or at a public tracker.
 """
 
 from __future__ import annotations
@@ -17,12 +18,16 @@ from pathlib import Path
 PACKAGE = Path(__file__).resolve().parents[1]
 SKIPPED_PARTS = {"__pycache__", "node_modules"}
 PLAN_ID = re.compile(
-    r"(?i:\broadmap\b|\breview focus\b|\.superpowers\b|\bimplementer-rules\b)"
+    r"(?i:\broadmap\b|\breview focus\b|\.superpowers\b|\bimplementer-rules\b|\brulings?\b"
+    r"|\breview (?:issue|finding|point|comment)s? #?\d+)"
     r"|\b(?:[Dd]ecisions?|[Cc]ontracts?) [CD]\d+\b|\b[CD]\d{1,2}\b|\bPlan \d+\b|\bTask \d+\b|\b[Bb]ug \d+\b"
-    r"|\([IM]\d{1,2}\b"
+    r"|\([IM]\d{1,2}\b|\b(?:Critical|Important|Minor) \d+[a-z]?\b"
 )
 # The same ids inside a function or class name, e.g. ``test_bug8_...`` or ``..._c3_body``.
-PLAN_ID_IN_NAME = re.compile(r"(?i)(?:^|_)(?:bug_?\d+|review_focus|roadmap|[cd]\d{1,2}|plan_?\d+|task_?\d+)(?=_|$)")
+PLAN_ID_IN_NAME = re.compile(
+    r"(?i)(?:^|_)(?:bug_?\d+|review_focus|review_(?:issue|finding|point|comment)_?\d+|rulings?|roadmap"
+    r"|[cd]\d{1,2}|plan_?\d+|task_?\d+)(?=_|$)"
+)
 
 
 def _skipped(path: Path) -> bool:
@@ -97,9 +102,19 @@ def test_the_patterns_catch_each_kind_of_planning_id():
         "implementer-rules",
         "finding (I3)",
         "finding (M13)",
+        "precomputed once (review issue 4)",
+        "Review finding #2",
+        "review point 3",
+        "review comments 12",
+        "(spec 5.4, ruling 11)",
+        "a controller ruling",
+        "(ruling, Critical 1a)",
+        "Important 3",
+        "Minor 12",
     ):
         assert PLAN_ID.search(text), text
-    for name in ("test_bug8_x", "test_review_focus_3_x", "test_x_c3_body", "test_x_c5_shape"):
+    for name in ("test_bug8_x", "test_review_focus_3_x", "test_x_c3_body", "test_x_c5_shape",
+                 "test_review_issue_4_x", "test_x_per_ruling"):
         assert PLAN_ID_IN_NAME.search(name), name
 
 
@@ -111,7 +126,14 @@ def test_the_patterns_leave_adr_docs_and_hermes_references_alone():
         "HTTP 400",
         "a SHA-256 digest",
         "cron.manage add",
+        "Hermes issue #26847",
+        "fixed upstream in issue #123",
+        "a GitHub issue",
+        "SQLite issues F_FULLFSYNC",
+        "a review comment on the pull request",
+        "the critical path",
+        "a minor version bump",
     ):
         assert not PLAN_ID.search(text), text
-    for name in ("test_ci_local", "test_decode_utf8", "test_a_template_file_is_read"):
+    for name in ("test_ci_local", "test_decode_utf8", "test_a_template_file_is_read", "test_review_is_skipped"):
         assert not PLAN_ID_IN_NAME.search(name), name

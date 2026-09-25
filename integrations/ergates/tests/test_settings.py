@@ -67,7 +67,7 @@ def test_push_settings_are_on_only_with_a_server_and_a_topic(tmp_path):
     assert push_settings(tmp_path) == NtfySettings(**SETTINGS)
 
 
-# --- controller ruling: a "${VAR}" left unexpanded is refused loudly, never sent ---------
+# --- a "${VAR}" left unexpanded is refused loudly, never sent ----------------------------
 
 
 def test_a_setting_that_still_has_unexpanded_dollar_braces_is_dropped_and_logged(tmp_path, caplog):
