@@ -754,6 +754,27 @@ def test_the_reminder_tool_refuses_a_prompt_hermes_cron_refuses(store, cron):
     assert cron.create_calls == [] and rows(store, "reminder_receipts") == []
 
 
+def test_the_reminder_tool_refuses_a_lone_surrogate_in_the_prompt(store, cron):
+    result = _ask(_reminder_args(prompt="Pay the \ud800 rent."), ReminderService(store, cron))
+
+    assert result == {"error": "prompt must be valid Unicode text"}
+    assert cron.create_calls == []
+
+
+def test_the_reminder_tool_answers_an_error_when_the_schedule_cannot_be_checked(store, cron, caplog):
+    """The profile's home can vanish between the call and the check: still a JSON
+    answer, naming the exception class only in the log (its message has a path)."""
+    def vanished(profile, schedule):
+        raise FileNotFoundError("profile 'thijs' does not exist at /secret/hermes/profiles/thijs")
+
+    with caplog.at_level(logging.WARNING, logger="ergates.tool"):
+        result = _ask(_reminder_args(), ReminderService(store, cron), check_schedule=vanished)
+
+    assert result == {"error": "the schedule could not be checked"}
+    assert "FileNotFoundError" in caplog.text and "/secret" not in caplog.text
+    assert cron.create_calls == []
+
+
 def test_the_reminder_tool_reports_a_service_refusal_as_an_error(store, cron):
     result = _ask(_reminder_args(), ReminderService(store, cron), profile="Not A Profile")
 

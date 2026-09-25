@@ -4,7 +4,9 @@
 method here and turns the returned :class:`Reply` into a JSON response. A
 method never raises for a problem with the request: every answer is a
 ``Reply`` with the C3 status and body, so the router stays a thin shim and
-the behavior is unit-tested without FastAPI.
+the behavior is unit-tested without FastAPI. A failure no method maps (a
+Hermes call that raised) propagates, and the router answers it with
+:func:`internal_error`.
 
 Error body: ``{"error": {"code": "<code>", "message": "<safe text>"}}``. A
 message names fields, states and profile names; it never carries prompt,
@@ -67,17 +69,29 @@ def store_unavailable() -> Reply:
     return error_reply(503, "store_unavailable", "the Ergates control store is unavailable")
 
 
+def internal_error() -> Reply:
+    """500 ``internal``: a failure no route maps, such as a Hermes call that raised.
+
+    Fixed text: the exception's own message can carry a path or prompt text.
+    """
+    return error_reply(500, "internal", "The request could not be completed.")
+
+
 def reminder_problem(*, schedule: Any, timezone: Any, prompt: Any, label: Any) -> str | None:
     """Why a reminder request is refused before any Hermes call, or ``None``.
 
     Shared by ``POST /reminders`` and the ``ergates_create_reminder`` tool.
     ``timezone`` must be an IANA zone name (``Europe/Amsterdam``); ``label``
     is optional, at most 64 printable characters, and becomes part of the
-    cron job's name, which the prompt never does.
+    cron job's name, which the prompt never does. Text must encode as UTF-8:
+    JSON can carry a lone surrogate (``"\\ud800"``), which the idempotency
+    hash cannot encode.
     """
     for name, value in (("schedule", schedule), ("timezone", timezone), ("prompt", prompt)):
         if not isinstance(value, str) or not value.strip():
             return f"{name} is required and must be a non-empty string"
+        if not _encodes_as_utf8(value):
+            return f"{name} must be valid Unicode text"
     try:
         ZoneInfo(timezone)
     except (ZoneInfoNotFoundError, ValueError):
@@ -89,6 +103,14 @@ def reminder_problem(*, schedule: Any, timezone: Any, prompt: Any, label: Any) -
     return None
 
 
+def _encodes_as_utf8(value: str) -> bool:
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def _guard_store(method: Callable[..., "Reply"]) -> Callable[..., "Reply"]:
     """Map a control-store failure from any route to 503 ``store_unavailable``.
 
@@ -97,7 +119,8 @@ def _guard_store(method: Callable[..., "Reply"]) -> Callable[..., "Reply"]:
     ``health()`` -- can hit a closed store or a schema a newer plugin wrote.
     A bare ``OSError`` is deliberately not caught here: ``hermes_adapter``
     raises it for reasons that have nothing to do with the store, and this
-    guard must not turn one of those into a false "store unavailable".
+    guard must not turn one of those into a false "store unavailable"; the
+    router answers it 500 ``internal``.
     """
 
     @functools.wraps(method)

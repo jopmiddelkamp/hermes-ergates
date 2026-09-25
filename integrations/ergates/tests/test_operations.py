@@ -14,7 +14,7 @@ import yaml
 
 import ergates
 from conftest import FakeClock, raw_bytes, rows
-from ergates.operations import LABEL_MAX_LEN, Operations
+from ergates.operations import LABEL_MAX_LEN, Operations, internal_error
 from ergates.paths import templates_dir
 from ergates.proposals import PROPOSAL_EXPIRY, ProposalService, validate_proposal
 
@@ -136,6 +136,14 @@ def test_every_store_backed_route_is_503_when_the_store_is_unavailable(ops, stor
 
     assert reply.status == 503
     assert reply.body == {"error": {"code": "store_unavailable", "message": "the Ergates control store is unavailable"}}
+
+
+def test_internal_error_is_the_c3_body_with_a_fixed_message():
+    """What the router answers for a failure no route maps (``dashboard/api.py``)."""
+    reply = internal_error()
+
+    assert (reply.status, reply.body) == (
+        500, {"error": {"code": "internal", "message": "The request could not be completed."}})
 
 
 def test_the_plugin_version_is_the_same_everywhere():
@@ -261,6 +269,16 @@ def test_a_prompt_hermes_cron_refuses_is_400_with_a_fixed_message_and_nothing_cr
     assert reply.body["error"]["message"] == "prompt is not one Hermes cron accepts"
     assert "rent" not in json.dumps(reply.body)
     assert cron.create_calls == [] and rows(store, "reminder_receipts") == []
+
+
+@pytest.mark.parametrize("field", ["prompt", "schedule"])
+def test_a_lone_surrogate_is_400_invalid_not_a_500(ops, cron, hermes, field):
+    """JSON can carry "\\ud800", which no UTF-8 encoder takes: hashing it would raise."""
+    reply = ops.create_reminder(_reminder(**{field: "Check the \ud800 invoices."}))
+
+    assert _error(reply) == (400, "invalid")
+    assert reply.body["error"]["message"] == f"{field} must be valid Unicode text"
+    assert cron.create_calls == [] and hermes.schedule_calls == []
 
 
 def test_the_prompt_is_checked_after_the_schedule(ops, hermes):

@@ -13,8 +13,10 @@ import sys
 
 import pytest
 
+from ergates import hermes_adapter
+from ergates.operations import Operations
 from ergates.paths import store_path, templates_dir
-from ergates.proposals import ProposalService, validate_proposal
+from ergates.proposals import PROVISION_STEPS, ProposalService, validate_proposal
 from ergates.store import ControlStore
 
 API = "/api/plugins/ergates"
@@ -230,3 +232,86 @@ def test_a_store_that_cannot_be_opened_is_503_store_unavailable(web, token_heade
     reply = web.get(f"{API}/health", headers=token_headers)
 
     assert (reply.status_code, reply.json()["error"]["code"]) == (503, "store_unavailable")
+
+
+INTERNAL = {"error": {"code": "internal", "message": "The request could not be completed."}}
+
+
+def _operations_with(root, **adapter):
+    """An ``Operations`` on the real store and Hermes, with some adapter functions replaced."""
+    functions = {name: getattr(hermes_adapter, name) for name in (
+        "profile_exists", "plugin_enabled", "enable_plugin", "check_schedule", "check_prompt")}
+    return Operations(ControlStore(store_path(root)), cron=hermes_adapter.HermesCron(), templates=templates_dir(root),
+                      **{**functions, **adapter})
+
+
+def test_a_failure_the_route_cannot_name_is_500_internal_and_logs_the_class_only(web, token_headers, monkeypatch,
+                                                                                 caplog):
+    """Anything a route does not map answers the C3 error body, not Starlette's plain text."""
+    module = _module()
+
+    def broken(ops):
+        raise KeyError("secret words from a prompt")
+
+    reply = module._call(broken)
+    monkeypatch.setattr(module, "operations", lambda: (_ for _ in ()).throw(RuntimeError("/secret/hermes")))
+    unopened = web.get(f"{API}/health", headers=token_headers)
+
+    assert (reply.status, reply.body) == (500, INTERNAL)
+    assert (unopened.status_code, unopened.json()) == (500, INTERNAL)
+    assert "KeyError" in caplog.text and "RuntimeError" in caplog.text
+    assert "secret" not in caplog.text
+
+
+def test_enable_plugin_that_hermes_refuses_is_500_internal(web, token_headers, make_profile):
+    """A folder where the plugin link belongs: enable_plugin refuses to replace it."""
+    home = make_profile("hans")
+    (home / "plugins" / "ergates").mkdir(parents=True)
+
+    reply = web.post(f"{API}/profiles/hans/plugin", headers=token_headers)
+
+    assert (reply.status_code, reply.json()) == (500, INTERNAL)
+    assert not (home / "plugins" / "ergates").is_symlink()
+
+
+def test_a_plugin_check_that_raises_inside_complete_is_500_internal(web, token_headers, root, monkeypatch):
+    def broken(profile):
+        raise RuntimeError("Hermes discovery failed")
+
+    proposals = ProposalService(ControlStore(store_path(root)))
+    proposal = validate_proposal({"name": "joost", "title": "Joost", "role": "Helper", "template_id": "t",
+                                  "provider": "p", "model": "m", "briefing": "Seed facts."})
+    proposals.record(proposal)
+    proposals.accept(proposal["proposal_id"], proposal, profile_exists=lambda name: False)
+    for step in PROVISION_STEPS[:-1]:
+        proposals.record_step(proposal["proposal_id"], step, "done")
+    (root / "profiles" / "joost").mkdir(parents=True)
+    monkeypatch.setattr(_module(), "_operations", _operations_with(root, plugin_enabled=broken))
+
+    reply = web.post(f"{API}/proposals/{proposal['proposal_id']}/steps",
+                     json={"step": "briefing", "status": "done"}, headers=token_headers)
+
+    assert (reply.status_code, reply.json()) == (500, INTERNAL)
+    assert proposals.get(proposal["proposal_id"])["state"] == "accepted"
+
+
+def test_a_profile_that_vanishes_before_the_schedule_check_is_500_internal(web, token_headers, root, monkeypatch):
+    """Hermes said the profile exists; its home is gone when the schedule is checked in it."""
+    monkeypatch.setattr(_module(), "_operations", _operations_with(root, profile_exists=lambda profile: True))
+
+    reply = web.post(f"{API}/reminders", json=_reminder("ghost"), headers=token_headers)
+
+    assert (reply.status_code, reply.json()) == (500, INTERNAL)
+    assert not (root / "profiles" / "ghost").exists()
+
+
+def test_a_lone_surrogate_in_the_prompt_is_400_invalid(web, token_headers, root, make_profile):
+    home = make_profile("lieke")
+    body = json.dumps(_reminder("lieke")).replace("Check the unpaid", "Check the \\ud800 unpaid")
+
+    reply = web.post(f"{API}/reminders", content=body.encode("utf-8"),
+                     headers={**token_headers, "Content-Type": "application/json"})
+
+    assert (reply.status_code, reply.json()) == (
+        400, {"error": {"code": "invalid", "message": "prompt must be valid Unicode text"}})
+    assert not (home / "cron" / "jobs.json").exists()

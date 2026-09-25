@@ -115,7 +115,7 @@ def validate_proposal(args: Dict[str, Any]) -> Dict[str, Any]:
         _require_string(args, field)
 
     name = args["name"]
-    if not _NAME_RE.match(name):
+    if not _NAME_RE.fullmatch(name):
         raise ProposalError(f"name must match {NAME_PATTERN_DESCRIPTION}")
 
     title = args["title"]

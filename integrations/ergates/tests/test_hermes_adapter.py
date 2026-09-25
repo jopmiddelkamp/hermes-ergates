@@ -94,9 +94,15 @@ def test_bug8_default_is_refused_when_hermes_cannot_be_asked(without_hermes):
         current_profile(_DefaultCtx())
 
 
-@pytest.mark.parametrize("name", ["", "Thijs", "../etc", "a/b", "-x", "x" * 65, None, 7])
+@pytest.mark.parametrize("name", ["", "Thijs", "../etc", "a/b", "-x", "x" * 65, "pim\n", None, 7])
 def test_a_name_hermes_would_refuse_is_no_profile_and_never_reaches_hermes(without_hermes, name):
     assert profile_exists(name) is False
+
+
+def test_a_profile_scope_refuses_a_name_with_a_trailing_newline_before_hermes(without_hermes):
+    with pytest.raises(ValueError):
+        with hermes_adapter._profile_home("pim\n"):
+            pass
 
 
 @pytest.mark.parametrize("call", [

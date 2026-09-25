@@ -41,7 +41,7 @@ if _PLUGIN_DIR not in sys.path:
     sys.path.append(_PLUGIN_DIR)
 
 from ergates import hermes_adapter  # noqa: E402
-from ergates.operations import Operations, Reply, store_unavailable  # noqa: E402
+from ergates.operations import Operations, Reply, internal_error, store_unavailable  # noqa: E402
 from ergates.paths import hermes_root, store_path, templates_dir  # noqa: E402
 from ergates.store import ControlStore, StoreError  # noqa: E402
 
@@ -73,12 +73,30 @@ def operations() -> Operations:
 
 
 def _call(method: Callable[[Operations], Reply]) -> Reply:
+    """Run ``method`` on the process's ``Operations``; always a C3 ``Reply``.
+
+    A store that cannot be opened is 503 ``store_unavailable``. Any other
+    exception -- one an ``Operations`` method does not map, such as a Hermes
+    call that raised -- is 500 ``internal`` with a fixed message, never
+    Starlette's plain-text 500. The log names the exception class only: its
+    message can carry a path or prompt text.
+    """
     try:
         ops = operations()
     except (StoreError, sqlite3.Error, OSError) as exc:
         logger.warning("ergates: the control store cannot be opened (%s)", type(exc).__name__)
         return store_unavailable()
-    return method(ops)
+    except Exception as exc:
+        return _internal(exc)
+    try:
+        return method(ops)
+    except Exception as exc:
+        return _internal(exc)
+
+
+def _internal(exc: Exception) -> Reply:
+    logger.warning("ergates: the request could not be completed (%s)", type(exc).__name__)
+    return internal_error()
 
 
 async def _answer(method: Callable[[Operations], Reply]) -> JSONResponse:

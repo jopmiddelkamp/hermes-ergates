@@ -123,11 +123,14 @@ dashboard auth is on. JSON in and out; every error is
 | `PUT /attention/prefs` `{profile, muted, quiet_start, quiet_end}` | 200 `{"prefs"}` | 400 `invalid` |
 
 Also on every route: 400 `invalid` for a body that is not a JSON object or a
-field that fails validation, 404 `not_found` for an unknown proposal, and
-503 `store_unavailable` when the control store cannot be opened. Only the
-accept answer carries the proposal's `template`; every other proposal answer
-has `"template": null` (repeat the accept to read it again: an accepted
-proposal answers 200 with its receipt).
+field that fails validation, 404 `not_found` for an unknown proposal,
+503 `store_unavailable` when the control store cannot be opened, and 500
+`internal` (message `The request could not be completed.`) for a failure
+the route does not name, such as a Hermes call that raised; the log names
+the exception class only. A client treats `internal` like any code it does
+not know. Only the accept answer carries the proposal's `template`; every
+other proposal answer has `"template": null` (repeat the accept to read it
+again: an accepted proposal answers 200 with its receipt).
 
 `POST /reminders` checks, in order: the fields (a `timezone` must be an IANA
 zone; a `label` is at most 64 printable characters and never defaults to

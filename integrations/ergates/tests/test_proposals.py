@@ -58,6 +58,13 @@ def test_validate_proposal_rejects_a_bad_name():
         validate_proposal(_valid_args(name="Thijs_Bad!"))
 
 
+def test_validate_proposal_rejects_a_name_with_a_trailing_newline():
+    """``$`` also matches before a final newline: "pim\\n" would reserve a name
+    Hermes creates as "pim", and the gate would admit "pim" while it is set up."""
+    with pytest.raises(ProposalError):
+        validate_proposal(_valid_args(name="pim\n"))
+
+
 def test_validate_proposal_rejects_a_name_starting_with_a_hyphen():
     with pytest.raises(ProposalError):
         validate_proposal(_valid_args(name="-thijs"))

@@ -222,6 +222,11 @@ def create_reminder_handler(
     except (ValueError, OverflowError):
         # hermes_adapter.check_schedule maps OverflowError itself; POST /reminders catches both too.
         return json.dumps({"error": "schedule is not one Hermes cron accepts"})
+    except OSError as exc:
+        # The profile's home vanished (FileNotFoundError) or cannot be read. Class name
+        # only: the message carries the path.
+        logger.warning("ergates: the reminder schedule could not be checked (%s)", type(exc).__name__)
+        return json.dumps({"error": "the schedule could not be checked"})
     try:
         check_prompt(args["prompt"])
     except ValueError:

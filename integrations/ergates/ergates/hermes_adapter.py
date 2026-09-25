@@ -273,7 +273,7 @@ def plugin_enabled(profile: str) -> bool:
 
 
 def _is_profile_name(profile: object) -> bool:
-    return isinstance(profile, str) and bool(_PROFILE_RE.match(profile))
+    return isinstance(profile, str) and bool(_PROFILE_RE.fullmatch(profile))
 
 
 @contextmanager
