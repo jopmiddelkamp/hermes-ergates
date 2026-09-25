@@ -623,3 +623,90 @@ export interface MemoryFiles {
   user: string
   available: boolean
 }
+
+// ── Ergates integration routes (roadmap contract C3, /api/plugins/ergates) ──
+
+export interface ErgatesHealth {
+  ok: boolean
+  schema_version: number
+  plugin_version: string
+}
+
+export interface ReminderRequest {
+  profile: string
+  schedule: string
+  /** IANA zone name, for example `Europe/Amsterdam`. Advisory: Hermes cron runs in the server's zone. */
+  timezone: string
+  prompt: string
+  /** One per create attempt, unique across every profile of the install: `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. */
+  request_id: string
+  /** At most 64 printable characters. It becomes part of the cron job's name, so it is never prompt text. */
+  label?: string
+}
+
+export interface ReminderReceipt {
+  id: string
+  request_id: string | null
+  profile: string
+  state: 'creating' | 'created' | 'uncertain'
+  job_id: string | null
+  timezone_advisory: string
+  payload_hash: string
+}
+
+export interface ReminderOutcome {
+  status: 'created' | 'existing' | 'conflict' | 'uncertain'
+  receipt: ReminderReceipt
+}
+
+/** Provisioning steps in the order the server accepts them (roadmap contract C1). */
+export const PROVISION_STEPS = ['profile_created', 'plugin_enabled', 'configured', 'bot_chat', 'briefing'] as const
+export type ProvisionStep = (typeof PROVISION_STEPS)[number]
+export type StepStatus = 'done' | 'uncertain' | 'failed'
+
+/** Exactly the JSON the `ergates_propose_agent` tool returns. */
+export interface AgentProposal {
+  kind: 'ergates.agent-proposal.v1'
+  proposal_id: string
+  /** ISO-8601 UTC. */
+  expires_at: string
+  source_session_id: string | null
+  agent: {
+    name: string
+    title: string
+    role: string
+    description: string
+    template_id: string
+    provider: string
+    model: string
+  }
+  briefing: string
+}
+
+export interface ProposalTemplate {
+  template_id: string
+  soul: string
+  enabled_toolsets: string[]
+  enabled_mcp_servers: string[]
+}
+
+export interface ProposalReceipt {
+  proposal_id: string
+  state: 'proposed' | 'accepted' | 'complete' | 'rejected' | 'expired'
+  reserved_profile_name: string
+  expires_at: string
+  completed_steps: ProvisionStep[]
+  step_status: Partial<Record<ProvisionStep, StepStatus>>
+  next_step: ProvisionStep | null
+  /** Only the accept answer carries it; GET, reject and steps answer null. */
+  template: ProposalTemplate | null
+}
+
+export interface AttentionPrefs {
+  /** A profile name, or `*` for the default of every profile. */
+  profile: string
+  muted: boolean
+  /** `HH:MM`; both set or both null. */
+  quiet_start: string | null
+  quiet_end: string | null
+}

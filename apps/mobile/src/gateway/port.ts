@@ -42,7 +42,7 @@ export interface ConnectionFailure {
   message: string
   /** Reconnecting cannot fix this; the owner must sign in again. */
   terminal: boolean
-  code?: number
+  code?: number | string
 }
 
 export interface ProfilesApi {
@@ -123,6 +123,25 @@ export interface FilesApi {
   uploadFile(path: string, dataUrl: string): Promise<T.FileUploadResult>
 }
 
+/**
+ * The Ergates integration routes under `/api/plugins/ergates` (roadmap
+ * contracts C3 and C4), behind the connection's own Hermes auth. A C3 error
+ * rejects with `GatewayError` whose `code` is the C3 code (`invalid`,
+ * `not_found`, `name_taken`, ...). `createReminder` resolves for 200, 201, 202
+ * and 409 instead: each of those answers carries the receipt.
+ */
+export interface ErgatesApi {
+  health(): Promise<T.ErgatesHealth>
+  createReminder(req: T.ReminderRequest): Promise<T.ReminderOutcome>
+  getProposal(proposalId: string): Promise<T.ProposalReceipt>
+  acceptProposal(proposalId: string, proposal: T.AgentProposal): Promise<T.ProposalReceipt>
+  rejectProposal(proposalId: string): Promise<T.ProposalReceipt>
+  recordProposalStep(proposalId: string, step: T.ProvisionStep, status: T.StepStatus): Promise<T.ProposalReceipt>
+  enablePlugin(profile: string): Promise<{ profile: string; enabled: boolean }>
+  attentionPrefs(profile: string): Promise<T.AttentionPrefs>
+  setAttentionPrefs(prefs: T.AttentionPrefs): Promise<T.AttentionPrefs>
+}
+
 export interface GatewayPort {
   status(): Promise<T.BackendStatus>
   login(creds: T.Credentials): Promise<T.AuthIdentity | null>
@@ -144,6 +163,7 @@ export interface GatewayPort {
   routines: RoutinesApi
   tools: ToolsApi
   files: FilesApi
+  ergates: ErgatesApi
 }
 
 /**

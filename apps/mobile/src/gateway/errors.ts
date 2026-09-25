@@ -16,11 +16,12 @@ export type GatewayErrorKind =
 
 export class GatewayError extends Error {
   readonly kind: GatewayErrorKind
-  readonly code?: number
+  /** A JSON-RPC or socket close code, or the C3 error code of an Ergates route (`invalid`, `not_found`, ...). */
+  readonly code?: number | string
   readonly status?: number
   readonly data?: unknown
 
-  constructor(kind: GatewayErrorKind, message: string, extra: { code?: number; status?: number; data?: unknown; cause?: unknown } = {}) {
+  constructor(kind: GatewayErrorKind, message: string, extra: { code?: number | string; status?: number; data?: unknown; cause?: unknown } = {}) {
     super(message, extra.cause !== undefined ? { cause: extra.cause } : undefined)
     this.name = 'GatewayError'
     this.kind = kind
@@ -68,6 +69,25 @@ export function mapHttpError(status: number, body?: unknown): GatewayError {
       }
       return new GatewayError('unknown', detail ?? `Request failed (${status}).`, extra)
   }
+}
+
+/**
+ * An error answer of an Ergates route (roadmap contract C3):
+ * `{"error": {"code", "message"}}`. The kind follows the HTTP status, as for
+ * any route; `code` is the C3 code and the message is the server's safe text.
+ * An answer without that body (a 401 from Hermes's own auth middleware, a 404
+ * from a gateway without the plugin) maps like any HTTP error, with no code.
+ */
+export function mapErgatesError(status: number, body: unknown): GatewayError {
+  const base = mapHttpError(status, body)
+  const error = body && typeof body === 'object' ? (body as { error?: unknown }).error : undefined
+  const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined
+  if (typeof code !== 'string' || !code) {
+    return base
+  }
+  const message = (error as { message?: unknown }).message
+  const text = typeof message === 'string' && message ? redact(message.slice(0, 200)) : base.message
+  return new GatewayError(base.kind, text, { status, code, data: body })
 }
 
 // 4090/4091 are the session-slot and hosted-room refusals; 4009 is the backend's

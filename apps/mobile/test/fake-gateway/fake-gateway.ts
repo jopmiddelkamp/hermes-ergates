@@ -29,6 +29,8 @@ import statusFixture from '../fixtures/status.json'
 import toolsetsFixture from '../fixtures/toolsets.json'
 import transcriptSenderFixture from '../fixtures/agent-traffic/transcript-sender.json'
 
+import { FakeErgates } from './fake-ergates'
+
 /** Deep-clones a fixture and casts it to the wire type it represents. */
 const clone = <V>(value: unknown): V => structuredClone(value) as V
 
@@ -251,6 +253,11 @@ export class FakeGateway implements GatewayPort {
   /** live session id -> owning profile, set on session.create/resume. */
   private readonly sessionOwner = new Map<string, string>()
 
+  /** The profiles this gateway has: the recorded roster, plus any `profiles.create` made. */
+  readonly profileNames = new Set<string>((profilesListFixture.profiles as { name: string }[]).map(p => p.name))
+  /** The Ergates routes, over this gateway's profiles (roadmap contract C3). */
+  readonly ergates = new FakeErgates({ hasProfile: name => this.profileNames.has(name) })
+
   constructor(script: FakeScript = {}) {
     this.script = script
   }
@@ -309,11 +316,25 @@ export class FakeGateway implements GatewayPort {
   }
 
   readonly profiles: ProfilesApi = {
-    list: async () => clone(profilesListFixture) as T.ProfilesListResult,
+    list: async () => {
+      const listed = clone(profilesListFixture) as T.ProfilesListResult
+      const recorded = new Set(listed.profiles.map(p => p.name))
+      const created = [...this.profileNames].filter(name => !recorded.has(name)).map(name => ({ name, is_default: false }))
+      return { ...listed, profiles: [...listed.profiles.filter(p => this.profileNames.has(p.name)), ...created] }
+    },
     describe: async () => clone(profilesDescribeFixture) as T.ProfileDescribe,
     configure: async () => ({ ok: true }),
-    create: async () => ({ ok: true }),
-    remove: async () => undefined,
+    create: async params => {
+      // Like `profiles.create` at the pin: an existing name is a FileExistsError, 4062.
+      if (this.profileNames.has(params.name)) {
+        throw new GatewayError('rpc', `Profile '${params.name}' already exists`, { code: 4062 })
+      }
+      this.profileNames.add(params.name)
+      return { ok: true, name: params.name }
+    },
+    remove: async name => {
+      this.profileNames.delete(name)
+    },
     getAsset: async () => clone(assetAvatarFixture) as T.AssetResult,
     setAsset: async () => undefined,
     modelOptions: async () => clone(modelOptionsFixture) as T.ModelOptions,

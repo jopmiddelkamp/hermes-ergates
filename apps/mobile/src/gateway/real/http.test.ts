@@ -48,6 +48,42 @@ describe('HttpClient', () => {
     await expect(http.post('/auth/logout')).resolves.toBeUndefined()
   })
 
+  it('answers the status and the body of any exchange without mapping it', async () => {
+    const { impl } = fetchStub(409, { error: { code: 'conflict', message: 'used' }, receipt: { id: 'r1' } })
+    const http = new HttpClient({ baseUrl: 'http://x', getAuth: () => ({ mode: 'none' }), fetchImpl: impl })
+    await expect(http.exchange('POST', '/api/plugins/ergates/reminders', { a: 1 })).resolves.toEqual({
+      status: 409,
+      body: { error: { code: 'conflict', message: 'used' }, receipt: { id: 'r1' } }
+    })
+  })
+
+  it('lets one request wait longer than the client default', async () => {
+    vi.useFakeTimers()
+    const impl = vi.fn(
+      (_url: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))
+        })
+    ) as unknown as typeof fetch
+    const http = new HttpClient({ baseUrl: 'http://x', getAuth: () => ({ mode: 'none' }), fetchImpl: impl, timeoutMs: 1_000 })
+    let outcome: unknown = 'pending'
+    void http.request('GET', '/slow', undefined, { timeoutMs: 5_000 }).catch((err: unknown) => {
+      outcome = err
+    })
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(outcome).toBe('pending')
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(outcome).toMatchObject({ kind: 'timeout' })
+    vi.useRealTimers()
+  })
+
+  it('sends Content-Type: application/json for every body an exchange carries (the server refuses anything else)', async () => {
+    const { impl, calls } = fetchStub(200, { ok: true })
+    const http = new HttpClient({ baseUrl: 'http://x', getAuth: () => ({ mode: 'none' }), fetchImpl: impl })
+    await http.exchange('PUT', '/api/plugins/ergates/attention/prefs', { profile: '*', muted: false, quiet_start: null, quiet_end: null })
+    expect((calls[0]?.init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
+  })
+
   it('maps a thrown fetch to network', async () => {
     const impl = vi.fn(async () => {
       throw new TypeError('Failed to fetch')

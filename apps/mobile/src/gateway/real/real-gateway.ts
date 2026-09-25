@@ -9,10 +9,11 @@
 import type { WebSocketLike } from '@vendor/hermes/shared/json-rpc-gateway'
 
 import { GatewayError, isGatewayError } from '../errors'
-import type { FilesApi, GatewayConnection, GatewayPort, ProfilesApi, RoutinesApi, SessionsApi, ToolsApi } from '../port'
+import type { ErgatesApi, FilesApi, GatewayConnection, GatewayPort, ProfilesApi, RoutinesApi, SessionsApi, ToolsApi } from '../port'
 import { normalizeTranscriptPage } from '../transcript'
 import type * as T from '../types'
 import { logoutRequest, mintTicket, passwordLogin, readStatus, whoAmI } from './auth'
+import { createErgatesApi } from './ergates-api'
 import { HttpClient, type HttpAuthMode, type HttpAuthState } from './http'
 import type { SecretStore } from './secrets'
 import { SocketSession, type SocketCredential } from './socket'
@@ -38,6 +39,8 @@ interface CookieJar {
 export class RealGateway implements GatewayPort {
   readonly connectionId: string
   readonly http: HttpClient
+  /** The Ergates integration routes, over this connection's auth. */
+  readonly ergates: ErgatesApi
   private readonly options: RealGatewayOptions
   private auth: HttpAuthState = { mode: 'none' }
   private authLoaded: Promise<void> | null = null
@@ -57,6 +60,7 @@ export class RealGateway implements GatewayPort {
       },
       fetchImpl: options.fetchImpl
     })
+    this.ergates = createErgatesApi(this.http)
   }
 
   private key(kind: 'token' | 'cookie' | 'mode'): string {

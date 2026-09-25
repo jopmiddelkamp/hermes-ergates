@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { GatewayError, mapHttpError, mapRpcError, mapSocketClose, redact, userMessage } from './errors'
+import { GatewayError, mapErgatesError, mapHttpError, mapRpcError, mapSocketClose, redact, userMessage } from './errors'
 
 describe('mapHttpError', () => {
   it('maps 401 to unauthorized', () => {
@@ -13,6 +13,22 @@ describe('mapHttpError', () => {
   })
   it('uses the body detail for other statuses', () => {
     expect(mapHttpError(404, { detail: 'Unknown provider' }).message).toBe('Unknown provider')
+  })
+})
+
+describe('mapErgatesError', () => {
+  it('keeps the C3 code and the safe message of an Ergates error body', () => {
+    const err = mapErgatesError(409, { error: { code: 'out_of_order', message: "'configured' cannot be reported before 'plugin_enabled' is done" } })
+    expect(err).toMatchObject({ kind: 'unknown', status: 409, code: 'out_of_order', message: "'configured' cannot be reported before 'plugin_enabled' is done" })
+    expect(mapErgatesError(404, { error: { code: 'not_found', message: 'no proposal' } })).toMatchObject({ kind: 'not_found', code: 'not_found' })
+  })
+  it('maps an answer without a C3 body like any HTTP error', () => {
+    const err = mapErgatesError(401, { detail: 'Unauthorized' })
+    expect(err).toMatchObject({ kind: 'unauthorized', status: 401 })
+    expect(err.code).toBeUndefined()
+  })
+  it('redacts secrets in a server message', () => {
+    expect(mapErgatesError(400, { error: { code: 'invalid', message: 'bad token=abc' } }).message).toBe('bad token=<redacted>')
   })
 })
 

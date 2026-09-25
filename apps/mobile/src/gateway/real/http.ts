@@ -24,6 +24,19 @@ export interface HttpClientOptions {
   timeoutMs?: number
 }
 
+/** One HTTP answer, before any status mapping. */
+export interface HttpExchange {
+  status: number
+  /** The JSON-decoded body, the raw text when it is not JSON, or undefined when empty. */
+  body: unknown
+}
+
+export interface HttpRequestOptions {
+  redirect?: RequestRedirect
+  /** This request's timeout instead of the client default. */
+  timeoutMs?: number
+}
+
 export const SESSION_TOKEN_HEADER = 'X-Hermes-Session-Token'
 const DEFAULT_TIMEOUT_MS = 30_000
 
@@ -105,7 +118,24 @@ export class HttpClient {
     return this.request<T>('DELETE', path)
   }
 
-  async request<T>(method: string, path: string, body?: unknown, opts: { redirect?: RequestRedirect } = {}): Promise<T> {
+  async request<T>(method: string, path: string, body?: unknown, opts: HttpRequestOptions = {}): Promise<T> {
+    const answer = await this.exchange(method, path, body, opts)
+    // A manual redirect (302 after logout) counts as success.
+    if (answer.status >= 300 && answer.status < 400) {
+      return undefined as T
+    }
+    if (answer.status < 200 || answer.status >= 300) {
+      throw mapHttpError(answer.status, answer.body)
+    }
+    return answer.body as T
+  }
+
+  /**
+   * One request with auth, timeout, cookie capture and body parsing, but no
+   * status mapping: the caller decides what each status means. Throws only
+   * when there is no answer (network failure or timeout).
+   */
+  async exchange(method: string, path: string, body?: unknown, opts: HttpRequestOptions = {}): Promise<HttpExchange> {
     const auth = this.getAuth()
     const headers: Record<string, string> = { Accept: 'application/json' }
     if (body !== undefined) {
@@ -118,7 +148,7 @@ export class HttpClient {
       headers.Cookie = auth.cookie
     }
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs)
+    const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? this.timeoutMs)
     let response: Response
     try {
       response = await this.fetchImpl(`${this.baseUrl}${path}`, {
@@ -142,10 +172,6 @@ export class HttpClient {
       this.onSetCookie(mergeCookieHeader(auth.cookie, setCookie))
     }
 
-    // A manual redirect (302 after logout) counts as success.
-    if (response.status >= 300 && response.status < 400) {
-      return undefined as T
-    }
     const text = await response.text()
     let parsed: unknown = undefined
     if (text) {
@@ -155,9 +181,6 @@ export class HttpClient {
         parsed = text
       }
     }
-    if (!response.ok) {
-      throw mapHttpError(response.status, parsed)
-    }
-    return parsed as T
+    return { status: response.status, body: parsed }
   }
 }
