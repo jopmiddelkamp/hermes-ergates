@@ -197,6 +197,21 @@ describe('createSessionController', () => {
     expect(open.getView().state.items.some(i => i.kind === 'assistant' && i.text === 'injected')).toBe(true)
   })
 
+  it('does not notify subscribers when a frame changes nothing', async () => {
+    const gateway = new FakeGateway()
+    const controller = controllerFor(gateway)
+    await controller.open()
+    const listener = vi.fn()
+    controller.subscribe(listener)
+    const before = controller.getView()
+
+    // Another session's frame: the reducer returns the same state.
+    gateway.connectionFor('thijs').emit({ type: 'message.delta', session_id: 'someone-else', seq: 7, payload: { text: 'not ours' } })
+
+    expect(listener).toHaveBeenCalledTimes(0)
+    expect(controller.getView()).toBe(before)
+  })
+
   it('clears the error line on request', async () => {
     const controller = controllerFor(new FakeGateway())
     await controller.send('too early')

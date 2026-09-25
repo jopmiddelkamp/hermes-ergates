@@ -136,7 +136,13 @@ export function createSessionController(options: SessionControllerOptions): Sess
   }
 
   function dispatch(action: SessionAction): void {
-    state = sessionReducer(state, action)
+    const next = sessionReducer(state, action)
+    // The reducer returns the same state for frames it ignores (another
+    // session's, a replayed duplicate): no new view, so no re-render.
+    if (next === state) {
+      return
+    }
+    state = next
     emit()
   }
 
