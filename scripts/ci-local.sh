@@ -7,7 +7,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-JOBS=(lint mobile integration contract)
+JOBS=(lint mobile integration contract deploy)
 
 # The workflow files (actionlint) and this script (bash -n).
 job_lint() {
@@ -83,6 +83,12 @@ job_contract() {
   prepare_hermes_source
   cd "$ROOT/integrations/ergates"
   "${UV_TEST[@]}" pytest contract
+}
+
+job_deploy() {
+  cd "$ROOT"
+  docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config --quiet
+  uv run --no-project --python 3.11 --with pytest --with pyyaml pytest -p no:cacheprovider deploy/tests
 }
 
 main() {
