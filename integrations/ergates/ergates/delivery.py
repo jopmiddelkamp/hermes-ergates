@@ -10,7 +10,10 @@ the next worker sends the row again. Push is therefore at least once, which
 docs/11 section 4.2 allows.
 
 Bookkeeping stays on the outbox row: attempts, backoff (30 s, 120 s, 600 s,
-then 600 s) and give-up after five attempts. The event's own ``state`` is
+then 600 s) and give-up after five attempts. A completion retry that would
+land inside the profile's quiet hours waits until they end, read in the
+Hermes timezone like the first attempt; an approval retry ignores quiet
+hours. The event's own ``state`` is
 never written here, so a failed delivery can never overwrite a resolution
 (roadmap bug 5). An approval that is no longer pending, or past its
 ``expires_at``, is cancelled instead of sent: its push would point the
@@ -35,9 +38,11 @@ import time
 import urllib.parse
 import uuid
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from datetime import tzinfo
+from typing import Any, Callable, Mapping, Optional
 
-from .attention import APPROVAL, COMPLETION, PENDING
+from .attention import APPROVAL, COMPLETION, PENDING, effective_prefs, quiet_until
+from .hermes_adapter import configured_timezone
 from .store import ControlStore
 
 logger = logging.getLogger(__name__)
@@ -133,11 +138,13 @@ class DeliveryWorker:
     def __init__(
         self, store: ControlStore, publish: Callable[[dict], None], settings: NtfySettings, *,
         clock: Callable[[], float] = time.time, owner: str | None = None,
+        zone: Callable[[], Optional[tzinfo]] = configured_timezone,
     ) -> None:
         self._store = store
         self._publish = publish
         self._settings = settings
         self._clock = clock
+        self._zone = zone
         self._owner = owner or f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
 
     def deliver(self, event_id: str) -> bool:
@@ -209,7 +216,15 @@ class DeliveryWorker:
             state, next_attempt_at = "gave_up", None
         else:
             state, next_attempt_at = "due", now + backoff_seconds(attempts)
+        quiet_hours_apply = state == "due" and row["kind"] == COMPLETION
+        # Asked before the write lock: Hermes may read its config.yaml to answer.
+        zone = self._zone() if quiet_hours_apply else None
         with self._store.transaction() as conn:
+            if quiet_hours_apply:
+                prefs = effective_prefs(conn, row["profile"])
+                next_attempt_at = quiet_until(
+                    next_attempt_at, prefs["quiet_start"], prefs["quiet_end"], zone,
+                ) or next_attempt_at
             # "state = 'due' AND lease_owner = ?": a resolution, an expiry, or a
             # worker that took over an expired lease wins over this outcome.
             conn.execute(

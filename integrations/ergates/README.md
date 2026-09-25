@@ -134,7 +134,9 @@ or `uncertain`, and the receipt.
   than 60 s belongs to a creator that died and is reconciled the same way.
 - **Timezone is advisory.** Hermes 0.21.2 has no per-job timezone, so the
   zone stays in the idempotency key and comes back as `timezone_advisory`;
-  a reminder fires in the server's timezone.
+  a reminder fires in the timezone Hermes is configured for
+  (`HERMES_TIMEZONE` or `timezone` in `config.yaml`; server local time when
+  neither is set).
 
 The roadmap's contract C2 names the production `CronPort`,
 `hermes_adapter.HermesCron`. Until it is wired in, no entry point creates
@@ -166,9 +168,11 @@ provisions that profile.
 - `post_llm_call` records a finished turn from `attention.completed_platforms`
   and pushes "A routine finished". It reads only `session_id` and
   `platform`, never the messages.
-- A muted profile gets events but no pushes. Quiet hours (`HH:MM`, server
-  local time, may wrap midnight) hold completion pushes until they end;
-  approval pushes ignore them.
+- A muted profile gets events but no pushes. Quiet hours (`HH:MM`, may wrap
+  midnight) hold completion pushes and their retries until they end;
+  approval pushes and their retries ignore them. They are read in the
+  timezone Hermes is configured for, the zone its cron runs routines in, and
+  in server local time when Hermes has none.
 - A worker leases an outbox row for 60 s before it sends, so two workers
   never send one row at once, and a worker that dies mid-send leaves a lease
   that runs out. Failed attempts back off 30 s, 120 s, 600 s, 600 s; the

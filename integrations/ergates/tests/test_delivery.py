@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import logging
+import sys
 import threading
+import time
+import types
 import urllib.request
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -27,6 +32,7 @@ from ergates.delivery import (
 
 SETTINGS = NtfySettings(server="https://ntfy.example.internal", topic="ergates-alerts", token="secret-token",
                         connection_id="conn-1")
+AMSTERDAM = ZoneInfo("Europe/Amsterdam")
 
 
 class SimulatedCrash(BaseException):
@@ -56,6 +62,16 @@ def attention(store, clock):
 
 
 @pytest.fixture
+def utc(monkeypatch):
+    """Pin the server to UTC, so a test can tell the Hermes timezone from the server's."""
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+@pytest.fixture
 def publisher():
     return Publisher()
 
@@ -74,6 +90,10 @@ def _approval(attention, **overrides):
 
 def _outbox(store, event_id):
     return next(row for row in rows(store, "attention_outbox") if row["event_id"] == event_id)
+
+
+def _utc(text):
+    return datetime.fromisoformat(text).replace(tzinfo=timezone.utc).timestamp()
 
 
 def _event(store, event_id):
@@ -215,6 +235,69 @@ def test_retries_back_off_then_give_up_after_five_attempts(attention, worker, pu
     assert delays == [30, 120, 600, 600]
     assert (outbox["state"], outbox["attempts"]) == ("gave_up", MAX_ATTEMPTS)
     assert worker.run_due() == 0
+
+
+def test_a_completion_retry_that_lands_in_quiet_hours_waits_until_they_end(store, publisher, clock):
+    """21:59:45 in Amsterdam: the first push fails, and its retry 30 s later
+    would fall inside the 22:00-07:00 window of the Hermes timezone."""
+    clock.now = _utc("2026-09-25T19:59:45")
+    attention = AttentionService(store, clock=clock, zone=lambda: AMSTERDAM)
+    attention.set_prefs("thijs", muted=False, quiet_start="22:00", quiet_end="07:00")
+    event_id = attention.turn_completed(session_id="cron-1", profile="thijs", platform="cron",
+                                        platforms=frozenset({"cron"}))
+    worker = DeliveryWorker(store, publisher, SETTINGS, clock=clock, owner="worker-a", zone=lambda: AMSTERDAM)
+    publisher.fail = ConnectionError("down")
+
+    assert worker.deliver(event_id) is False
+
+    outbox = _outbox(store, event_id)
+    assert (outbox["state"], outbox["attempts"]) == ("due", 1)
+    assert outbox["next_attempt_at"] == _utc("2026-09-26T05:00")
+
+
+def test_a_completion_retry_outside_quiet_hours_keeps_its_backoff(store, publisher, clock):
+    clock.now = _utc("2026-09-25T12:00")
+    attention = AttentionService(store, clock=clock, zone=lambda: AMSTERDAM)
+    attention.set_prefs("*", muted=False, quiet_start="22:00", quiet_end="07:00")
+    event_id = attention.turn_completed(session_id="cron-1", profile="thijs", platform="cron",
+                                        platforms=frozenset({"cron"}))
+    worker = DeliveryWorker(store, publisher, SETTINGS, clock=clock, owner="worker-a", zone=lambda: AMSTERDAM)
+    publisher.fail = ConnectionError("down")
+
+    worker.deliver(event_id)
+
+    assert _outbox(store, event_id)["next_attempt_at"] == clock() + 30
+
+
+def test_an_approval_retry_ignores_quiet_hours(store, publisher, clock):
+    """The approval times out after 30 minutes; holding its retry would only hide it."""
+    clock.now = _utc("2026-09-25T19:59:45")
+    attention = AttentionService(store, clock=clock, zone=lambda: AMSTERDAM)
+    attention.set_prefs("*", muted=False, quiet_start="22:00", quiet_end="07:00")
+    event_id = _approval(attention)
+    worker = DeliveryWorker(store, publisher, SETTINGS, clock=clock, owner="worker-a", zone=lambda: AMSTERDAM)
+    publisher.fail = ConnectionError("down")
+
+    worker.deliver(event_id)
+
+    assert _outbox(store, event_id)["next_attempt_at"] == clock() + 30
+
+
+def test_by_default_the_worker_reads_quiet_hours_in_the_hermes_timezone(store, publisher, clock, utc,
+                                                                        monkeypatch):
+    fake = types.ModuleType("hermes_time")
+    fake.get_timezone = lambda: AMSTERDAM
+    monkeypatch.setitem(sys.modules, "hermes_time", fake)
+    clock.now = _utc("2026-09-25T19:59:45")
+    attention = AttentionService(store, clock=clock)
+    attention.set_prefs("thijs", muted=False, quiet_start="22:00", quiet_end="07:00")
+    event_id = attention.turn_completed(session_id="cron-1", profile="thijs", platform="cron",
+                                        platforms=frozenset({"cron"}))
+    publisher.fail = ConnectionError("down")
+
+    DeliveryWorker(store, publisher, SETTINGS, clock=clock, owner="worker-a").deliver(event_id)
+
+    assert _outbox(store, event_id)["next_attempt_at"] == _utc("2026-09-26T05:00")
 
 
 def test_run_due_respects_its_limit(attention, worker, publisher):

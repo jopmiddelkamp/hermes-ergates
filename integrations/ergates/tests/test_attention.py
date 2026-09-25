@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import sys
 import time
-from datetime import datetime
+import types
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -20,6 +23,7 @@ from ergates.attention import (
 )
 
 COMPLETION_PLATFORMS = frozenset({"cron"})
+AMSTERDAM = ZoneInfo("Europe/Amsterdam")
 
 
 @pytest.fixture
@@ -29,7 +33,7 @@ def attention(store, clock) -> AttentionService:
 
 @pytest.fixture
 def utc(monkeypatch):
-    """Quiet hours are server local time; pin the server to UTC for these tests."""
+    """Without a Hermes timezone, quiet hours are server local time; pin the server to UTC."""
     monkeypatch.setenv("TZ", "UTC")
     time.tzset()
     yield
@@ -49,6 +53,11 @@ def _resolve(attention, **overrides):
                   surface="gateway", choice="once")
     values.update(overrides)
     return attention.approval_resolved(**values)
+
+
+def _utc(text: str) -> float:
+    """The epoch of an ISO time read as UTC, whatever the server's own zone."""
+    return datetime.fromisoformat(text).replace(tzinfo=timezone.utc).timestamp()
 
 
 def _event(store, event_id):
@@ -93,6 +102,14 @@ def test_quiet_until_handles_a_window_that_wraps_midnight(utc):
     assert quiet_until(at("2026-09-26T06:59"), "22:00", "07:00") == at("2026-09-26T07:00")
     assert quiet_until(at("2026-09-26T07:00"), "22:00", "07:00") is None
     assert quiet_until(at("2026-09-25T21:59"), "22:00", "07:00") is None
+
+
+def test_quiet_hours_are_read_in_the_zone_hermes_is_configured_for():
+    """21:30 UTC is 23:30 in Amsterdam (CEST): inside 22:00-07:00 there, outside it in UTC."""
+    instant = _utc("2026-09-25T21:30")
+
+    assert quiet_until(instant, "22:00", "07:00", AMSTERDAM) == _utc("2026-09-26T05:00")
+    assert quiet_until(instant, "22:00", "07:00", timezone.utc) is None
 
 
 def test_quiet_until_handles_a_window_inside_one_day(utc):
@@ -250,6 +267,33 @@ def test_quiet_hours_hold_a_completion_push_until_they_end(attention, store, clo
                                         platforms=COMPLETION_PLATFORMS)
 
     assert _outbox(store, event_id)["next_attempt_at"] == datetime.fromisoformat("2026-09-26T07:00").timestamp()
+
+
+def test_quiet_hours_follow_the_hermes_timezone_not_the_server_clock(store, clock, utc):
+    """Hermes cron runs routines in its configured timezone (hermes_time), so
+    quiet hours must too. The server here runs on UTC; Hermes on Amsterdam."""
+    clock.now = _utc("2026-09-25T21:30")
+    attention = AttentionService(store, clock=clock, zone=lambda: AMSTERDAM)
+    attention.set_prefs("thijs", muted=False, quiet_start="22:00", quiet_end="07:00")
+
+    event_id = attention.turn_completed(session_id="s", profile="thijs", platform="cron",
+                                        platforms=COMPLETION_PLATFORMS)
+
+    assert _outbox(store, event_id)["next_attempt_at"] == _utc("2026-09-26T05:00")
+
+
+def test_by_default_the_service_asks_hermes_for_its_timezone(store, clock, utc, monkeypatch):
+    fake = types.ModuleType("hermes_time")
+    fake.get_timezone = lambda: AMSTERDAM
+    monkeypatch.setitem(sys.modules, "hermes_time", fake)
+    clock.now = _utc("2026-09-25T21:30")
+    attention = AttentionService(store, clock=clock)
+    attention.set_prefs("thijs", muted=False, quiet_start="22:00", quiet_end="07:00")
+
+    event_id = attention.turn_completed(session_id="s", profile="thijs", platform="cron",
+                                        platforms=COMPLETION_PLATFORMS)
+
+    assert _outbox(store, event_id)["next_attempt_at"] == _utc("2026-09-26T05:00")
 
 
 def test_a_muted_profile_gets_no_completion_push(attention, store):

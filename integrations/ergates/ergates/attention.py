@@ -18,9 +18,12 @@ approval id at the pin; a ``request_id``, when Hermes supplies one, wins.
 
 Preferences (``attention_prefs``) are per profile, with ``"*"`` as the
 default row. A muted profile gets its events but no outbox rows. Quiet hours
-(``HH:MM`` in server local time; the window may wrap midnight) hold a
-completion push until the window ends. Approval pushes ignore quiet hours:
-the approval would time out first.
+(``HH:MM``; the window may wrap midnight) hold a completion push, and its
+retries, until the window ends. They are read in the timezone Hermes is
+configured for, the zone its cron runs routines in
+(:func:`~ergates.hermes_adapter.configured_timezone`), and in server local
+time when Hermes has none. Approval pushes ignore quiet hours: the approval
+would time out first.
 """
 
 from __future__ import annotations
@@ -32,9 +35,10 @@ import re
 import sqlite3
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 from typing import Any, Callable, Optional
 
+from .hermes_adapter import configured_timezone
 from .store import ControlStore
 
 logger = logging.getLogger(__name__)
@@ -103,11 +107,17 @@ def _minutes(clock: str) -> int:
     return int(hours) * 60 + int(minutes)
 
 
-def quiet_until(now: float, quiet_start: Optional[str], quiet_end: Optional[str]) -> Optional[float]:
-    """The end of the quiet window that contains ``now`` (server local time), or ``None`` outside it."""
+def quiet_until(
+    now: float, quiet_start: Optional[str], quiet_end: Optional[str], zone: Optional[tzinfo] = None,
+) -> Optional[float]:
+    """The end of the quiet window that contains ``now``, or ``None`` outside it.
+
+    The ``HH:MM`` bounds are read in ``zone``, or in server local time when
+    ``zone`` is ``None``.
+    """
     if not quiet_start or not quiet_end or quiet_start == quiet_end:
         return None
-    local = datetime.fromtimestamp(now)
+    local = datetime.fromtimestamp(now, zone)
     minute = local.hour * 60 + local.minute
     start, end = _minutes(quiet_start), _minutes(quiet_end)
     inside = start <= minute < end if start < end else (minute >= start or minute < end)
@@ -117,6 +127,21 @@ def quiet_until(now: float, quiet_start: Optional[str], quiet_end: Optional[str]
     if window_end <= local:
         window_end += timedelta(days=1)
     return window_end.timestamp()
+
+
+def effective_prefs(conn: sqlite3.Connection, profile: Optional[str]) -> dict:
+    """``muted``, ``quiet_start`` and ``quiet_end`` of ``profile``: its row, else the ``"*"`` row, else defaults."""
+    found = {
+        row["profile"]: row
+        for row in conn.execute(
+            "SELECT profile, muted, quiet_start, quiet_end FROM attention_prefs WHERE profile IN (?, ?)",
+            (profile or DEFAULT_PREFS_PROFILE, DEFAULT_PREFS_PROFILE),
+        )
+    }
+    row = found.get(profile) or found.get(DEFAULT_PREFS_PROFILE)
+    if row is None:
+        return dict(_NO_PREFS)
+    return {"muted": bool(row["muted"]), "quiet_start": row["quiet_start"], "quiet_end": row["quiet_end"]}
 
 
 def _check_profile(profile: Any) -> None:
@@ -130,10 +155,12 @@ class AttentionService:
     def __init__(
         self, store: ControlStore, *, clock: Callable[[], float] = time.time,
         approval_ttl_seconds: int = APPROVAL_TTL_SECONDS,
+        zone: Callable[[], Optional[tzinfo]] = configured_timezone,
     ) -> None:
         self._store = store
         self._clock = clock
         self._ttl = approval_ttl_seconds
+        self._zone = zone
 
     def approval_requested(
         self, *, session_key: str | None, pattern_key: str | None, command: str | None,
@@ -154,7 +181,7 @@ class AttentionService:
                 (event_id, APPROVAL, PENDING, profile, session_key, surface,
                  correlation(session_key, pattern_key, command, surface), request_id, now, now + self._ttl),
             )
-            if not self._prefs(conn, profile)["muted"]:
+            if not effective_prefs(conn, profile)["muted"]:
                 self._enqueue(conn, event_id, now, now)
         return event_id
 
@@ -201,6 +228,7 @@ class AttentionService:
         if platform not in platforms:
             return None
         now = self._clock()
+        zone = self._zone()
         event_id = str(uuid.uuid4())
         with self._store.transaction() as conn:
             conn.execute(
@@ -208,9 +236,9 @@ class AttentionService:
                 "resolved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (event_id, COMPLETION, RESOLVED, profile, session_id, platform, now, now),
             )
-            prefs = self._prefs(conn, profile)
+            prefs = effective_prefs(conn, profile)
             if not prefs["muted"]:
-                due = quiet_until(now, prefs["quiet_start"], prefs["quiet_end"]) or now
+                due = quiet_until(now, prefs["quiet_start"], prefs["quiet_end"], zone) or now
                 self._enqueue(conn, event_id, due, now)
         return event_id
 
@@ -218,7 +246,7 @@ class AttentionService:
         """The effective ``AttentionPrefs`` (C3): the profile's row, else the ``"*"`` row, else defaults."""
         _check_profile(profile)
         with self._store.read() as conn:
-            return {"profile": profile, **self._prefs(conn, profile)}
+            return {"profile": profile, **effective_prefs(conn, profile)}
 
     def set_prefs(self, profile: str, *, muted: bool, quiet_start: str | None, quiet_end: str | None) -> dict:
         """Store the preferences of ``profile`` (``"*"`` for the default) and return them."""
@@ -268,20 +296,6 @@ class AttentionService:
                 (PENDING, now - RETENTION_SECONDS),
             )
         return cursor.rowcount
-
-    @staticmethod
-    def _prefs(conn: sqlite3.Connection, profile: str | None) -> dict:
-        found = {
-            row["profile"]: row
-            for row in conn.execute(
-                "SELECT profile, muted, quiet_start, quiet_end FROM attention_prefs WHERE profile IN (?, ?)",
-                (profile or DEFAULT_PREFS_PROFILE, DEFAULT_PREFS_PROFILE),
-            )
-        }
-        row = found.get(profile) or found.get(DEFAULT_PREFS_PROFILE)
-        if row is None:
-            return dict(_NO_PREFS)
-        return {"muted": bool(row["muted"]), "quiet_start": row["quiet_start"], "quiet_end": row["quiet_end"]}
 
     @staticmethod
     def _enqueue(conn: sqlite3.Connection, event_id: str, due: float, now: float) -> None:

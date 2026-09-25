@@ -31,7 +31,8 @@ The receipt keeps hashes, never the prompt (docs/04 sections 4 and 8).
 none, and ``timezone`` is one global config key. The zone stays in the
 idempotency key, so two requests that differ only in zone stay two
 reminders, and comes back on the receipt as ``timezone_advisory``. A
-reminder fires in the server's timezone.
+reminder fires in the timezone Hermes is configured for (``HERMES_TIMEZONE``
+or ``timezone`` in ``config.yaml``; server local time when neither is set).
 """
 
 from __future__ import annotations

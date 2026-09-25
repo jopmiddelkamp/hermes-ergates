@@ -1,11 +1,13 @@
-"""Tests for ergates.paths and ergates.hermes_adapter: where the control store lives."""
+"""Tests for ergates.paths and ergates.hermes_adapter: where the control store lives, and Hermes's timezone."""
 
 import sys
 import types
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
+from ergates import hermes_adapter
 from ergates.hermes_adapter import default_hermes_root
 from ergates.paths import hermes_root, store_path
 
@@ -70,3 +72,45 @@ def test_a_blank_hermes_home_counts_as_unset(without_hermes, monkeypatch, tmp_pa
 
 def test_store_path_is_ergates_control_sqlite3_under_the_root():
     assert store_path(Path("/opt/data")) == Path("/opt/data/ergates/control.sqlite3")
+
+
+# --- Hermes's configured timezone ---------------------------------------------
+
+
+def _hermes_time(monkeypatch, zone):
+    """A stand-in `hermes_time` whose `get_timezone()` returns ``zone``."""
+    fake = types.ModuleType("hermes_time")
+    fake.get_timezone = lambda: zone
+    monkeypatch.setitem(sys.modules, "hermes_time", fake)
+
+
+def test_the_adapter_returns_the_timezone_hermes_is_configured_for(monkeypatch):
+    _hermes_time(monkeypatch, ZoneInfo("Europe/Amsterdam"))
+
+    assert hermes_adapter.configured_timezone() == ZoneInfo("Europe/Amsterdam")
+
+
+def test_the_adapter_returns_no_timezone_when_hermes_has_none_configured(monkeypatch):
+    """`hermes_time.get_timezone()` is None when Hermes runs on server-local time."""
+    _hermes_time(monkeypatch, None)
+
+    assert hermes_adapter.configured_timezone() is None
+
+
+def test_the_adapter_returns_no_timezone_outside_a_hermes_runtime(monkeypatch):
+    monkeypatch.setitem(sys.modules, "hermes_time", None)
+
+    assert hermes_adapter.configured_timezone() is None
+
+
+def test_the_adapter_returns_no_timezone_when_hermes_time_cannot_import_what_it_needs(monkeypatch):
+    """`get_timezone()` imports `agent.secret_scope` lazily, on its first call."""
+    fake = types.ModuleType("hermes_time")
+
+    def get_timezone():
+        raise ImportError("No module named 'agent'")
+
+    fake.get_timezone = get_timezone
+    monkeypatch.setitem(sys.modules, "hermes_time", fake)
+
+    assert hermes_adapter.configured_timezone() is None

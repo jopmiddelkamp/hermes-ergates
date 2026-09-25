@@ -12,6 +12,7 @@ Hermes: the test suite and ``python -m ergates.flush`` run without it.
 
 from __future__ import annotations
 
+from datetime import tzinfo
 from pathlib import Path
 
 
@@ -27,3 +28,20 @@ def default_hermes_root() -> Path | None:
     except ImportError:
         return None
     return Path(get_default_hermes_root())
+
+
+def configured_timezone() -> tzinfo | None:
+    """``hermes_time.get_timezone()``: the zone Hermes cron runs routines in.
+
+    That is ``HERMES_TIMEZONE``, else ``timezone`` in the active profile's
+    ``config.yaml``. ``None`` when neither is set (Hermes then uses server
+    local time) and outside a Hermes runtime. ``contract/test_hermes_adapter.py``
+    pins the call and that cron evaluates its schedules in this zone.
+    """
+    try:
+        from hermes_time import get_timezone
+
+        # Imports agent.secret_scope on its first call.
+        return get_timezone()
+    except ImportError:
+        return None
