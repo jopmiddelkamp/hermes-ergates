@@ -130,6 +130,28 @@ class StoreError(Exception):
     """The store cannot be used: it is closed, or a newer plugin wrote its schema."""
 
 
+def _give_to_hermes_owner(paths: list[Path], hermes_root: Path) -> None:
+    """Give ``paths`` the owner and group of ``hermes_root`` when this process runs as root.
+
+    A root ``docker compose exec ... python -m ergates.flush`` can be the
+    first process to open the store. Without this, the folder and the file
+    stay root's, ``0700`` and ``0600``, and the ``hermes`` user that runs every
+    Hermes service cannot open the store: ``register()`` raises and the plugin
+    is gone. Only what this process created in this call is passed in; an
+    existing folder or file keeps its owner. Does nothing when the process is
+    not root, or the platform has no ``os.geteuid``.
+    """
+    geteuid = getattr(os, "geteuid", None)
+    if not paths or geteuid is None or geteuid() != 0:
+        return
+    owner = os.stat(hermes_root)
+    for path in paths:
+        try:
+            os.chown(path, owner.st_uid, owner.st_gid)
+        except FileNotFoundError:
+            pass  # SQLite removed a -wal or -shm file when its last connection closed
+
+
 class ControlStore:
     """Transactional SQLite store for receipts, attention events and the push outbox."""
 
@@ -137,7 +159,14 @@ class ControlStore:
         self._path = Path(path)
         self._timeout = busy_timeout_ms / 1000.0
         self._closed = False
-        self._path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        folder = self._path.parent
+        created: list[Path] = []
+        try:
+            folder.mkdir(mode=0o700, parents=True)
+        except FileExistsError:
+            pass
+        else:
+            created.append(folder)
         try:
             # Create the file ourselves so it is private from the first byte;
             # SQLite gives the -wal and -shm files the same permissions.
@@ -146,7 +175,14 @@ class ControlStore:
             pass
         else:
             os.close(fd)
+            created.append(self._path)
+        # Before the first connection, so SQLite finds the file already owned
+        # by the Hermes user.
+        _give_to_hermes_owner(created, folder.parent)
+        sidecars = [self._path.with_name(self._path.name + suffix) for suffix in ("-wal", "-shm")]
+        new_sidecars = [item for item in sidecars if not item.exists()] if self._path in created else []
         self._migrate()
+        _give_to_hermes_owner([item for item in new_sidecars if item.exists()], folder.parent)
 
     @property
     def path(self) -> Path:

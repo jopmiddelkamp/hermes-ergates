@@ -60,6 +60,115 @@ def test_the_store_file_and_folder_are_private(store):
     assert stat.S_IMODE(os.stat(store.path.parent).st_mode) == 0o700
 
 
+HERMES_OWNER = (4242, 4343)
+
+
+@pytest.fixture
+def as_root(tmp_path, monkeypatch):
+    """This process runs as root, and the Hermes root ``tmp_path`` belongs to ``HERMES_OWNER``.
+
+    Returns the list of ``(path, uid, gid)`` calls to ``os.chown``, which is
+    recorded instead of run.
+    """
+    real_stat = os.stat
+
+    def stat_with_hermes_owner(path, *args, **kwargs):
+        result = real_stat(path, *args, **kwargs)
+        if not isinstance(path, (str, os.PathLike)) or Path(path) != tmp_path:
+            return result
+        values = list(result)
+        values[4], values[5] = HERMES_OWNER
+        return os.stat_result(values)
+
+    calls: list[tuple[Path, int, int]] = []
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setattr(os, "stat", stat_with_hermes_owner)
+    monkeypatch.setattr(os, "chown", lambda path, uid, gid: calls.append((Path(path), uid, gid)))
+    return calls
+
+
+def test_a_store_created_by_root_belongs_to_the_owner_of_the_hermes_root(tmp_path, as_root):
+    """A root `docker compose exec ... python -m ergates.flush` that runs before
+    any Hermes service must not leave a store the `hermes` user cannot open."""
+    path = tmp_path / "ergates" / "control.sqlite3"
+
+    ControlStore(path)
+
+    assert as_root == [(path.parent, *HERMES_OWNER), (path, *HERMES_OWNER)]
+
+
+def test_root_also_hands_over_the_wal_files_sqlite_created_in_that_call(tmp_path, as_root, monkeypatch):
+    """Another connection that stays open keeps -wal and -shm on disk after the store is created."""
+    path = tmp_path / "ergates" / "control.sqlite3"
+    keeper: list[sqlite3.Connection] = []
+    use_wal = ControlStore._use_wal
+
+    def use_wal_then_hold_the_file_open(self, conn):
+        use_wal(self, conn)
+        keeper.append(sqlite3.connect(path))
+        keeper[0].execute("SELECT count(*) FROM sqlite_master").fetchone()
+
+    monkeypatch.setattr(ControlStore, "_use_wal", use_wal_then_hold_the_file_open)
+    try:
+        ControlStore(path)
+        wal, shm = (path.with_name(path.name + suffix) for suffix in ("-wal", "-shm"))
+        assert wal.exists() and shm.exists()
+    finally:
+        keeper[0].close()
+
+    assert as_root == [(path.parent, *HERMES_OWNER), (path, *HERMES_OWNER), (wal, *HERMES_OWNER),
+                       (shm, *HERMES_OWNER)]
+
+
+def test_a_file_that_vanished_before_its_chown_is_skipped(tmp_path, monkeypatch):
+    """A -wal or -shm file disappears when the last connection closes."""
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+
+    def chown_a_vanished_file(path, uid, gid):
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(os, "chown", chown_a_vanished_file)
+
+    assert ControlStore(tmp_path / "ergates" / "control.sqlite3").schema_version == SCHEMA_VERSION
+
+
+def test_a_store_created_by_another_user_changes_no_owner(tmp_path, as_root, monkeypatch):
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+
+    ControlStore(tmp_path / "ergates" / "control.sqlite3")
+
+    assert as_root == []
+
+
+def test_a_platform_without_geteuid_changes_no_owner(tmp_path, as_root, monkeypatch):
+    monkeypatch.delattr(os, "geteuid")
+
+    ControlStore(tmp_path / "ergates" / "control.sqlite3")
+
+    assert as_root == []
+
+
+def test_root_leaves_an_existing_store_alone(tmp_path, monkeypatch):
+    path = tmp_path / "ergates" / "control.sqlite3"
+    ControlStore(path)
+    calls = []
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setattr(os, "chown", lambda *args: calls.append(args))
+
+    ControlStore(path)
+
+    assert calls == []
+
+
+def test_root_leaves_an_existing_folder_alone_and_hands_over_only_the_new_file(tmp_path, as_root):
+    path = tmp_path / "ergates" / "control.sqlite3"
+    path.parent.mkdir()
+
+    ControlStore(path)
+
+    assert as_root == [(path, *HERMES_OWNER)]
+
+
 def test_reopening_keeps_the_data_and_does_not_migrate_again(store):
     with store.transaction() as conn:
         _add_prefs(conn, "thijs")

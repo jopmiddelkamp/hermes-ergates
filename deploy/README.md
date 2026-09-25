@@ -201,10 +201,14 @@ arguments are `--profile` and `--quiet`.
 Add this to the host's crontab (`crontab -e`), every two minutes:
 
 ```cron
-*/2 * * * * cd /srv/ergates/deploy && /usr/bin/docker compose exec -T -e PYTHONPATH=/opt/data/plugins/ergates hermes-serve python -m ergates.flush >> /var/log/ergates-flush.log 2>&1
+*/2 * * * * cd /srv/ergates/deploy && /usr/bin/docker compose exec -T -u hermes -e PYTHONPATH=/opt/data/plugins/ergates hermes-serve python -m ergates.flush >> /var/log/ergates-flush.log 2>&1
 ```
 
 - `-T` disables the pseudo-TTY, which a cron job has no use for.
+- `-u hermes` runs the sweep as the image's `hermes` user, the user every
+  Hermes service runs as. `docker compose exec` runs as root otherwise.
+  A store that root creates is handed to the owner of `/opt/data`, but a
+  sweep as `hermes` never needs that.
 - `PYTHONPATH=/opt/data/plugins/ergates` puts the mounted plugin directory
   on the import path; the package inside it is `ergates/`.
 - Adjust `cd /srv/ergates/deploy` to wherever you cloned this repo, and
@@ -215,7 +219,7 @@ Add this to the host's crontab (`crontab -e`), every two minutes:
 Run it once by hand first; it prints one line of counts:
 
 ```bash
-docker compose exec -T -e PYTHONPATH=/opt/data/plugins/ergates hermes-serve python -m ergates.flush
+docker compose exec -T -u hermes -e PYTHONPATH=/opt/data/plugins/ergates hermes-serve python -m ergates.flush
 # ergates.flush: retried=0 expired_notifications=0 pruned_notifications=0 pruned_proposals=0 pruned_reminders=0
 ```
 
