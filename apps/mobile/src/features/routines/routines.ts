@@ -4,17 +4,35 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useRef } from 'react'
 
 import type { GatewayPort } from '@/gateway/port'
 import type { CronJob, CronRun } from '@/gateway/types'
 
+import { ReminderAttempts } from './reminders'
+
 export const routinePrefix = (profile: string) => `[bot:${profile}] `
 const TAG_RE = /^\[bot:([a-z0-9][a-z0-9_-]*)\]\s*/i
+/**
+ * The tag the Ergates reminder route appends to a job name:
+ * `[bot:<profile>] <label> · <8 hex>` (integrations/ergates/ergates/reminders.py
+ * `routine_name`). The server finds an uncertain create's job by that name.
+ */
+const REMINDER_TAG_RE = / · [0-9a-f]{8}$/
+
+/** The reminder label the server accepts (roadmap contract C3, `LABEL_MAX_LEN`). */
+export const ROUTINE_NAME_MAX_LEN = 64
 
 export function displayName(job: CronJob, profile: string): string {
-  const name = (job.name ?? '').trim()
+  const name = (job.name ?? '').trim().replace(REMINDER_TAG_RE, '')
   const stripped = name.startsWith(routinePrefix(profile)) ? name.slice(routinePrefix(profile).length) : name.replace(TAG_RE, '')
   return stripped.trim() || 'Untitled routine'
+}
+
+/** The job name for a renamed routine. A reminder keeps its tag, so the server can still find its job. */
+export function routineName(profile: string, title: string, job: CronJob | null): string {
+  const tag = REMINDER_TAG_RE.exec(job?.name ?? '')?.[0] ?? ''
+  return `${routinePrefix(profile)}${title.trim()}${tag}`
 }
 
 export function belongsTo(job: CronJob, profile: string): boolean {
@@ -78,6 +96,8 @@ export function validateRoutine(d: RoutineDraft): Partial<Record<keyof RoutineDr
   const errors: Partial<Record<keyof RoutineDraft, string>> = {}
   if (!d.title.trim()) {
     errors.title = 'Give the routine a name.'
+  } else if (d.title.trim().length > ROUTINE_NAME_MAX_LEN) {
+    errors.title = `Keep the name to ${ROUTINE_NAME_MAX_LEN} characters.`
   }
   if (!d.instruction.trim()) {
     errors.instruction = 'Say what the assistant should do.'
@@ -86,10 +106,6 @@ export function validateRoutine(d: RoutineDraft): Partial<Record<keyof RoutineDr
     errors.schedule = 'Set a schedule, for example "every day at 09:00" or "0 9 * * 1".'
   }
   return errors
-}
-
-export function createBody(profile: string, d: RoutineDraft): Record<string, unknown> {
-  return { name: `${routinePrefix(profile)}${d.title.trim()}`, schedule: d.schedule.trim(), prompt: d.instruction.trim() }
 }
 
 export const routinesKey = (connectionId: string, profile: string) => ['routines', connectionId, profile] as const
@@ -111,17 +127,35 @@ export function useRoutineRuns(port: GatewayPort, connectionId: string, profile:
   })
 }
 
+/**
+ * Creates a routine through the Ergates reminder route (docs/11 section 4.3).
+ * One `ReminderAttempts` per form: saving the same routine again reuses its
+ * request id. Never retried automatically.
+ */
+export function useCreateReminder(port: GatewayPort, connectionId: string, profile: string) {
+  const client = useQueryClient()
+  const attempts = useRef<ReminderAttempts | null>(null)
+  return useMutation({
+    mutationFn: ({ draft, timezone }: { draft: RoutineDraft; timezone: string }) => {
+      attempts.current ??= new ReminderAttempts()
+      return port.ergates.createReminder(attempts.current.requestFor(profile, draft, timezone))
+    },
+    retry: 0,
+    onSettled: () => client.invalidateQueries({ queryKey: routinesKey(connectionId, profile) })
+  })
+}
+
 export function useRoutineMutations(port: GatewayPort, connectionId: string, profile: string) {
   const client = useQueryClient()
   const invalidate = () => client.invalidateQueries({ queryKey: routinesKey(connectionId, profile) })
-  const create = useMutation({ mutationFn: (d: RoutineDraft) => port.routines.create(profile, createBody(profile, d)), onSettled: invalidate })
   const update = useMutation({
-    mutationFn: ({ id, d }: { id: string; d: RoutineDraft }) => port.routines.update(id, { name: `${routinePrefix(profile)}${d.title.trim()}`, schedule: d.schedule.trim(), prompt: d.instruction.trim() }, profile),
+    mutationFn: ({ job, d }: { job: CronJob; d: RoutineDraft }) =>
+      port.routines.update(job.id, { name: routineName(profile, d.title, job), schedule: d.schedule.trim(), prompt: d.instruction.trim() }, profile),
     onSettled: invalidate
   })
   const pause = useMutation({ mutationFn: (id: string) => port.routines.pause(id, profile), onSettled: invalidate })
   const resume = useMutation({ mutationFn: (id: string) => port.routines.resume(id, profile), onSettled: invalidate })
   const trigger = useMutation({ mutationFn: (id: string) => port.routines.trigger(id, profile), onSettled: invalidate })
   const remove = useMutation({ mutationFn: (id: string) => port.routines.remove(id, profile), onSettled: invalidate })
-  return { create, update, pause, resume, trigger, remove, invalidate }
+  return { update, pause, resume, trigger, remove, invalidate }
 }

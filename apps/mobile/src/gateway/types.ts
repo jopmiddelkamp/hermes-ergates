@@ -635,7 +635,7 @@ export interface ErgatesHealth {
 export interface ReminderRequest {
   profile: string
   schedule: string
-  /** IANA zone name, for example `Europe/Amsterdam`. Advisory: Hermes cron runs in the server's zone. */
+  /** IANA zone name, for example `Europe/Amsterdam`. Advisory: Hermes cron runs in Hermes's configured time zone, not the phone's. */
   timezone: string
   prompt: string
   /** One per create attempt, unique across every profile of the install: `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. */

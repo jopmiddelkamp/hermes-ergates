@@ -1,6 +1,8 @@
 /**
  * Routine editor (docs/02 section 3.6 FR-176, docs/10 "Settings and agent
  * details"): create or edit one Hermes cron job scoped to this profile.
+ * A new routine goes through the Ergates reminder route (docs/11 section
+ * 4.3), so a resend never makes a second job; editing stays on native cron.
  * Active is a lifecycle action (pause/resume) applied immediately, separate
  * from Save, which only writes name/instruction/schedule.
  */
@@ -13,11 +15,14 @@ import {
   displayName,
   isActive,
   nextRunLabel,
+  reminderResult,
   toDate,
+  useCreateReminder,
   useRoutineMutations,
   useRoutineRuns,
   useRoutines,
   validateRoutine,
+  type ReminderResult,
   type RoutineDraft
 } from '@/features/routines'
 import { usePrimaryConnection } from '@/features/settings'
@@ -77,6 +82,8 @@ function RoutineEditor({
   const isNew = id === 'new'
   const routines = useRoutines(gateway, connection.id, profile)
   const mutations = useRoutineMutations(gateway, connection.id, profile)
+  const createReminder = useCreateReminder(gateway, connection.id, profile)
+  const [notice, setNotice] = useState<ReminderResult | null>(null)
   const runs = useRoutineRuns(gateway, connection.id, profile, isNew ? null : id)
   const tz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
 
@@ -95,18 +102,33 @@ function RoutineEditor({
 
   const errors = validateRoutine(draft)
   const toggleBusy = mutations.pause.isPending || mutations.resume.isPending
-  const saveBusy = mutations.create.isPending || mutations.update.isPending
+  const saveBusy = createReminder.isPending || mutations.update.isPending
+
+  const onCreate = async () => {
+    // One call per tap: an uncertain answer waits for the user, who may tap again (same request id).
+    const result = await createReminder.mutateAsync({ draft, timezone: tz }).then(
+      outcome => reminderResult(outcome, null),
+      (err: unknown) => reminderResult(undefined, err)
+    )
+    if (result.kind === 'created') {
+      onClose()
+    } else {
+      setNotice(result)
+    }
+  }
 
   const onSave = async () => {
     setSubmitted(true)
     if (Object.keys(errors).length > 0) {
       return
     }
+    if (isNew) {
+      await onCreate()
+      return
+    }
     try {
-      if (isNew) {
-        await mutations.create.mutateAsync(draft)
-      } else if (job) {
-        await mutations.update.mutateAsync({ id: job.id, d: draft })
+      if (job) {
+        await mutations.update.mutateAsync({ job, d: draft })
       }
       onClose()
     } catch (err) {
@@ -224,8 +246,18 @@ function RoutineEditor({
             </View>
           ) : null}
 
+          {notice && notice.kind !== 'created' ? (
+            <Text style={[styles.hint, { color: notice.kind === 'uncertain' ? theme.colors.mutedForeground : theme.colors.destructive }]} accessibilityRole="alert">
+              {notice.message}
+            </Text>
+          ) : null}
           <View style={styles.actions}>
-            <Button label={saveBusy ? 'Saving…' : 'Save'} onPress={() => void onSave()} loading={saveBusy} accessibilityLabel="Save routine" />
+            <Button
+              label={saveBusy ? 'Saving…' : notice?.kind === 'uncertain' ? 'Try again' : 'Save'}
+              onPress={() => void onSave()}
+              loading={saveBusy}
+              accessibilityLabel="Save routine"
+            />
             {job ? (
               <Button
                 label="Test run"

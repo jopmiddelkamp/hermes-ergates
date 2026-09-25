@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { CronJob } from '@/gateway/types'
 import jobs from '@test/fixtures/cron-jobs.json'
 
-import { belongsTo, createBody, displayName, isFinishedOneShot, nextRunLabel, validateRoutine } from './routines'
+import { belongsTo, displayName, isFinishedOneShot, nextRunLabel, routineName, validateRoutine } from './routines'
 
 const job = (jobs as CronJob[])[0]!
 
@@ -12,6 +12,16 @@ describe('routine helpers', () => {
     expect(displayName(job, 'kevin')).toBe('Weekly check-in')
     expect(displayName({ ...job, name: '[bot:other] X' }, 'kevin')).toBe('X')
     expect(displayName({ ...job, name: '' }, 'kevin')).toBe('Untitled routine')
+  })
+  it('strips the reminder tag the server adds to a job name', () => {
+    // integrations/ergates/ergates/reminders.py `routine_name`: `[bot:<profile>] <label> · <8 hex>`.
+    expect(displayName({ ...job, name: '[bot:kevin] Invoices · 1a2b3c4d' }, 'kevin')).toBe('Invoices')
+    expect(displayName({ ...job, name: '[bot:kevin] reminder · 0f9e8d7c' }, 'kevin')).toBe('reminder')
+    expect(displayName({ ...job, name: '[bot:kevin] Tea · Coffee' }, 'kevin')).toBe('Tea · Coffee')
+  })
+  it('keeps the reminder tag when a routine is renamed', () => {
+    expect(routineName('kevin', ' Leg day ', { ...job, name: '[bot:kevin] Invoices · 1a2b3c4d' })).toBe('[bot:kevin] Leg day · 1a2b3c4d')
+    expect(routineName('kevin', 'Leg day', { ...job, name: '[bot:kevin] Weekly check-in' })).toBe('[bot:kevin] Leg day')
   })
   it('scopes jobs by profile field or name tag', () => {
     expect(belongsTo(job, 'kevin')).toBe(true)
@@ -37,8 +47,9 @@ describe('routine helpers', () => {
     expect(isFinishedOneShot({ ...job, repeat: { times: 1 }, last_run: '2026-09-10T09:00:00Z', next_run: null })).toBe(true)
     expect(isFinishedOneShot({ ...job, state: 'completed' })).toBe(true)
   })
-  it('validates and builds the create body with the prefix', () => {
+  it('validates a routine, with a name that fits the reminder label', () => {
     expect(validateRoutine({ title: '', instruction: '', schedule: '' })).toEqual({ title: expect.any(String), instruction: expect.any(String), schedule: expect.any(String) })
-    expect(createBody('kevin', { title: ' Leg day ', instruction: 'Remind me', schedule: 'every monday at 09:00' })).toEqual({ name: '[bot:kevin] Leg day', schedule: 'every monday at 09:00', prompt: 'Remind me' })
+    expect(validateRoutine({ title: 'x'.repeat(65), instruction: 'Remind me', schedule: '0 9 * * *' })).toEqual({ title: 'Keep the name to 64 characters.' })
+    expect(validateRoutine({ title: 'x'.repeat(64), instruction: 'Remind me', schedule: '0 9 * * *' })).toEqual({})
   })
 })
