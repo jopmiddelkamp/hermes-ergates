@@ -69,7 +69,7 @@ def hermes(monkeypatch):
 @pytest.fixture
 def source(tmp_path):
     folder = tmp_path / "source"
-    _write(folder, "bookkeeper-readonly", _template("bookkeeper-readonly"))
+    _write(folder, "bookkeeper", _template("bookkeeper"))
     _write(folder, "general-assistant", _template("general-assistant", ("web", "file")))
     return folder
 
@@ -78,11 +78,11 @@ def test_it_installs_the_templates_and_enables_the_plugin_in_every_profile(root,
     assert main(["--templates", str(source)]) == 0
 
     target = templates_dir(root)
-    assert sorted(path.name for path in target.iterdir()) == ["bookkeeper-readonly.json", "general-assistant.json"]
+    assert sorted(path.name for path in target.iterdir()) == ["bookkeeper.json", "general-assistant.json"]
     assert (target / "general-assistant.json").read_bytes() == (source / "general-assistant.json").read_bytes()
     assert hermes.enabled == {"default", "thijs"}
     assert capsys.readouterr().out.splitlines() == [
-        "ergates.install: templates=installed (bookkeeper-readonly, general-assistant)",
+        "ergates.install: templates=installed (bookkeeper, general-assistant)",
         "ergates.install: profile=default plugin=enabled",
         "ergates.install: profile=thijs plugin=enabled",
     ]
@@ -95,7 +95,7 @@ def test_the_server_ends_with_exactly_the_source_templates(root, hermes, source)
     assert main(["--templates", str(source)]) == 0
 
     target = templates_dir(root)
-    assert sorted(path.stem for path in target.glob("*.json")) == ["bookkeeper-readonly", "general-assistant"]
+    assert sorted(path.stem for path in target.glob("*.json")) == ["bookkeeper", "general-assistant"]
     assert json.loads((target / "general-assistant.json").read_text())["enabled_toolsets"] == ["web", "file"]
     assert [path.name for path in target.iterdir() if path.name.startswith(".")] == []
 
@@ -130,7 +130,7 @@ def test_check_reports_without_changing_anything(root, hermes, source, capsys):
     assert not templates_dir(root).exists()
     assert hermes.enable_calls == []
     assert capsys.readouterr().out.splitlines() == [
-        "ergates.install: templates=differ (bookkeeper-readonly, general-assistant)",
+        "ergates.install: templates=differ (bookkeeper, general-assistant)",
         "ergates.install: profile=default plugin=not enabled",
         "ergates.install: profile=thijs plugin=not enabled",
     ]
@@ -171,6 +171,39 @@ def test_it_needs_the_hermes_runtime(root, source, monkeypatch, capsys):
 def test_it_names_a_missing_template_folder(root, hermes, tmp_path, capsys):
     assert main(["--templates", str(tmp_path / "nope")]) == 2
     assert "no template folder" in capsys.readouterr().err
+
+
+def test_an_empty_template_folder_refuses_to_install_and_keeps_what_is_there(root, hermes, source, tmp_path, capsys):
+    """An empty source (a missing bind-mount source Docker creates as an empty
+    folder is a realistic trigger) must not be read as "the reviewed set is
+    now empty": that would delete every installed template and leave every
+    proposal accept failing until the next correct install."""
+    assert main(["--templates", str(source)]) == 0
+    before = {path.name: path.read_bytes() for path in templates_dir(root).iterdir()}
+    hermes.enable_calls.clear()
+    capsys.readouterr()
+    empty = tmp_path / "empty"
+    empty.mkdir()
+
+    assert main(["--templates", str(empty)]) == 2
+
+    assert {path.name: path.read_bytes() for path in templates_dir(root).iterdir()} == before
+    assert hermes.enable_calls == []
+    assert "no templates found" in capsys.readouterr().err
+
+
+def test_check_on_an_empty_template_folder_still_reports_differ(root, hermes, source, tmp_path, capsys):
+    """``--check`` must keep reaching the per-profile lines a live gateway check
+    depends on, so an empty source stays a plain mismatch there, not a refusal."""
+    assert main(["--templates", str(source)]) == 0
+    capsys.readouterr()
+    empty = tmp_path / "empty"
+    empty.mkdir()
+
+    assert main(["--templates", str(empty), "--check"]) == 1
+
+    assert capsys.readouterr().out.splitlines()[0] == "ergates.install: templates=differ (none)"
+    assert sorted(path.name for path in templates_dir(root).iterdir()) == ["bookkeeper.json", "general-assistant.json"]
 
 
 def test_it_names_a_missing_hermes_home(tmp_path, monkeypatch, source, capsys):

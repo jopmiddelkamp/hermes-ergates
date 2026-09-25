@@ -7,6 +7,7 @@ that home enables it.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ergates.hermes_adapter import plugin_enabled, profile_names
@@ -21,7 +22,7 @@ def test_install_enables_the_plugin_in_every_profile_and_installs_the_shipped_te
     make_profile("pia")
     make_profile("quin")
 
-    result = main(["--templates", str(SHIPPED)])
+    main(["--templates", str(SHIPPED)])
 
     names = profile_names()
     assert {"default", "pia", "quin"} <= set(names)
@@ -34,10 +35,22 @@ def test_install_enables_the_plugin_in_every_profile_and_installs_the_shipped_te
     assert installed == sorted(path.name for path in SHIPPED.glob("*.json"))
     for path in SHIPPED.glob("*.json"):
         assert load_template(templates_dir(root), path.stem)["template_id"] == path.stem
-    # A second run changes nothing and reports the same result, whatever it was (some other
-    # profile in the shared root may already be unfixably broken -- see above).
-    assert main(["--templates", str(SHIPPED), "--check"]) == result
-    assert "profile=pia plugin=enabled" in capsys.readouterr().out
+
+    capsys.readouterr()  # drain the install run's own output; --check must report its own facts
+    check_code = main(["--templates", str(SHIPPED), "--check"])
+    lines = capsys.readouterr().out.splitlines()
+
+    shipped_ids = sorted(path.stem for path in SHIPPED.glob("*.json"))
+    assert lines[0] == f"ergates.install: templates=installed ({', '.join(shipped_ids)})"
+    profile_states = dict(
+        re.match(r"ergates\.install: profile=(\S+) plugin=(.+)", line).groups() for line in lines[1:]
+    )
+    assert profile_states["default"] == "enabled"
+    assert profile_states["pia"] == "enabled"
+    assert profile_states["quin"] == "enabled"
+    # A broken profile some other live test module left behind (see above) still makes --check
+    # answer 1; the exit code is derived from --check's own lines, not asserted as a fixed value.
+    assert check_code == (0 if all(state == "enabled" for state in profile_states.values()) else 1)
 
 
 def test_every_shipped_template_names_only_toolsets_hermes_knows(root):

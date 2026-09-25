@@ -15,7 +15,7 @@ Two things a new deployment and every update need, both safe to repeat:
    runs for the default profile and every named one. The app's provisioning
    does the same for a profile it creates.
 
-``--check`` writes nothing and reports the same facts. The exit code is 0
+``--check`` changes no template or plugin setting and reports the same facts. The exit code is 0
 when every profile would load the plugin and the installed templates equal
 the source, 1 when not, and 2 when the command cannot run: no Hermes
 runtime, no source folder, or root on a Hermes root that another user owns
@@ -64,9 +64,16 @@ def source_templates(source: Path) -> dict[str, bytes]:
 
 
 def install_templates(templates: dict[str, bytes], target: Path) -> None:
-    """Make ``target`` hold exactly ``templates``; each file is replaced atomically."""
+    """Make ``target`` hold exactly ``templates``; each file is replaced atomically.
+
+    ``Path.mkdir(parents=True)`` gives only the leaf its ``mode``; a missing
+    parent gets the default mode. The store folder must be 0700 even when the
+    installer runs before the store first opens, so it is created first, on
+    its own.
+    """
     target = Path(target)
-    target.mkdir(mode=0o700, parents=True, exist_ok=True)
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    target.mkdir(mode=0o700, exist_ok=True)
     for template_id, content in templates.items():
         staging = target / f".{template_id}.json.tmp"
         staging.write_bytes(content)
@@ -108,6 +115,9 @@ def main(argv: Optional[list] = None) -> int:
     except TemplateSourceError as exc:
         print(f"ergates.install: {exc}; nothing was installed", file=sys.stderr)
         return 1
+    if not templates and not args.check:
+        print(f"ergates.install: no templates found at {args.templates}; nothing was installed", file=sys.stderr)
+        return 2
     try:
         profiles = hermes_adapter.profile_names()
     except ImportError:
