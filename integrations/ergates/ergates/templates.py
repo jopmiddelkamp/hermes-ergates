@@ -3,7 +3,7 @@
 One JSON file per template, ``<hermes root>/ergates/templates/<template_id>.json``,
 with exactly the ``ProposalTemplate`` fields::
 
-    {"template_id": "bookkeeper-readonly", "soul": "...",
+    {"template_id": "bookkeeper", "soul": "...",
      "enabled_toolsets": ["file"], "enabled_mcp_servers": []}
 
 The server only reads them; ``python -m ergates.install`` installs them

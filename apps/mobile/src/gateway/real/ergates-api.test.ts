@@ -64,7 +64,7 @@ const proposal: AgentProposal = {
   proposal_id: 'p-1',
   expires_at: '2026-09-26T10:00:00Z',
   source_session_id: 'concierge-1',
-  agent: { name: 'pim', title: 'Pim', role: 'Bookkeeper', description: 'Keeps the books.', template_id: 'bookkeeper-readonly', provider: 'p', model: 'm' },
+  agent: { name: 'pim', title: 'Pim', role: 'Bookkeeper', description: 'Keeps the books.', template_id: 'bookkeeper', provider: 'p', model: 'm' },
   briefing: 'Seed facts.'
 }
 
@@ -194,7 +194,7 @@ describe('ErgatesApi over the real gateway', () => {
   it('reads, accepts, rejects and reports proposal steps', async () => {
     const answers: Record<string, [number, unknown]> = {
       'GET /api/plugins/ergates/proposals/p-1': [200, { proposal: receiptOf('proposed') }],
-      'POST /api/plugins/ergates/proposals/p-1/accept': [200, { proposal: { ...receiptOf('accepted'), template: { template_id: 'bookkeeper-readonly', soul: 'S', enabled_toolsets: ['file'], enabled_mcp_servers: [] } } }],
+      'POST /api/plugins/ergates/proposals/p-1/accept': [200, { proposal: { ...receiptOf('accepted'), template: { template_id: 'bookkeeper', soul: 'S', enabled_toolsets: ['file'], enabled_mcp_servers: [] } } }],
       'POST /api/plugins/ergates/proposals/p-1/reject': [200, { proposal: receiptOf('rejected') }],
       'POST /api/plugins/ergates/proposals/p-1/steps': [200, { proposal: { ...receiptOf('accepted'), completed_steps: ['profile_created'], next_step: 'plugin_enabled' } }]
     }

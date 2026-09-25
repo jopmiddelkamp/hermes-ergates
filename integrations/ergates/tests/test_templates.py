@@ -9,7 +9,7 @@ from ergates.proposals import ProposalError
 from ergates.templates import load_template
 
 TEMPLATE = {
-    "template_id": "bookkeeper-readonly",
+    "template_id": "bookkeeper",
     "soul": "You are a careful bookkeeper.",
     "enabled_toolsets": ["file", "web"],
     "enabled_mcp_servers": [],
@@ -34,17 +34,17 @@ def test_templates_live_under_the_hermes_root(tmp_path):
 
 def test_a_template_file_is_read_with_exactly_the_documented_fields(tmp_path):
     directory = templates_dir(tmp_path)
-    _write(directory, "bookkeeper-readonly", {**TEMPLATE, "notes": "not part of the contract"})
+    _write(directory, "bookkeeper", {**TEMPLATE, "notes": "not part of the contract"})
 
-    assert load_template(directory, "bookkeeper-readonly") == TEMPLATE
+    assert load_template(directory, "bookkeeper") == TEMPLATE
 
 
 def test_a_missing_template_is_unknown(tmp_path):
-    _unknown(templates_dir(tmp_path), "bookkeeper-readonly")
+    _unknown(templates_dir(tmp_path), "bookkeeper")
 
 
 @pytest.mark.parametrize("template_id", [
-    "../secrets", "a/b", ".hidden", "Bookkeeper", "", None, 7, "x" * 65, "bookkeeper-readonly\n",
+    "../secrets", "a/b", ".hidden", "Bookkeeper", "", None, 7, "x" * 65, "bookkeeper\n",
 ])
 def test_an_id_that_is_not_a_safe_file_name_is_unknown(tmp_path, template_id):
     _unknown(templates_dir(tmp_path), template_id)
@@ -62,9 +62,9 @@ def test_an_id_that_is_not_a_safe_file_name_is_unknown(tmp_path, template_id):
 ])
 def test_a_broken_template_file_is_unknown_and_logged_without_its_content(tmp_path, caplog, content):
     directory = templates_dir(tmp_path)
-    _write(directory, "bookkeeper-readonly", content)
+    _write(directory, "bookkeeper", content)
 
-    _unknown(directory, "bookkeeper-readonly")
+    _unknown(directory, "bookkeeper")
 
-    assert "bookkeeper-readonly.json" in caplog.text
+    assert "bookkeeper.json" in caplog.text
     assert "careful bookkeeper" not in caplog.text

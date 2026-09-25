@@ -26,7 +26,7 @@ function proposalFor(name: string, over: Partial<AgentProposal> = {}): AgentProp
     proposal_id: `p-${name}`,
     expires_at: '2026-09-26T10:00:00Z',
     source_session_id: 'concierge-1',
-    agent: { name, title: 'Pim', role: 'Bookkeeper', description: 'Keeps the books.', template_id: 'bookkeeper-readonly', provider: 'p', model: 'm' },
+    agent: { name, title: 'Pim', role: 'Bookkeeper', description: 'Keeps the books.', template_id: 'bookkeeper', provider: 'p', model: 'm' },
     briefing: 'Seed facts.',
     ...over
   }

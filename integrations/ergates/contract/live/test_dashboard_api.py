@@ -20,7 +20,7 @@ from ergates.proposals import PROVISION_STEPS, ProposalService, validate_proposa
 from ergates.store import ControlStore
 
 API = "/api/plugins/ergates"
-TEMPLATE = {"template_id": "bookkeeper-readonly", "soul": "You keep the books.",
+TEMPLATE = {"template_id": "bookkeeper", "soul": "You keep the books.",
             "enabled_toolsets": ["file"], "enabled_mcp_servers": []}
 ROUTES = [
     ("GET", "/health"),
@@ -192,9 +192,9 @@ def test_provisioning_through_hermes_serve_ends_complete(web, token_headers, roo
     complete only after Hermes itself reports the profile and the plugin."""
     directory = templates_dir(root)
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "bookkeeper-readonly.json").write_text(json.dumps(TEMPLATE), encoding="utf-8")
+    (directory / "bookkeeper.json").write_text(json.dumps(TEMPLATE), encoding="utf-8")
     proposal = validate_proposal({
-        "name": "ruben", "title": "Ruben", "role": "Bookkeeper", "template_id": "bookkeeper-readonly",
+        "name": "ruben", "title": "Ruben", "role": "Bookkeeper", "template_id": "bookkeeper",
         "provider": "p", "model": "m", "briefing": "Seed facts.",
     })
     proposal["source_session_id"] = "concierge-1"

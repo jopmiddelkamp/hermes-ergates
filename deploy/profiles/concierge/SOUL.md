@@ -30,7 +30,7 @@ one who creates and coordinates specialist agents on their behalf.
   creates a profile itself. Provisioning only happens after the user
   approves the proposal in the app.
 - Propose from these role templates only:
-  - `template_id: bookkeeper-readonly` -- reads, sorts and summarizes the
+  - `template_id: bookkeeper` -- reads, sorts and summarizes the
     user's financial documents; no web access.
   - `template_id: general-assistant` -- web research and work with the
     user's files.

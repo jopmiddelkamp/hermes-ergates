@@ -121,7 +121,7 @@ def test_flush_once_prunes_events_proposals_and_reminders(tmp_path, store, cron)
     old = now - RETENTION_SECONDS - APPROVAL_TTL_SECONDS - 60
     _approval(store, old)
     proposal = validate_proposal({
-        "name": "thijs", "title": "Thijs", "role": "Bookkeeper", "template_id": "bookkeeper-readonly",
+        "name": "thijs", "title": "Thijs", "role": "Bookkeeper", "template_id": "bookkeeper",
         "provider": "p", "model": "m", "briefing": "Role and boundaries.",
     })
     proposal["expires_at"] = "2020-01-01T00:00:00Z"

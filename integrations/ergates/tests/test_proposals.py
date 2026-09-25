@@ -27,7 +27,7 @@ def _valid_args(**overrides):
         "title": "Thijs",
         "role": "Bookkeeper",
         "description": "Read invoices and prepare reconciliation notes.",
-        "template_id": "bookkeeper-readonly",
+        "template_id": "bookkeeper",
         "provider": "operator-selected-provider",
         "model": "operator-selected-model",
         "briefing": "Role, boundaries, seed facts and reporting instructions.",
@@ -47,7 +47,7 @@ def test_validate_proposal_returns_expected_shape():
         "title": "Thijs",
         "role": "Bookkeeper",
         "description": "Read invoices and prepare reconciliation notes.",
-        "template_id": "bookkeeper-readonly",
+        "template_id": "bookkeeper",
         "provider": "operator-selected-provider",
         "model": "operator-selected-model",
     }

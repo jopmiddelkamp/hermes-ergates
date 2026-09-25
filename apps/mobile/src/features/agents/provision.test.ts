@@ -22,7 +22,7 @@ const PROPOSAL: AgentProposal = {
   proposal_id: 'p-pim',
   expires_at: '2999-01-01T00:00:00Z',
   source_session_id: 'concierge-1',
-  agent: { name: 'pim', title: 'Pim', role: 'Bookkeeper', description: 'Keeps the books.', template_id: 'bookkeeper-readonly', provider: 'p', model: 'm' },
+  agent: { name: 'pim', title: 'Pim', role: 'Bookkeeper', description: 'Keeps the books.', template_id: 'bookkeeper', provider: 'p', model: 'm' },
   briefing: 'You are Pim. Start with the unpaid invoices.'
 }
 

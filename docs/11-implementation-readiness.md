@@ -55,7 +55,7 @@ Proposed payload (not a Hermes RPC):
     "title": "Thijs",
     "role": "Bookkeeper",
     "description": "Read invoices and prepare reconciliation notes.",
-    "template_id": "bookkeeper-readonly",
+    "template_id": "bookkeeper",
     "provider": "operator-selected-provider",
     "model": "operator-selected-model"
   },

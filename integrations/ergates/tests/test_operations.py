@@ -19,7 +19,7 @@ from ergates.paths import templates_dir
 from ergates.proposals import PROPOSAL_EXPIRY, ProposalService, validate_proposal
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE = {"template_id": "bookkeeper-readonly", "soul": "You keep the books.",
+TEMPLATE = {"template_id": "bookkeeper", "soul": "You keep the books.",
             "enabled_toolsets": ["file"], "enabled_mcp_servers": []}
 RECEIPT_KEYS = {"id", "request_id", "profile", "state", "job_id", "timezone_advisory", "payload_hash"}
 PROPOSAL_RECEIPT_KEYS = {"proposal_id", "state", "reserved_profile_name", "expires_at", "completed_steps",
@@ -85,7 +85,7 @@ def hermes():
 def ops(store, cron, clock, hermes, tmp_path):
     directory = templates_dir(tmp_path)
     directory.mkdir(parents=True)
-    (directory / "bookkeeper-readonly.json").write_text(json.dumps(TEMPLATE), encoding="utf-8")
+    (directory / "bookkeeper.json").write_text(json.dumps(TEMPLATE), encoding="utf-8")
     return Operations(
         store, cron=cron, profile_exists=hermes.profile_exists, plugin_enabled=hermes.plugin_enabled,
         enable_plugin=hermes.enable_plugin, check_schedule=hermes.check_schedule, check_prompt=hermes.check_prompt,
@@ -341,7 +341,7 @@ def proposals(store, clock):
 
 def _recorded(proposals, name="pim", **overrides):
     args = {"name": name, "title": "Pim", "role": "Bookkeeper", "description": "Keeps the books.",
-            "template_id": "bookkeeper-readonly", "provider": "p", "model": "m",
+            "template_id": "bookkeeper", "provider": "p", "model": "m",
             "briefing": "Seed facts for the new agent."}
     args.update(overrides)
     proposal = validate_proposal(args)

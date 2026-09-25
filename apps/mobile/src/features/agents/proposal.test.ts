@@ -14,7 +14,7 @@ const proposal = (id: string, name = 'pim'): AgentProposal => ({
   proposal_id: id,
   expires_at: '2999-01-01T00:00:00Z',
   source_session_id: 'concierge-1',
-  agent: { name, title: 'Pim', role: 'Bookkeeper', description: 'Keeps the books.', template_id: 'bookkeeper-readonly', provider: 'p', model: 'm' },
+  agent: { name, title: 'Pim', role: 'Bookkeeper', description: 'Keeps the books.', template_id: 'bookkeeper', provider: 'p', model: 'm' },
   briefing: 'Seed facts.'
 })
 

@@ -29,7 +29,7 @@ export type ErgatesOp = keyof ErgatesApi
 
 /** The one proposal template the fake server holds. */
 export const PROPOSAL_TEMPLATE: ProposalTemplate = {
-  template_id: 'bookkeeper-readonly',
+  template_id: 'bookkeeper',
   soul: 'You keep the books.',
   enabled_toolsets: ['file', 'ergates'],
   enabled_mcp_servers: []

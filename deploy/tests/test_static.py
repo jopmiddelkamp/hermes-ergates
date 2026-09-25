@@ -264,6 +264,16 @@ def test_there_are_templates_and_each_is_one_the_accept_route_serves() -> None:
         assert "{{" not in template["soul"], template_id
 
 
+def test_a_readonly_labeled_template_never_grants_file_writes() -> None:
+    """`file` includes write_file and patch at the pin: a template whose id
+    claims read-only access must not pin that toolset, or the one approval
+    surface the operator sees would call a writer read-only."""
+    for template_id in TEMPLATES:
+        if "readonly" in template_id:
+            template = load_template(DEPLOY / "templates", template_id)
+            assert "file" not in template["enabled_toolsets"], template_id
+
+
 def test_the_concierge_proposes_exactly_the_shipped_templates() -> None:
     soul = (DEPLOY / "profiles" / "concierge" / "SOUL.md").read_text(encoding="utf-8")
     named = sorted(set(re.findall(r"`template_id: ([a-z0-9][a-z0-9_-]*)`", soul)))

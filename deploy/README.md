@@ -246,7 +246,7 @@ already done above, before first start.
    docker compose exec -T -u hermes -e PYTHONPATH=/opt/data/plugins/ergates hermes-serve python -m ergates.install
    docker compose restart hermes-serve hermes-gateway
    docker compose exec -T -u hermes -e PYTHONPATH=/opt/data/plugins/ergates hermes-serve python -m ergates.install --check
-   # ergates.install: templates=installed (bookkeeper-readonly, general-assistant)
+   # ergates.install: templates=installed (bookkeeper, general-assistant)
    # ergates.install: profile=default plugin=enabled
    ```
 
