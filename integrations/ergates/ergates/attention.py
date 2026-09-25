@@ -145,7 +145,7 @@ def effective_prefs(conn: sqlite3.Connection, profile: Optional[str]) -> dict:
 
 
 def _check_profile(profile: Any) -> None:
-    if profile != DEFAULT_PREFS_PROFILE and not (isinstance(profile, str) and _PROFILE_RE.match(profile)):
+    if profile != DEFAULT_PREFS_PROFILE and not (isinstance(profile, str) and _PROFILE_RE.fullmatch(profile)):
         raise AttentionError("profile must be '*' or a Hermes profile name")
 
 

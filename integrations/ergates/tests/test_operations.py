@@ -469,7 +469,7 @@ def test_put_prefs_stores_them_and_get_returns_them(ops):
     assert ops.get_prefs("thijs").body["prefs"]["quiet_start"] == "22:00"
 
 
-@pytest.mark.parametrize("profile", [None, "", "Bad Name", "../x"])
+@pytest.mark.parametrize("profile", [None, "", "Bad Name", "../x", "thijs\n"])
 def test_get_prefs_for_an_invalid_profile_is_400(ops, profile):
     assert _error(ops.get_prefs(profile)) == (400, "invalid")
 

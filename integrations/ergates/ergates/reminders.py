@@ -160,7 +160,7 @@ def _validate(profile, schedule, timezone, prompt, request_id, label) -> None:
     for name, value in (("profile", profile), ("schedule", schedule), ("prompt", prompt)):
         if not isinstance(value, str) or not value.strip():
             raise ReminderError(f"{name} is required and must be a non-empty string")
-    if not _PROFILE_RE.match(profile.strip()):
+    if not _PROFILE_RE.fullmatch(profile.strip()):
         raise ReminderError("profile must be a Hermes profile name")
     if not isinstance(timezone, str):
         raise ReminderError("timezone must be a string")

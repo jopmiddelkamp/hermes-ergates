@@ -181,6 +181,19 @@ def test_a_profile_that_is_not_a_hermes_profile_name_is_invalid(service):
         service.create("Not A Profile!", SCHEDULE, TIMEZONE, PROMPT)
 
 
+def test_a_profile_with_a_trailing_newline_is_trimmed_not_refused(service):
+    """`_validate` checks ``profile.strip()``, so a trailing newline never reaches the
+    format regex at all -- this call site was never exposed to the ``$``-matches-
+    before-a-trailing-newline gap that the ``fullmatch`` fix closes at the sibling
+    regexes (``operations._is_profile_name``, ``attention._check_profile``,
+    ``templates.load_template``). Pinned so a future change to this stripping is
+    caught, since silently trimming and rejecting are very different behaviors."""
+    outcome = service.create("thijs\n", SCHEDULE, TIMEZONE, PROMPT, request_id="req-1")
+
+    assert outcome.status == "created"
+    assert outcome.receipt["profile"] == "thijs"
+
+
 def test_a_non_string_timezone_or_label_is_invalid(service):
     with pytest.raises(ReminderError, match="timezone"):
         service.create(PROFILE, SCHEDULE, None, PROMPT)
