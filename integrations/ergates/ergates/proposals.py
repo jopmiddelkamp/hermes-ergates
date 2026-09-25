@@ -264,6 +264,19 @@ class ProposalService:
             status = _step_status(conn, proposal_id)
         return _view(row, status, self._clock())
 
+    def check_payload(self, proposal_id: str, proposal: Any) -> None:
+        """Raise ``not_found`` for an unknown id, and ``hash_mismatch`` unless ``proposal`` is the recorded one.
+
+        Read-only. The accept route calls it before it looks up the template
+        the payload names, so a payload that is not the proposal is a 409,
+        never a 422 for a template it made up.
+        """
+        with self._store.read() as conn:
+            row = _receipt(conn, proposal_id)
+        if not isinstance(proposal, dict) or proposal.get("proposal_id") != proposal_id \
+                or payload_hash(proposal) != row["proposal_hash"]:
+            raise ProposalError("the approved payload is not the recorded proposal", code="hash_mismatch")
+
     def accept(self, proposal_id: str, proposal: dict, *, profile_exists: Callable[[str], bool]) -> dict:
         """Accept the proposal exactly as the agent proposed it (decision D10: no edits).
 

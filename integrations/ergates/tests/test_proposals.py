@@ -600,3 +600,28 @@ def test_proposal_error_maps_each_code_to_its_http_status():
     assert ProposalError("x", code="unknown_template").http_status == 422
     with pytest.raises(ValueError):
         ProposalError("x", code="made_up")
+
+
+# --- check_payload (the accept route's first check) ------------------------------
+
+
+def test_check_payload_passes_the_recorded_proposal_and_changes_nothing(service):
+    proposal = _recorded(service)
+
+    service.check_payload(proposal["proposal_id"], proposal)
+
+    assert service.get(proposal["proposal_id"])["state"] == "proposed"
+
+
+def test_check_payload_refuses_an_unknown_id_and_every_other_payload(service):
+    proposal = _recorded(service)
+    cases = (
+        ("nope", proposal, ("not_found", 404)),
+        (proposal["proposal_id"], {**proposal, "briefing": "Another briefing."}, ("hash_mismatch", 409)),
+        (proposal["proposal_id"], {**proposal, "proposal_id": "other"}, ("hash_mismatch", 409)),
+        (proposal["proposal_id"], None, ("hash_mismatch", 409)),
+    )
+    for proposal_id, payload, expected in cases:
+        with pytest.raises(ProposalError) as caught:
+            service.check_payload(proposal_id, payload)
+        assert _code(caught) == expected

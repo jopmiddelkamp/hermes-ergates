@@ -16,6 +16,7 @@ from .hermes_adapter import default_hermes_root
 
 STORE_DIR_NAME = "ergates"
 STORE_FILE_NAME = "control.sqlite3"
+TEMPLATES_DIR_NAME = "templates"
 
 
 def hermes_root() -> Path:
@@ -40,3 +41,8 @@ def hermes_root() -> Path:
 def store_path(root: Path) -> Path:
     """``<root>/ergates/control.sqlite3``: the one control store of a Hermes install."""
     return Path(root) / STORE_DIR_NAME / STORE_FILE_NAME
+
+
+def templates_dir(root: Path) -> Path:
+    """``<root>/ergates/templates``: the proposal templates of a Hermes install (roadmap contract C3)."""
+    return Path(root) / STORE_DIR_NAME / TEMPLATES_DIR_NAME

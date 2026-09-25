@@ -1,6 +1,6 @@
 [project]
 name = "ergates"
-version = "0.1.0"
+version = "0.2.0"
 description = "Ergates integration package for Hermes Agent: agent proposals, reminders, and attention/push notifications."
 requires-python = ">=3.11"
 dependencies = []
