@@ -1,9 +1,11 @@
 """Contract tests: facts about the pinned Hermes source that Ergates depends on.
 
-They read the Hermes checkout named by HERMES_SOURCE as text and never import
-it. The checkout must be at HERMES_PIN with no local edits; `scripts/ci-local.sh
-contract` and the CI `contract` job prepare it. When a test here fails after a
-pin bump, re-check the roadmap decision it names before changing the test.
+The tests in this folder read the Hermes checkout named by HERMES_SOURCE as
+text and never import it; the tests in `live/` import it (see
+`live/conftest.py`). The checkout must be at HERMES_PIN with no local edits;
+`scripts/ci-local.sh contract` and the CI `contract` job prepare it. When a
+test here fails after a pin bump, re-check the roadmap decision it names
+before changing the test.
 """
 
 from __future__ import annotations
@@ -14,6 +16,11 @@ from pathlib import Path
 import pytest
 
 from pinned import HERMES_PIN, PinnedSource, check_pin
+
+# `live/` imports the pinned Hermes and needs its dependencies, so the runner
+# starts it as its own pytest run (scripts/ci-local.sh contract). A plain
+# `pytest contract` collects only the text tests.
+collect_ignore = ["live"]
 
 
 @pytest.fixture(scope="session")

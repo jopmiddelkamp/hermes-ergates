@@ -92,10 +92,18 @@ prepare_hermes_source() {
   export HERMES_SOURCE="$cache"
 }
 
+# Two pytest runs. `contract/` reads the pinned source as text and needs no
+# Hermes dependency. `contract/live/` imports the pinned Hermes itself, so it
+# runs with Hermes's locked runtime dependencies, exported from the pin's own
+# uv.lock into .cache/ (the export writes nothing in the Hermes checkout).
 job_contract() {
   prepare_hermes_source
   cd "$ROOT/integrations/ergates"
   "${UV_TEST[@]}" pytest contract
+  local requirements="$ROOT/.cache/hermes-requirements.txt"
+  mkdir -p "$ROOT/.cache"
+  uv export --quiet --frozen --no-dev --no-emit-project --no-hashes --project "$HERMES_SOURCE" -o "$requirements"
+  "${UV_TEST[@]}" --with-requirements "$requirements" pytest contract/live
 }
 
 job_deploy() {

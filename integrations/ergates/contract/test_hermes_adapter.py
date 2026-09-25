@@ -1,9 +1,9 @@
-"""Roadmap D5 and C1: how ``ergates/hermes_adapter.py`` calls Hermes.
+"""Roadmap D1, D5, C1 and C2: how ``ergates/hermes_adapter.py`` calls Hermes.
 
-``default_hermes_root()`` calls ``hermes_constants.get_default_hermes_root()``
-with no arguments and wraps the result in ``Path``. ``test_hermes_root.py``
-pins what that function computes; this file pins how it is called. The facts
-behind the rest of the adapter (roadmap contract C2) belong here too.
+``test_hermes_root.py`` pins what ``get_default_hermes_root`` computes; this
+file pins every other Hermes name the adapter calls, as text and syntax, so a
+pin bump that renames or reshapes one fails here with the fact spelled out.
+``live/test_adapter.py`` runs the same calls against the pinned Hermes.
 
 ``configured_timezone()`` calls ``hermes_time.get_timezone()`` with no
 arguments. Quiet hours are read in that zone because Hermes cron computes a
@@ -14,11 +14,25 @@ from __future__ import annotations
 
 import ast
 
+from ergates import hermes_adapter, reminders
 from pinned import PinnedSource
 
 CONSTANTS = "hermes_constants.py"
 HERMES_TIME = "hermes_time.py"
 CRON_JOBS = "cron/jobs.py"
+PROFILES = "hermes_cli/profiles.py"
+CONFIG = "hermes_cli/config.py"
+DISCOVERY = "hermes_cli/plugins_discovery.py"
+PLUGINS = "hermes_cli/plugins.py"
+JOBS = "cron/jobs.py"
+CRONJOB = "tools/cronjob_tools.py"
+PROVIDER = "cron/scheduler_provider.py"
+RPC = "tui_gateway/methods_tools.py"
+
+
+def _arguments(function: ast.FunctionDef) -> list[str]:
+    arguments = function.args
+    return [a.arg for a in (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs)]
 
 
 def test_get_default_hermes_root_takes_no_arguments_and_returns_a_path(hermes: PinnedSource) -> None:
@@ -68,3 +82,102 @@ def test_cron_computes_the_next_run_from_hermes_time_now(hermes: PinnedSource) -
     assert hermes.lines(CRON_JOBS, 1099, 1099) == "    now = _hermes_now()"
     assert hermes.lines(CRON_JOBS, 1106, 1106) == "    base_time = (_parse_aware(last_run_at) if last_run_at else None) or now"
     assert hermes.lines(CRON_JOBS, 1123, 1123) == "        return croniter(expr, base_time).get_next(datetime).isoformat()"
+
+
+def test_the_adapter_accepts_exactly_the_profile_names_hermes_accepts(hermes: PinnedSource) -> None:
+    # hermes_cli/profiles.py:24
+    assert hermes.lines(PROFILES, 24, 24) == '_PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")'
+    assert hermes_adapter._PROFILE_RE.pattern == "^[a-z0-9][a-z0-9_-]{0,63}$"
+
+
+def test_profile_lookups_take_a_name(hermes: PinnedSource) -> None:
+    assert _arguments(hermes.function(PROFILES, "profile_exists")) == ["name"]
+    assert _arguments(hermes.function(PROFILES, "get_profile_dir")) == ["name"]
+    # hermes_cli/profiles.py:240-246: `default` always exists; a named profile is a live folder.
+    assert hermes.lines(PROFILES, 240, 246) == (
+        "def profile_exists(name: str) -> bool:\n"
+        '    """Check whether a live (non-tombstoned) profile directory exists."""\n'
+        "    canon = normalize_profile_name(name)\n"
+        '    if canon == "default":\n'
+        "        return True\n"
+        "    profile_dir = get_profile_dir(canon)\n"
+        "    return profile_dir.is_dir() and not named_profile_is_deleted(profile_dir)"
+    )
+
+
+def test_a_profile_scope_is_the_context_local_home_override(hermes: PinnedSource) -> None:
+    assert _arguments(hermes.function(CONSTANTS, "set_hermes_home_override")) == ["path"]
+    assert _arguments(hermes.function(CONSTANTS, "reset_hermes_home_override")) == ["token"]
+    # tui_gateway/methods_tools.py:44-47: the cron.manage RPC's own profile scope, which the adapter mirrors.
+    assert hermes.lines(RPC, 44, 47) == (
+        '                    profile_dir = _tools_mod("hermes_cli.profiles").get_profile_dir(profile)\n'
+        "                    if not profile_dir or not profile_dir.is_dir():\n"
+        "                        return _err(rid, 4064, f\"profile '{profile}' not found\")\n"
+        '                    token = _tools_mod("hermes_constants").set_hermes_home_override(str(profile_dir))'
+    )
+
+
+def test_profile_name_is_derived_from_the_active_home_at_every_read(hermes: PinnedSource) -> None:
+    # hermes_cli/plugins.py:397-405 (roadmap bug 8): a property, evaluated per access.
+    assert hermes.lines(PLUGINS, 397, 405) == (
+        "    @property\n"
+        "    def profile_name(self) -> str:\n"
+        '        """Active profile name (``"default"``, the ``~/.hermes/profiles/<name>`` id, or ``"custom"``),\n'
+        "        derived from ``HERMES_HOME`` — not ``_cli_ref``, which is None outside the interactive CLI —\n"
+        '        so gateway and kanban workers get it too."""\n'
+        "        try:\n"
+        "            from hermes_cli.profiles import get_active_profile_name\n"
+        "            return get_active_profile_name()\n"
+        "        except Exception:"
+    )
+
+
+def test_config_is_read_and_written_through_load_config_and_save_config(hermes: PinnedSource) -> None:
+    assert _arguments(hermes.function(CONFIG, "load_config")) == []
+    save = hermes.function(CONFIG, "save_config")
+    assert _arguments(save)[0] == "config"
+    assert {"strip_defaults", "preserve_keys", "merge_existing"} <= set(_arguments(save))
+
+
+def test_plugin_discovery_can_be_asked_without_loading_anything(hermes: PinnedSource) -> None:
+    assert _arguments(hermes.function(DISCOVERY, "collect_directory_manifests")) == []
+    assert _arguments(hermes.function(DISCOVERY, "gate_manifest")) == ["manifest", "disabled", "enabled"]
+    assert '    return ManifestGate("load")' in hermes.text(DISCOVERY).splitlines()
+
+
+def test_cron_create_is_the_cronjob_function_behind_the_cron_manage_rpc(hermes: PinnedSource) -> None:
+    assert {"action", "name", "schedule", "prompt"} <= set(_arguments(hermes.function(CRONJOB, "cronjob")))
+    # tools/cronjob_tools.py:591: a successful create reports the new job's id.
+    assert hermes.lines(CRONJOB, 591, 591) == (
+        '        "success": True, "job_id": job["id"], "name": job["name"], "skill": job.get("skill"),'
+    )
+
+
+def test_cron_lookups_and_schedule_checks(hermes: PinnedSource) -> None:
+    assert _arguments(hermes.function(JOBS, "get_job")) == ["job_id"]
+    assert _arguments(hermes.function(JOBS, "list_jobs")) == ["include_disabled"]
+    assert _arguments(hermes.function(JOBS, "parse_schedule")) == ["schedule"]
+    assert _arguments(hermes.function(JOBS, "compute_next_run")) == ["schedule", "last_run_at"]
+    # cron/jobs.py:1757: a given name is stored as given, so an exact-name match finds it.
+    assert hermes.lines(JOBS, 1757, 1757) == "    name = name or label_source[:50].strip()"
+
+
+def test_a_create_ends_well_inside_the_reminder_in_flight_window(hermes: PinnedSource) -> None:
+    """The only wait inside a create is the jobs lock, bounded at 30 s; the
+    built-in scheduler registers nothing. A second identical request takes
+    over a claim only after reminders.IN_FLIGHT_SECONDS."""
+    timeout = hermes.assigned(JOBS, "_JOBS_LOCK_TIMEOUT_SECONDS")
+    assert timeout == 30.0
+    assert timeout < reminders.IN_FLIGHT_SECONDS
+    register = hermes.function(PROVIDER, "register_job", owner="CronScheduler")
+    assert ast.unparse(register.body[-1]) == "return None"
+    in_process = next(
+        node for node in hermes.tree(PROVIDER).body
+        if isinstance(node, ast.ClassDef) and node.name == "InProcessCronScheduler"
+    )
+    assert "register_job" not in {node.name for node in in_process.body if isinstance(node, ast.FunctionDef)}
+    # cron/scheduler_provider.py:339-340: no configured provider means the built-in one.
+    assert hermes.lines(PROVIDER, 339, 340) == (
+        '    if not name or name in ("builtin", "in-process", "inprocess"):\n'
+        "        return InProcessCronScheduler()"
+    )

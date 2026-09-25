@@ -1,0 +1,187 @@
+"""Roadmap C2 and D7: ``ergates/hermes_adapter.py`` against the pinned Hermes itself.
+
+Every test runs inside the temporary Hermes root that ``conftest.py`` makes.
+"""
+
+from __future__ import annotations
+
+import json
+import tempfile
+import threading
+import time
+from pathlib import Path
+
+import pytest
+import yaml
+
+from ergates.hermes_adapter import (
+    HermesCron,
+    _profile_home,
+    check_schedule,
+    current_profile,
+    enable_plugin,
+    plugin_enabled,
+    profile_exists,
+)
+from ergates.paths import hermes_root, store_path
+from ergates.reminders import ReminderService, routine_name
+from ergates.store import ControlStore
+
+PLUGIN_DIR = Path(__file__).resolve().parents[2]
+
+
+def test_hermes_runs_inside_the_temporary_root(root):
+    from hermes_constants import get_default_hermes_root, get_hermes_home
+
+    assert root.is_relative_to(Path(tempfile.gettempdir()).resolve())
+    assert get_hermes_home() == root
+    assert get_default_hermes_root() == root
+    assert hermes_root() == root
+
+
+def test_profile_exists_asks_hermes(make_profile):
+    make_profile("thijs")
+
+    assert profile_exists("default") is True
+    assert profile_exists("thijs") is True
+    assert profile_exists("nora") is False
+    assert profile_exists("../hermes") is False
+
+
+def test_bug8_current_profile_follows_the_home_hermes_runs_in(root, make_profile):
+    """Hermes's own PluginContext: the name changes with the active home, per read."""
+    from hermes_cli.plugins import PluginContext
+    from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+
+    make_profile("nora")
+    ctx = PluginContext(manifest=None, manager=None)
+
+    assert current_profile(ctx) == "default"
+    token = set_hermes_home_override(str(root / "profiles" / "nora"))
+    try:
+        assert current_profile(ctx) == "nora"
+    finally:
+        reset_hermes_home_override(token)
+    assert current_profile(ctx) == "default"
+
+
+def test_enable_plugin_links_the_plugin_and_keeps_the_profile_config(root, make_profile):
+    home = make_profile("pim")
+    (home / "config.yaml").write_text("model:\n  default: operator-model\n", encoding="utf-8")
+    assert plugin_enabled("pim") is False
+
+    enable_plugin("pim")
+    enable_plugin("pim")
+
+    link = home / "plugins" / "ergates"
+    assert link.is_symlink()
+    assert link.resolve() == (root / "plugins" / "ergates").resolve()
+    config = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+    assert config["plugins"]["enabled"] == ["ergates"]
+    assert config["model"] == {"default": "operator-model"}
+    assert plugin_enabled("pim") is True
+
+
+def test_d7_a_plugin_manager_for_the_profile_loads_ergates_after_enable(root, make_profile):
+    """Hermes's own loader, scoped to the profile's home, finds and loads the plugin."""
+    from hermes_cli.plugins import PluginManager
+
+    home = make_profile("fenna")
+
+    before = PluginManager(scope_key=str(home))
+    before.discover_and_load()
+    enable_plugin("fenna")
+    after = PluginManager(scope_key=str(home))
+    after.discover_and_load()
+
+    assert "ergates" not in {row["name"] for row in before.list_plugins() if row["enabled"]}
+    loaded = next(row for row in after.list_plugins() if row["name"] == "ergates")
+    assert (loaded["enabled"], loaded["error"], loaded["source"]) == (True, None, "user")
+    assert loaded["tools"] >= 1 and loaded["hooks"] >= 1
+
+
+def test_a_disabled_entry_is_removed_and_the_default_profile_gets_no_link(root, make_profile):
+    home = make_profile("jip")
+    (home / "config.yaml").write_text("plugins:\n  disabled:\n  - ergates\n", encoding="utf-8")
+
+    enable_plugin("jip")
+    enable_plugin("default")
+
+    assert plugin_enabled("jip") is True
+    assert plugin_enabled("default") is True
+    assert yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))["plugins"] == {
+        "enabled": ["ergates"], "disabled": [],
+    }
+    assert (root / "plugins" / "ergates").resolve() == PLUGIN_DIR
+
+
+def test_hermes_cron_uses_the_profile_own_store_and_finds_the_job_by_its_exact_name(root, make_profile):
+    home = make_profile("bram")
+    cron = HermesCron()
+    name = "[bot:bram] invoices · 1a2b3c4d"
+    # The first create in a process imports Hermes's provider stack (seconds);
+    # a running gateway or `hermes serve` has done that long before.
+    cron.create_job("bram", schedule="every 2h", prompt="Warm up.", name="[bot:bram] warm-up · 22222222")
+
+    started = time.monotonic()
+    job = cron.create_job("bram", schedule="0 9 * * *", prompt="Check the invoices.", name=name)
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 5
+    assert job == {"id": job["id"], "name": name}
+    assert cron.get_job("bram", job["id"]) == job
+    assert cron.find_job_ids_by_name("bram", name) == [job["id"]]
+    assert cron.find_job_ids_by_name("bram", "[bot:bram] invoices") == []
+    assert name in (home / "cron" / "jobs.json").read_text(encoding="utf-8")
+    assert not (root / "cron" / "jobs.json").exists() or name not in (root / "cron" / "jobs.json").read_text()
+
+
+def test_a_deleted_job_is_gone_and_a_refused_create_raises_without_hermes_text(make_profile):
+    from cron.jobs import remove_job
+
+    make_profile("mees")
+    cron = HermesCron()
+    job = cron.create_job("mees", schedule="every 2h", prompt="Stretch.", name="[bot:mees] stretch · 00000000")
+    with _profile_home("mees"):
+        assert remove_job(job["id"]) is True
+
+    assert cron.get_job("mees", job["id"]) is None
+    with pytest.raises(RuntimeError) as refused:
+        cron.create_job("mees", schedule="not a schedule", prompt="Secret words.", name="[bot:mees] x · 11111111")
+    assert "Secret words" not in str(refused.value)
+    assert cron.find_job_ids_by_name("mees", "[bot:mees] x · 11111111") == []
+
+
+def test_check_schedule_accepts_what_hermes_cron_accepts(make_profile):
+    make_profile("roos")
+
+    for schedule in ("0 9 * * *", "every monday 9am", "in 30m", "every 2h", "30m"):
+        check_schedule("roos", schedule)
+    for schedule in ("not a schedule", "2020-01-01T09:00:00", "in soon"):
+        with pytest.raises(ValueError):
+            check_schedule("roos", schedule)
+
+
+def test_review_focus_1_the_reminder_service_on_hermes_cron_makes_one_job(root, make_profile):
+    """Two identical requests at the same moment, through Hermes's real cron."""
+    make_profile("sam")
+    service = ReminderService(ControlStore(store_path(root)), HermesCron())
+    barrier = threading.Barrier(2)
+    outcomes = []
+
+    def request() -> None:
+        barrier.wait()
+        outcomes.append(service.create("sam", "0 9 * * *", "Europe/Amsterdam", "Check the invoices.",
+                                       request_id="req-1", label="Invoices"))
+
+    threads = [threading.Thread(target=request) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    assert sorted(outcome.status for outcome in outcomes) == ["created", "existing"]
+    assert len({outcome.receipt["job_id"] for outcome in outcomes}) == 1
+    name = routine_name("sam", "Invoices", "req-1", outcomes[0].receipt["payload_hash"])
+    assert HermesCron().find_job_ids_by_name("sam", name) == [outcomes[0].receipt["job_id"]]
+    assert json.dumps([outcome.receipt for outcome in outcomes]).count("Check the invoices") == 0

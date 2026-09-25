@@ -3,17 +3,38 @@
 Every other module reaches Hermes through the functions here, so a Hermes
 upgrade has one file to check in this package (plus ``dashboard/api.py``).
 ``tests/test_hermes_boundary.py`` fails the build when any other module
-imports Hermes, and each Hermes fact used here is pinned by a test in
-``contract/``.
+imports Hermes. ``contract/test_hermes_adapter.py`` pins each Hermes fact used
+here in the pinned source, and ``contract/live/`` runs these functions
+against the pinned Hermes itself.
 
 Imports happen inside each function, so importing this module never needs
 Hermes: the test suite and ``python -m ergates.flush`` run without it.
+
+Every call about one profile runs the way Hermes's own ``cron.manage`` RPC
+runs for a ``profile`` parameter (``tui_gateway/methods_tools.py`` at the
+pin): ``get_profile_dir(profile)`` becomes the context-local Hermes home
+(``set_hermes_home_override``) for the call and is reset afterwards. Config,
+cron and plugin discovery all resolve ``get_hermes_home()`` at call time, so
+they act on that profile, and no other thread sees the override.
 """
 
 from __future__ import annotations
 
+import json
+import re
+from contextlib import contextmanager
 from datetime import tzinfo
 from pathlib import Path
+from typing import Any, Iterator
+
+from .reminders import CronUnavailable
+
+PLUGIN_NAME = "ergates"
+
+# Hermes profile ids at the pin (hermes_cli/profiles.py `_PROFILE_ID_RE`). A
+# name that fails it never reaches Hermes: `get_profile_dir("../x")` would
+# build a path outside the profiles folder.
+_PROFILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
 def default_hermes_root() -> Path | None:
@@ -45,3 +66,230 @@ def configured_timezone() -> tzinfo | None:
         return get_timezone()
     except ImportError:
         return None
+
+
+def current_profile(ctx: object) -> str:
+    """The profile a hook or tool call runs in: ``ctx.profile_name``, read at this call.
+
+    Roadmap bug 8: Hermes derives ``PluginContext.profile_name`` from the
+    active Hermes home every time it is read, and a multiplexed gateway
+    switches that home per session with a context-local override. A name
+    read once in ``register()`` would pin every later call to the profile
+    that loaded the plugin. Raises when ``ctx`` has no usable name.
+    """
+    name = getattr(ctx, "profile_name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("the plugin context has no profile name")
+    return name.strip()
+
+
+def profile_exists(profile: str) -> bool:
+    """True when ``profile`` is a live profile of this Hermes install (``default`` always is)."""
+    if not _is_profile_name(profile):
+        return False
+    from hermes_cli.profiles import profile_exists as hermes_profile_exists
+
+    return bool(hermes_profile_exists(profile))
+
+
+def check_schedule(profile: str, schedule: str) -> None:
+    """Raise ``ValueError`` unless Hermes cron would accept ``schedule`` for ``profile`` now.
+
+    The same two checks ``cron.jobs.create_job`` makes before it stores a
+    job: ``parse_schedule`` understands the text, and a one-shot time is not
+    already past. The ``POST /reminders`` route runs this first, so a
+    schedule Hermes refuses is a 400, not an uncertain create.
+    """
+    from cron.jobs import compute_next_run, parse_schedule
+
+    with _profile_home(profile):
+        parsed = parse_schedule(schedule)
+        if parsed.get("kind") == "once" and compute_next_run(parsed) is None:
+            raise ValueError("the one-shot time is in the past")
+
+
+class HermesCron:
+    """``reminders.CronPort`` on Hermes's own cron, scoped to one profile per call.
+
+    ``create_job`` calls ``tools.cronjob_tools.cronjob(action="create")``,
+    the function behind the ``cron.manage`` RPC the app's Routines screen
+    uses, so Hermes's prompt scan and scheduler registration apply and the
+    job lands in the profile's own ``cron/jobs.json``. The returned dicts
+    carry the job id and name only, never the prompt.
+
+    Time bound: the only wait inside a create is Hermes's cross-process jobs
+    lock, which gives up after ``cron.jobs._JOBS_LOCK_TIMEOUT_SECONDS`` (30 s
+    at the pin), and the built-in scheduler's ``register_job`` does nothing.
+    A create therefore ends well inside ``reminders.IN_FLIGHT_SECONDS``
+    (60 s), after which a second request may take over the claim.
+    ``contract/test_hermes_adapter.py`` pins both facts.
+
+    Outside a Hermes runtime every call raises ``CronUnavailable``, the
+    signal the reminder service already treats as "could not tell".
+    """
+
+    def create_job(self, profile: str, *, schedule: str, prompt: str, name: str) -> dict:
+        try:
+            from tools.cronjob_tools import cronjob
+        except ImportError as exc:
+            raise CronUnavailable("Hermes cron is not importable in this process") from exc
+        with _profile_home(profile):
+            raw = cronjob(action="create", name=name, schedule=schedule, prompt=prompt)
+        return {"id": _created_job_id(raw), "name": name}
+
+    def get_job(self, profile: str, job_id: str) -> dict | None:
+        try:
+            from cron.jobs import get_job
+        except ImportError as exc:
+            raise CronUnavailable("Hermes cron is not importable in this process") from exc
+        with _profile_home(profile):
+            job = get_job(job_id)
+        return None if job is None else {"id": str(job["id"]), "name": job.get("name")}
+
+    def find_job_ids_by_name(self, profile: str, name: str) -> list[str]:
+        """Ids of every job, paused ones included, whose name is exactly ``name``."""
+        try:
+            from cron.jobs import list_jobs
+        except ImportError as exc:
+            raise CronUnavailable("Hermes cron is not importable in this process") from exc
+        with _profile_home(profile):
+            jobs = list_jobs(include_disabled=True)
+        return [str(job["id"]) for job in jobs if job.get("name") == name]
+
+
+def enable_plugin(profile: str) -> None:
+    """Make Hermes load this plugin in ``profile`` (roadmap decision D7).
+
+    Hermes discovers user plugins in the ACTIVE home's ``plugins/`` folder and
+    loads one only when that home's ``config.yaml`` lists it in
+    ``plugins.enabled``. So: link ``<profile home>/plugins/ergates`` to the
+    install's ``<root>/plugins/ergates``, then add ``ergates`` to the
+    profile's ``plugins.enabled`` (and drop it from ``plugins.disabled``)
+    with Hermes's own ``load_config``/``save_config`` under the profile's
+    home, the way Hermes's dashboard writes another profile's config. The
+    default profile's home is the root, so it gets no link. Safe to repeat.
+    Takes effect on the profile's next session.
+    """
+    from hermes_cli.config import load_config, save_config
+
+    source = _root_plugin_dir()
+    with _profile_home(profile) as home:
+        link = home / "plugins" / PLUGIN_NAME
+        # The default profile's home is the root, where the plugin already is.
+        if link.resolve() != source.resolve():
+            _link_plugin(source, link)
+        config = load_config()
+        if _enable_in(config):
+            save_config(config)
+
+
+def plugin_enabled(profile: str) -> bool:
+    """True when Hermes would load this install's plugin in ``profile``.
+
+    Asks Hermes's own discovery, under the profile's home: the user-plugin
+    scan finds a manifest named ``ergates`` whose folder is the install's
+    plugin, and ``gate_manifest`` answers ``load`` for it with that
+    profile's ``plugins.enabled`` and ``plugins.disabled``.
+    """
+    if not profile_exists(profile):
+        return False
+    from hermes_cli.config import load_config
+    from hermes_cli.plugins_discovery import collect_directory_manifests, gate_manifest
+
+    source = _root_plugin_dir().resolve()
+    with _profile_home(profile):
+        manifest = next(
+            (m for m in collect_directory_manifests() if m.name == PLUGIN_NAME and m.source == "user"), None,
+        )
+        if manifest is None or manifest.path is None or Path(manifest.path).resolve() != source:
+            return False
+        enabled, disabled = _plugin_lists(load_config())
+        return gate_manifest(manifest, disabled, enabled).action == "load"
+
+
+def _is_profile_name(profile: object) -> bool:
+    return isinstance(profile, str) and bool(_PROFILE_RE.match(profile))
+
+
+@contextmanager
+def _profile_home(profile: str) -> Iterator[Path]:
+    """Make ``profile``'s home the context-local Hermes home for the block."""
+    if not _is_profile_name(profile):
+        raise ValueError(f"{profile!r} is not a Hermes profile name")
+    from hermes_cli.profiles import get_profile_dir
+    from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+
+    home = Path(get_profile_dir(profile))
+    if not home.is_dir():
+        raise FileNotFoundError(f"profile {profile!r} does not exist")
+    token = set_hermes_home_override(str(home))
+    try:
+        yield home
+    finally:
+        reset_hermes_home_override(token)
+
+
+def _root_plugin_dir() -> Path:
+    """``<hermes root>/plugins/ergates``: where this install's copy of the plugin lives."""
+    root = default_hermes_root()
+    if root is None:
+        raise RuntimeError("Hermes is not importable in this process")
+    source = root / "plugins" / PLUGIN_NAME
+    if not (source / "plugin.yaml").is_file():
+        raise FileNotFoundError(f"the {PLUGIN_NAME} plugin is not installed at {source}")
+    return source
+
+
+def _link_plugin(source: Path, link: Path) -> None:
+    """Create ``link`` -> ``source``; accept an existing link to it, refuse anything else."""
+    if not link.is_symlink() and not link.exists():
+        link.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            link.symlink_to(source, target_is_directory=True)
+        except FileExistsError:
+            pass  # a concurrent call made it first; checked below
+    if not (link.is_symlink() and link.resolve() == source.resolve()):
+        raise FileExistsError(f"{link} exists and is not a link to {source}")
+
+
+def _enable_in(config: dict[str, Any]) -> bool:
+    """Put ``ergates`` in ``plugins.enabled`` and out of ``plugins.disabled``. True when ``config`` changed."""
+    plugins = config.get("plugins")
+    if not isinstance(plugins, dict):
+        plugins = config["plugins"] = {}
+    enabled = plugins.get("enabled")
+    enabled = list(enabled) if isinstance(enabled, list) else []
+    disabled = plugins.get("disabled")
+    changed = False
+    if PLUGIN_NAME not in enabled:
+        plugins["enabled"] = [*enabled, PLUGIN_NAME]
+        changed = True
+    if isinstance(disabled, list) and PLUGIN_NAME in disabled:
+        plugins["disabled"] = [name for name in disabled if name != PLUGIN_NAME]
+        changed = True
+    return changed
+
+
+def _plugin_lists(config: dict[str, Any]) -> tuple[set[str] | None, set[str]]:
+    """``(plugins.enabled, plugins.disabled)`` the way Hermes's discovery reads them (``None`` = unset)."""
+    plugins = config.get("plugins")
+    plugins = plugins if isinstance(plugins, dict) else {}
+    enabled = plugins.get("enabled")
+    disabled = plugins.get("disabled")
+    return (
+        set(enabled) if isinstance(enabled, list) else None,
+        set(disabled) if isinstance(disabled, list) else set(),
+    )
+
+
+def _created_job_id(raw: str) -> str:
+    """The job id in ``cronjob(action="create")``'s JSON result.
+
+    Raises when the result reports no created job. The error never carries
+    Hermes's own message, which can quote the prompt.
+    """
+    result = json.loads(raw)
+    job_id = result.get("job_id") if isinstance(result, dict) else None
+    if not (isinstance(result, dict) and result.get("success") is True and isinstance(job_id, str) and job_id):
+        raise RuntimeError("Hermes cron did not report a created job")
+    return job_id
