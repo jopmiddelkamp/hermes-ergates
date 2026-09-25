@@ -132,6 +132,12 @@ export async function provisionAgent(deps: ProvisionDeps, proposal: AgentProposa
     } catch (err) {
       return reportFailure(step, err, name)
     }
+    if (receipt.next_step === step) {
+      // The report succeeded, but the answer does not show progress: trust
+      // neither it nor a repeat of the same step, and stop here rather than
+      // grinding through the remaining passes on a step already reported done.
+      return { kind: 'failed', step, message: 'The server did not record the last step.', terminal: false }
+    }
   }
   if (receipt.next_step !== null) {
     return { kind: 'failed', step: receipt.next_step, message: 'The server did not record the last step.', terminal: false }
@@ -217,11 +223,16 @@ async function runStep(
     if (isGatewayError(err) && err.code === 'unknown_profile') {
       return deleted(agent.name)
     }
-    const uncertain = isGatewayError(err) && (err.kind === 'timeout' || err.kind === 'network')
-    // The briefing is already marked uncertain before its submit; a definite failure clears that.
-    if (step !== 'briefing' || !uncertain) {
-      await report(deps, proposal, step, uncertain ? 'uncertain' : 'failed')
+    if (step === 'briefing') {
+      // `sendBriefing` reports its own step status: only a definite refusal of
+      // the submit itself may turn the pre-recorded `uncertain` mark into
+      // `failed`. A failure here (opening the chat, or the record call itself)
+      // says nothing about whether the briefing went out, so the mark some
+      // earlier run left behind must stay exactly as it is.
+      return { kind: 'failed', step, message: userMessage(err), code: isGatewayError(err) ? err.code : undefined, terminal: false }
     }
+    const uncertain = isGatewayError(err) && (err.kind === 'timeout' || err.kind === 'network')
+    await report(deps, proposal, step, uncertain ? 'uncertain' : 'failed')
     return { kind: 'failed', step, message: userMessage(err), code: isGatewayError(err) ? err.code : undefined, terminal: false }
   }
 }
@@ -236,7 +247,17 @@ async function sendBriefing(deps: ProvisionDeps, proposal: AgentProposal, receip
   }
   // Recorded before the submit, so a run that dies after it knows the briefing may be out.
   await deps.ergates.recordProposalStep(proposal.proposal_id, 'briefing', 'uncertain')
-  await deps.submit(chat.liveSessionId, proposal.briefing)
+  try {
+    await deps.submit(chat.liveSessionId, proposal.briefing)
+  } catch (err) {
+    // Only a definite refusal of the submit itself (never a timeout or network
+    // drop, which leave the outcome unknown) means this attempt certainly never
+    // reached the chat: safe to clear the uncertain mark to `failed`.
+    if (!(isGatewayError(err) && (err.kind === 'timeout' || err.kind === 'network'))) {
+      await report(deps, proposal, 'briefing', 'failed')
+    }
+    throw err
+  }
   return undefined
 }
 

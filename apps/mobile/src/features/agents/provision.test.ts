@@ -134,6 +134,22 @@ describe('provisionAgent', () => {
     expect(calls.create).toHaveLength(1)
   })
 
+  it('counts the briefing as sent when the chat has it but the turn is not running (an interrupted stale turn)', async () => {
+    const { deps, chats, calls } = hermes()
+    const submit = deps.submit
+    void provisionAgent({ ...deps, submit: async (live, text) => (await submit(live, text), killed()) }, PROPOSAL)
+    await flush(5)
+    expect(calls.submit).toHaveLength(1)
+    // The turn that carried the briefing was interrupted and is no longer running,
+    // but the message itself is still there.
+    chats.get('pim')!.running = false
+
+    const outcome = await provisionAgent(deps, PROPOSAL)
+
+    expect(outcome).toEqual({ kind: 'complete', profile: 'pim' })
+    expect(calls.submit).toHaveLength(1)
+  })
+
   it('Review Focus 4: killed after the server recorded a step, it continues at the next step', async () => {
     const { deps, ergates, calls } = hermes()
     ergates.fail('recordProposalStep', 'hang', 'after')
@@ -166,6 +182,28 @@ describe('provisionAgent', () => {
     expect(chats.get('pim')!.messages).toHaveLength(1)
   })
 
+  it('a reconcile that cannot even open the chat never turns the uncertain briefing mark into failed', async () => {
+    const { deps, ergates, calls } = hermes()
+    // Run 1: the submit is attempted (and recorded) but the app is killed before
+    // it learns whether Hermes received it.
+    void provisionAgent({ ...deps, submit: async (live, text) => (calls.submit.push(text), killed()) }, PROPOSAL)
+    await flush(5)
+    expect((await ergates.getProposal('p-pim')).step_status.briefing).toBe('uncertain')
+
+    // Run 2: Hermes is busy (still resuming the session) and the reconcile cannot
+    // even open the chat to look for evidence.
+    const busy = await provisionAgent({ ...deps, openBotChat: () => Promise.reject(new GatewayError('busy', 'The assistant is busy with another turn.', { code: 4009 })) }, PROPOSAL)
+    expect(busy).toMatchObject({ kind: 'failed', step: 'briefing', terminal: false })
+    // The bug: this used to overwrite `uncertain` with `failed`, which then skips
+    // the evidence check on the next run and resends blindly.
+    expect((await ergates.getProposal('p-pim')).step_status.briefing).toBe('uncertain')
+
+    // Run 3: healthy again. The chat still shows nothing, so it asks instead of resending.
+    const outcome = await provisionAgent(deps, PROPOSAL)
+    expect(outcome).toEqual({ kind: 'confirm_briefing', profile: 'pim' })
+    expect(calls.submit).toHaveLength(1)
+  })
+
   it('marks a timed-out step uncertain and reconciles it on the next run', async () => {
     const { deps, ergates, calls } = hermes()
     const createProfile = deps.createProfile
@@ -183,6 +221,32 @@ describe('provisionAgent', () => {
 
     expect(await provisionAgent(deps, PROPOSAL)).toEqual({ kind: 'complete', profile: 'pim' })
     expect(calls.create).toHaveLength(1)
+  })
+
+  it('stops after one pass when a step report succeeds but its receipt still names the same step', async () => {
+    const { deps, ergates } = hermes()
+    let profileChecks = 0
+    const stale: ProvisionDeps = {
+      ...deps,
+      profileExists: async name => {
+        profileChecks += 1
+        return deps.profileExists(name)
+      },
+      ergates: {
+        acceptProposal: (id, proposal) => ergates.acceptProposal(id, proposal),
+        enablePlugin: profile => ergates.enablePlugin(profile),
+        recordProposalStep: async (id, step, status) => {
+          const receipt = await ergates.recordProposalStep(id, step, status)
+          // A stale/incorrect echo: the server did record it, but this answer does not show that.
+          return { ...receipt, next_step: step }
+        }
+      }
+    }
+
+    const outcome = await provisionAgent(stale, PROPOSAL)
+
+    expect(outcome).toMatchObject({ kind: 'failed', step: 'profile_created', message: 'The server did not record the last step.', terminal: false })
+    expect(profileChecks).toBe(1)
   })
 
   it('fails the configure step when Hermes did not apply a section', async () => {
