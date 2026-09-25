@@ -15,7 +15,7 @@ import pytest
 
 from conftest import rows
 from ergates import store as store_module
-from ergates.store import MIGRATIONS, SCHEMA_VERSION, ControlStore, StoreError
+from ergates.store import MIGRATIONS, SCHEMA_VERSION, ControlStore, StoreError, root_run_would_break
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 TABLES = {
@@ -130,6 +130,41 @@ def test_a_file_that_vanished_before_its_chown_is_skipped(tmp_path, monkeypatch)
     monkeypatch.setattr(os, "chown", chown_a_vanished_file)
 
     assert ControlStore(tmp_path / "ergates" / "control.sqlite3").schema_version == SCHEMA_VERSION
+
+
+def test_root_without_the_right_to_change_owners_warns_and_continues(tmp_path, as_root, monkeypatch, caplog):
+    """A rootless container's root has no CAP_CHOWN. Hermes's own container setup
+    warns and continues when its chown fails; so does the store."""
+    def chown_refused(path, uid, gid):
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "chown", chown_refused)
+
+    assert ControlStore(tmp_path / "ergates" / "control.sqlite3").schema_version == SCHEMA_VERSION
+    assert "could not hand ergates to the Hermes user (PermissionError)" in caplog.text
+    assert str(tmp_path) not in caplog.text
+
+
+def test_a_root_run_breaks_only_a_hermes_root_that_another_user_owns(tmp_path, as_root, monkeypatch):
+    """SQLite creates -wal and -shm as the user that opens the store and does not
+    hand them over, so root must not open a store the Hermes user owns."""
+    assert root_run_would_break(tmp_path) is True
+
+    real_stat = os.stat
+
+    def owned_by_root(path, *args, **kwargs):
+        values = list(real_stat(path, *args, **kwargs))
+        values[4] = values[5] = 0
+        return os.stat_result(values)
+
+    monkeypatch.setattr(os, "stat", owned_by_root)
+    assert root_run_would_break(tmp_path) is False  # root owns the Hermes root, so root is the Hermes user
+
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    assert root_run_would_break(tmp_path) is False
+
+    monkeypatch.delattr(os, "geteuid")
+    assert root_run_would_break(tmp_path) is False
 
 
 def test_a_store_created_by_another_user_changes_no_owner(tmp_path, as_root, monkeypatch):

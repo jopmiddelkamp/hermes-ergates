@@ -6,6 +6,7 @@ injects its own publisher.
 """
 
 import logging
+import os
 import sys
 import time
 
@@ -273,6 +274,21 @@ def test_main_fails_cleanly_on_a_missing_hermes_home(tmp_path, monkeypatch, caps
 
     assert main([]) == 2
     assert "no Hermes home" in capsys.readouterr().err
+
+
+def test_main_refuses_to_run_as_root_when_another_user_owns_the_hermes_root(tmp_path, monkeypatch, capsys):
+    """A root sweep can leave -wal and -shm files the Hermes user cannot open, and
+    every hook then fails. It refuses before it opens the store."""
+    monkeypatch.setitem(sys.modules, "hermes_constants", None)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+
+    assert main([]) == 2
+
+    err = capsys.readouterr().err
+    assert "refusing to run as root" in err
+    assert "docker compose exec -u hermes" in err
+    assert not (tmp_path / "ergates").exists()
 
 
 def test_main_takes_no_credential_arguments_and_no_profile():

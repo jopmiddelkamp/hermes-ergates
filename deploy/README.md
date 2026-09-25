@@ -210,9 +210,12 @@ Add this to the host's crontab (`crontab -e`), every two minutes:
 
 - `-T` disables the pseudo-TTY, which a cron job has no use for.
 - `-u hermes` runs the sweep as the image's `hermes` user, the user every
-  Hermes service runs as. `docker compose exec` runs as root otherwise.
-  A store that root creates is handed to the owner of `/opt/data`, but a
-  sweep as `hermes` never needs that.
+  Hermes service runs as. `docker compose exec` runs as root otherwise, and
+  a root sweep is not supported: SQLite creates the store's `-wal` and
+  `-shm` files as root and does not hand them over, and then every Hermes
+  hook fails to open the store. The sweep refuses to start as root. If a
+  root process opened the store anyway, repair it with
+  `docker compose exec hermes-serve chown -R hermes:hermes /opt/data/ergates`.
 - `PYTHONPATH=/opt/data/plugins/ergates` puts the mounted plugin directory
   on the import path; the package inside it is `ergates/`.
 - Adjust `cd /srv/ergates/deploy` to wherever you cloned this repo, and

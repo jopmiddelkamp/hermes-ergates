@@ -306,9 +306,10 @@ of that profile (ADR-032).
 - `post_llm_call` records a finished turn from `attention.completed_platforms`
   and pushes "A routine finished". It reads only `session_id` and
   `platform`, never the messages.
-- A muted profile gets events but no pushes. Quiet hours (`HH:MM`, server
-  local time, may wrap midnight) hold completion pushes until they end;
-  approval pushes ignore them.
+- A muted profile gets events but no pushes. Quiet hours (`HH:MM` in the
+  Hermes time zone, see "Periodic sweep"; may wrap midnight) hold
+  completion pushes, and their retries, until they end; approval pushes
+  ignore them.
 - A worker leases an outbox row for 60 s before it sends, so two workers
   never send one row at once, and a worker that dies mid-send leaves a lease
   that runs out. Failed attempts back off 30 s, 120 s, 600 s, 600 s; the
@@ -334,6 +335,20 @@ settings from the root's `config.yaml`, and asks Hermes cron whether each
 reminder's job still exists. No credential is ever passed as an argument or
 printed. `deploy/README.md` schedules it from host cron every two minutes,
 inside the container.
+
+Run it as the user that owns the Hermes root (`hermes` in the container).
+Root runs are not supported: SQLite creates the store's `-wal` and `-shm`
+files as the user that opens the store and does not hand them over, so a
+root run can leave files the Hermes user cannot open, and every hook then
+fails. The sweep refuses to start as root when another user owns the Hermes
+root. If a root process opened the store anyway, repair it inside the
+container with `chown -R hermes:hermes /opt/data/ergates`.
+
+Quiet hours are read in the time zone Hermes cron uses: `HERMES_TIMEZONE`,
+else `timezone` in the `config.yaml` of the process's Hermes home (the
+root's for the sweep, the profile's for a hook), else the server's local
+time. Give every profile the same zone: a hook holds a completion push by
+its profile's zone, and the sweep schedules the retries by the root's.
 
 ## Development
 

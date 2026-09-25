@@ -40,7 +40,7 @@ from .paths import hermes_root, store_path
 from .proposals import ProposalService
 from .reminders import CronPort, ReminderService, UnavailableCron
 from .settings import load_settings
-from .store import ControlStore
+from .store import ControlStore, root_run_would_break
 
 logger = logging.getLogger("ergates.flush")
 
@@ -114,6 +114,14 @@ def main(argv: Optional[list] = None) -> int:
     root = hermes_root()
     if not root.exists():
         print(f"ergates.flush: no Hermes home at {root}", file=sys.stderr)
+        return 2
+    if root_run_would_break(root):
+        print(
+            f"ergates.flush: refusing to run as root; {root} belongs to another user, and a root run can "
+            "leave store files that user cannot open. Run it as that user "
+            "(docker compose exec -u hermes ...).",
+            file=sys.stderr,
+        )
         return 2
     try:
         settings = load_settings(root)

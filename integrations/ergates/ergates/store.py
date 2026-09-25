@@ -25,12 +25,15 @@ sections 4 and 8).
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION: int = 1
 
@@ -133,13 +136,17 @@ class StoreError(Exception):
 def _give_to_hermes_owner(paths: list[Path], hermes_root: Path) -> None:
     """Give ``paths`` the owner and group of ``hermes_root`` when this process runs as root.
 
-    A root ``docker compose exec ... python -m ergates.flush`` can be the
-    first process to open the store. Without this, the folder and the file
-    stay root's, ``0700`` and ``0600``, and the ``hermes`` user that runs every
-    Hermes service cannot open the store: ``register()`` raises and the plugin
-    is gone. Only what this process created in this call is passed in; an
-    existing folder or file keeps its owner. Does nothing when the process is
-    not root, or the platform has no ``os.geteuid``.
+    A root process that is the first to open the store would otherwise leave
+    the folder and the file root's, ``0700`` and ``0600``, and the ``hermes``
+    user that runs every Hermes service could not open the store:
+    ``register()`` raises and the plugin is gone. Only what this process
+    created in this call is passed in; an existing folder or file keeps its
+    owner. This does not make root runs safe: on an existing store SQLite
+    creates the ``-wal`` and ``-shm`` files as root and never hands them over
+    (see :func:`root_run_would_break`). Does nothing when the process is not
+    root, or the platform has no ``os.geteuid``. Root without the right to
+    change owners (a rootless container) logs a warning and continues, as
+    Hermes's own container setup does when its chown fails.
     """
     geteuid = getattr(os, "geteuid", None)
     if not paths or geteuid is None or geteuid() != 0:
@@ -150,6 +157,24 @@ def _give_to_hermes_owner(paths: list[Path], hermes_root: Path) -> None:
             os.chown(path, owner.st_uid, owner.st_gid)
         except FileNotFoundError:
             pass  # SQLite removed a -wal or -shm file when its last connection closed
+        except OSError as exc:
+            logger.warning("ergates: could not hand %s to the Hermes user (%s); continuing",
+                           path.name, type(exc).__name__)
+
+
+def root_run_would_break(hermes_root: Path) -> bool:
+    """True when this process runs as root and ``hermes_root`` belongs to another user.
+
+    SQLite creates a store's ``-wal`` and ``-shm`` files as the user that
+    opens it and does not hand them to the owner of the database file, so a
+    root process can leave files the Hermes user cannot open; every hook then
+    fails until someone runs ``chown -R hermes:hermes <root>/ergates``.
+    ``python -m ergates.flush`` refuses to start when this is true. False when
+    root owns the Hermes root (root is then the Hermes user) or the platform
+    has no ``os.geteuid``.
+    """
+    geteuid = getattr(os, "geteuid", None)
+    return geteuid is not None and geteuid() == 0 and os.stat(hermes_root).st_uid != 0
 
 
 class ControlStore:
@@ -176,8 +201,10 @@ class ControlStore:
         else:
             os.close(fd)
             created.append(self._path)
-        # Before the first connection, so SQLite finds the file already owned
-        # by the Hermes user.
+        # Before the first connection, so the file SQLite opens already
+        # belongs to the Hermes user. SQLite does not hand over the -wal and
+        # -shm files it creates, so only the ones created in this call are
+        # handed over below; root runs on an existing store are unsupported.
         _give_to_hermes_owner(created, folder.parent)
         sidecars = [self._path.with_name(self._path.name + suffix) for suffix in ("-wal", "-shm")]
         new_sidecars = [item for item in sidecars if not item.exists()] if self._path in created else []
