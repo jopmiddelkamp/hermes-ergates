@@ -1,0 +1,1402 @@
+[
+  {
+    "type": "dependency",
+    "from": "src/state/device-store.ts",
+    "to": "src/gateway/real/secrets.ts",
+    "unresolvedTo": "@/gateway/real/secrets",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-adapter-behind-port"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/state/persistence.ts",
+    "to": "src/gateway/real/secrets.ts",
+    "unresolvedTo": "@/gateway/real/secrets",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "export"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-adapter-behind-port"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/features/agents/create.ts",
+    "to": "src/features/chat/canonical-chat.ts",
+    "unresolvedTo": "../chat/canonical-chat",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-other-feature"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/features/agents/delete.ts",
+    "to": "src/features/routines/routines.ts",
+    "unresolvedTo": "../routines/routines",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-other-feature"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/features/chat/chat-session-context.tsx",
+    "to": "src/features/agents/roster.ts",
+    "unresolvedTo": "@/features/agents/roster",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-other-feature"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/features/files/attach.ts",
+    "to": "src/features/agents/editor.ts",
+    "unresolvedTo": "@/features/agents/editor",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-other-feature"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/_layout.tsx",
+    "to": "src/features/agents/editor-context.tsx",
+    "unresolvedTo": "@/features/agents/editor-context",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/_layout.tsx",
+    "to": "src/features/settings/connections.ts",
+    "unresolvedTo": "@/features/settings/connections",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/edit-capabilities.tsx",
+    "to": "src/features/agents/editor-context.tsx",
+    "unresolvedTo": "@/features/agents/editor-context",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/edit-instructions.tsx",
+    "to": "src/features/agents/editor-context.tsx",
+    "unresolvedTo": "@/features/agents/editor-context",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/edit-model.tsx",
+    "to": "src/features/agents/editor-context.tsx",
+    "unresolvedTo": "@/features/agents/editor-context",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/edit-model.tsx",
+    "to": "src/features/agents/roster.ts",
+    "unresolvedTo": "@/features/agents/roster",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/edit-model.tsx",
+    "to": "src/features/settings/connections.ts",
+    "unresolvedTo": "@/features/settings/connections",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/edit.tsx",
+    "to": "src/features/agents/editor-context.tsx",
+    "unresolvedTo": "@/features/agents/editor-context",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/edit.tsx",
+    "to": "src/features/agents/editor.ts",
+    "unresolvedTo": "@/features/agents/editor",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/edit.tsx",
+    "to": "src/features/files/attach.ts",
+    "unresolvedTo": "@/features/files/attach",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/index.tsx",
+    "to": "src/features/agents/delete.ts",
+    "unresolvedTo": "@/features/agents/delete",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/index.tsx",
+    "to": "src/features/agents/roster.ts",
+    "unresolvedTo": "@/features/agents/roster",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/index.tsx",
+    "to": "src/features/agents/use-home.ts",
+    "unresolvedTo": "@/features/agents/use-home",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/index.tsx",
+    "to": "src/features/settings/connections.ts",
+    "unresolvedTo": "@/features/settings/connections",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/memory.tsx",
+    "to": "src/features/settings/connections.ts",
+    "unresolvedTo": "@/features/settings/connections",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/routine.tsx",
+    "to": "src/features/routines/routines.ts",
+    "unresolvedTo": "@/features/routines/routines",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/routine.tsx",
+    "to": "src/features/settings/connections.ts",
+    "unresolvedTo": "@/features/settings/connections",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/routines.tsx",
+    "to": "src/features/routines/routines.ts",
+    "unresolvedTo": "@/features/routines/routines",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/routines.tsx",
+    "to": "src/features/settings/connections.ts",
+    "unresolvedTo": "@/features/settings/connections",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/tools.tsx",
+    "to": "src/features/agents/roster.ts",
+    "unresolvedTo": "@/features/agents/roster",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/agent/[profile]/tools.tsx",
+    "to": "src/features/settings/connections.ts",
+    "unresolvedTo": "@/features/settings/connections",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/chat/[profile]/_layout.tsx",
+    "to": "src/features/chat/chat-session-context.tsx",
+    "unresolvedTo": "@/features/chat/chat-session-context",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/chat/[profile]/_layout.tsx",
+    "to": "src/features/settings/connections.ts",
+    "unresolvedTo": "@/features/settings/connections",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/chat/[profile]/activity.tsx",
+    "to": "src/features/chat/agent-traffic/timeline.ts",
+    "unresolvedTo": "@/features/chat/agent-traffic/timeline",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/chat/[profile]/activity.tsx",
+    "to": "src/features/chat/chat-session-context.tsx",
+    "unresolvedTo": "@/features/chat/chat-session-context",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/chat/[profile]/exchange.tsx",
+    "to": "src/features/chat/agent-traffic/peers.ts",
+    "unresolvedTo": "@/features/chat/agent-traffic/peers",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/chat/[profile]/exchange.tsx",
+    "to": "src/features/chat/agent-traffic/timeline.ts",
+    "unresolvedTo": "@/features/chat/agent-traffic/timeline",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/chat/[profile]/exchange.tsx",
+    "to": "src/features/chat/agent-traffic/use-exchange-acknowledgement.ts",
+    "unresolvedTo": "@/features/chat/agent-traffic/use-exchange-acknowledgement",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/chat/[profile]/exchange.tsx",
+    "to": "src/features/chat/chat-session-context.tsx",
+    "unresolvedTo": "@/features/chat/chat-session-context",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/chat/[profile]/index.tsx",
+    "to": "src/features/chat/agent-traffic/peers.ts",
+    "unresolvedTo": "@/features/chat/agent-traffic/peers",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/chat/[profile]/index.tsx",
+    "to": "src/features/chat/agent-traffic/timeline.ts",
+    "unresolvedTo": "@/features/chat/agent-traffic/timeline",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/chat/[profile]/index.tsx",
+    "to": "src/features/chat/chat-session-context.tsx",
+    "unresolvedTo": "@/features/chat/chat-session-context",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/chat/[profile]/index.tsx",
+    "to": "src/features/chat/dev-inject.ts",
+    "unresolvedTo": "@/features/chat/dev-inject",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/chat/[profile]/index.tsx",
+    "to": "src/features/files/attach.ts",
+    "unresolvedTo": "@/features/files/attach",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/chat/[profile]/index.tsx",
+    "to": "src/features/voice/speech-port.ts",
+    "unresolvedTo": "@/features/voice/speech-port",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/connect.tsx",
+    "to": "src/features/settings/connections.ts",
+    "unresolvedTo": "@/features/settings/connections",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/hidden-bots.tsx",
+    "to": "src/features/agents/roster.ts",
+    "unresolvedTo": "@/features/agents/roster",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/hidden-bots.tsx",
+    "to": "src/features/settings/connections.ts",
+    "unresolvedTo": "@/features/settings/connections",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/index.tsx",
+    "to": "src/features/agents/delete.ts",
+    "unresolvedTo": "@/features/agents/delete",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/index.tsx",
+    "to": "src/features/agents/roster.ts",
+    "unresolvedTo": "@/features/agents/roster",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/index.tsx",
+    "to": "src/features/agents/use-home.ts",
+    "unresolvedTo": "@/features/agents/use-home",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/index.tsx",
+    "to": "src/features/settings/connections.ts",
+    "unresolvedTo": "@/features/settings/connections",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/new-agent.tsx",
+    "to": "src/features/agents/create.ts",
+    "unresolvedTo": "@/features/agents/create",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/new-agent.tsx",
+    "to": "src/features/agents/roster.ts",
+    "unresolvedTo": "@/features/agents/roster",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/new-agent.tsx",
+    "to": "src/features/settings/connections.ts",
+    "unresolvedTo": "@/features/settings/connections",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/search.tsx",
+    "to": "src/features/agents/roster.ts",
+    "unresolvedTo": "@/features/agents/roster",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/search.tsx",
+    "to": "src/features/settings/connections.ts",
+    "unresolvedTo": "@/features/settings/connections",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "app/settings.tsx",
+    "to": "src/features/settings/connections.ts",
+    "unresolvedTo": "@/features/settings/connections",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/gateway/real/real-gateway.ts",
+    "to": "src/features/chat/agent-traffic/transcript.ts",
+    "unresolvedTo": "@/features/chat/agent-traffic/transcript",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/state/device-store.ts",
+    "to": "src/features/chat/outbox.ts",
+    "unresolvedTo": "@/features/chat/outbox",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/ui/bot-actions-items.ts",
+    "to": "src/features/agents/roster.ts",
+    "unresolvedTo": "@/features/agents/roster",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/ui/BotActions.tsx",
+    "to": "src/features/agents/roster.ts",
+    "unresolvedTo": "@/features/agents/roster",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/ui/BotRow.tsx",
+    "to": "src/features/agents/roster.ts",
+    "unresolvedTo": "@/features/agents/roster",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/ui/chat/Bubble.tsx",
+    "to": "src/features/chat/history.ts",
+    "unresolvedTo": "@/features/chat/history",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/ui/chat/Cards.tsx",
+    "to": "src/features/chat/history.ts",
+    "unresolvedTo": "@/features/chat/history",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/ui/chat/Composer.tsx",
+    "to": "src/features/files/attach.ts",
+    "unresolvedTo": "@/features/files/attach",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/ui/chat/PeerAvatar.tsx",
+    "to": "src/features/agents/roster.ts",
+    "unresolvedTo": "@/features/agents/roster",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/ui/chat/PeerAvatar.tsx",
+    "to": "src/features/chat/agent-traffic/types.ts",
+    "unresolvedTo": "@/features/chat/agent-traffic/types",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/ui/chat/Rows.tsx",
+    "to": "src/features/chat/history.ts",
+    "unresolvedTo": "@/features/chat/history",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-feature-index-from-outside"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/gateway/real/real-gateway.ts",
+    "to": "src/features/chat/agent-traffic/transcript.ts",
+    "unresolvedTo": "@/features/chat/agent-traffic/transcript",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-gateway-points-inward"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/state/device-store.test.ts",
+    "to": "src/features/chat/outbox.ts",
+    "unresolvedTo": "@/features/chat/outbox",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-store-points-inward"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/state/device-store.ts",
+    "to": "src/features/chat/outbox.ts",
+    "unresolvedTo": "@/features/chat/outbox",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-1-store-points-inward"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/state/device-store.ts",
+    "to": "src/gateway/real/secrets.ts",
+    "unresolvedTo": "@/gateway/real/secrets",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-2-store-holds-no-hermes-data"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/state/persistence.ts",
+    "to": "src/gateway/real/secrets.ts",
+    "unresolvedTo": "@/gateway/real/secrets",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "export"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-2-store-holds-no-hermes-data"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "test/fake-gateway/scenarios.ts",
+    "to": "src/features/chat/canonical-chat.ts",
+    "unresolvedTo": "@/features/chat/canonical-chat",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-no-session-stand-in"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "test/fake-gateway/scenarios.ts",
+    "to": "src/features/chat/send-queue.ts",
+    "unresolvedTo": "@/features/chat/send-queue",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-no-session-stand-in"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "test/fake-gateway/scenarios.ts",
+    "to": "src/features/chat/session-reducer.ts",
+    "unresolvedTo": "@/features/chat/session-reducer",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-no-session-stand-in"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "test/fake-gateway/scenarios.ts",
+    "to": "src/features/chat/session-sync.ts",
+    "unresolvedTo": "@/features/chat/session-sync",
+    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-no-session-stand-in"
+    }
+  },
+  {
+    "type": "module",
+    "from": "test/scenarios/agent-traffic.test.ts",
+    "to": "test/scenarios/agent-traffic.test.ts",
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-scenarios-drive-the-controller"
+    }
+  },
+  {
+    "type": "module",
+    "from": "test/scenarios/busy-send.test.ts",
+    "to": "test/scenarios/busy-send.test.ts",
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-scenarios-drive-the-controller"
+    }
+  },
+  {
+    "type": "module",
+    "from": "test/scenarios/chat-streaming.test.ts",
+    "to": "test/scenarios/chat-streaming.test.ts",
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-scenarios-drive-the-controller"
+    }
+  },
+  {
+    "type": "module",
+    "from": "test/scenarios/history-refetch.test.ts",
+    "to": "test/scenarios/history-refetch.test.ts",
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-scenarios-drive-the-controller"
+    }
+  },
+  {
+    "type": "module",
+    "from": "test/scenarios/outbox-send.test.ts",
+    "to": "test/scenarios/outbox-send.test.ts",
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-scenarios-drive-the-controller"
+    }
+  },
+  {
+    "type": "module",
+    "from": "test/scenarios/reconnect-rebind.test.ts",
+    "to": "test/scenarios/reconnect-rebind.test.ts",
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-scenarios-drive-the-controller"
+    }
+  },
+  {
+    "type": "module",
+    "from": "test/scenarios/replay-recovery.test.ts",
+    "to": "test/scenarios/replay-recovery.test.ts",
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-scenarios-drive-the-controller"
+    }
+  },
+  {
+    "type": "module",
+    "from": "test/scenarios/requests.test.ts",
+    "to": "test/scenarios/requests.test.ts",
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-scenarios-drive-the-controller"
+    }
+  },
+  {
+    "type": "module",
+    "from": "test/scenarios/uncertain-send.test.ts",
+    "to": "test/scenarios/uncertain-send.test.ts",
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-scenarios-drive-the-controller"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/features/chat/use-session.ts",
+    "to": "src/features/chat/canonical-chat.ts",
+    "unresolvedTo": "./canonical-chat",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-thin-session-binding"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/features/chat/use-session.ts",
+    "to": "src/features/chat/send-queue.ts",
+    "unresolvedTo": "./send-queue",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-thin-session-binding"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/features/chat/use-session.ts",
+    "to": "src/features/chat/session-reducer.ts",
+    "unresolvedTo": "./session-reducer",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-thin-session-binding"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/features/chat/use-session.ts",
+    "to": "src/features/chat/session-sync.ts",
+    "unresolvedTo": "./session-sync",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "adr029-3-thin-session-binding"
+    }
+  }
+]

@@ -33,6 +33,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "dependency-cruiser": "18.4.0",
     "eas-cli": "24.7.0",
     "typescript": "~6.0.3",
     "vite": "^8.3.0",
@@ -52,7 +53,8 @@
     "release:ios-credentials": "node scripts/release.mjs ios-credentials",
     "release": "node scripts/release.mjs ship all",
     "release:ios": "node scripts/release.mjs ship ios",
-    "release:android": "node scripts/release.mjs ship android"
+    "release:android": "node scripts/release.mjs ship android",
+    "depcruise": "depcruise --config .dependency-cruiser.cjs --ignore-known .dependency-cruiser-known-violations.json app src test vendor"
   },
   "private": true
 }
