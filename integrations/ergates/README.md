@@ -101,6 +101,29 @@ No credentials are ever read from, or written into, this repository or the
 store. Push is skipped (not an error) whenever `ntfy.server` or `ntfy.topic`
 is unset; the event and its outbox row are still recorded.
 
+## Upgrading from 0.1
+
+An install that ran version 0.1.0 needs three changes by hand:
+
+- **The sweep takes no `--profile`.** `python -m ergates.flush --profile <name>`
+  now exits 2 (`unrecognized arguments`) and sweeps nothing. Remove the
+  flag from the crontab line: the sweep opens the store and reads the push
+  settings under the Hermes root, whichever `HERMES_HOME` it runs with.
+- **Push settings live in the root's `config.yaml` only.** `ntfy.*` settings
+  kept in a named profile's `config.yaml` are ignored, and
+  `ntfy.default_profile` is gone. Move `ntfy.server`, `ntfy.topic`,
+  `ntfy.token` and `ntfy.connection_id` to
+  `plugins.entries.ergates.settings` in `<hermes root>/config.yaml`.
+  `attention.completed_platforms` stays per profile.
+- **Existing named profiles need the plugin enabled.** Hermes loads the
+  plugin in a profile only from that profile's own `plugins/` folder, with
+  `ergates` in its `plugins.enabled` (see Install). Call
+  `POST /api/plugins/ergates/profiles/<name>/plugin` once per named profile,
+  or run the installer that roadmap Plan 5 adds. The route links to the
+  root's copy and never replaces a folder: remove a copy of the plugin at
+  `<root>/profiles/<name>/plugins/ergates` first, or the route answers 500
+  `internal`. It takes effect on the profile's next session.
+
 ## HTTP API
 
 `hermes serve` mounts `dashboard/api.py` under `/api/plugins/ergates`
