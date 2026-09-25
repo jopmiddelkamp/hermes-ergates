@@ -68,6 +68,11 @@ services:
       # only ever imports it; `hermes plugins doctor` copies it into a temp
       # home to validate, so it never needs to write here.
       - ../integrations/ergates:/opt/data/plugins/ergates:ro
+      # The reviewed proposal templates, read-only and outside /opt/data:
+      # `python -m ergates.install` copies them into /opt/data/ergates/templates
+      # as the hermes user (a mount inside /opt/data would make Docker create
+      # /opt/data/ergates owned by root).
+      - ./templates:/opt/ergates/templates:ro
       # Host Docker daemon access, restricted to this trusted controller
       # (03 section 9). This is NOT the same socket a shell sandbox gets --
       # profiles must keep terminal.docker_network / socket access off; see

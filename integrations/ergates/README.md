@@ -41,6 +41,7 @@ integrations/ergates/
     policy.py          # the pre_tool_call tool gate
     tool.py            # ctx.register_tool / ctx.register_hook wiring
     flush.py           # `python -m ergates.flush`: due pushes, expiry, retention
+    install.py         # `python -m ergates.install`: templates, the plugin in every profile
   tests/               # pytest suite, no Hermes needed; test_hermes_boundary.py
                        # fails when a module other than ergates/hermes_adapter.py
                        # or dashboard/api.py imports Hermes
@@ -74,6 +75,17 @@ so the plugin is installed once at the root and linked into each profile
    `ergates` to that profile's `plugins.enabled`. The app calls it as the
    `plugin_enabled` provisioning step. It takes effect on the profile's next
    session.
+
+`python -m ergates.install` does steps 2 and 3 for the default profile and
+every named profile at once, and installs the proposal templates: it checks
+every `<template_id>.json` in `--templates` (default `/opt/ergates/templates`,
+where `deploy/docker-compose.yml` mounts `deploy/templates`) the way the
+accept route would, then makes `<root>/ergates/templates/` hold exactly
+those files. One invalid template installs nothing. `--check` changes
+nothing and reports the same facts; the exit code is 0 only when every
+profile would load the plugin and the templates match. Run it as the user
+that owns the Hermes root, inside the Hermes runtime; `hermes serve` mounts
+the routes only when it starts, so restart it after the first run.
 
 ## Configuration
 
@@ -119,8 +131,9 @@ An install that ran version 0.1.0 needs three changes by hand:
   plugin in a profile only from that profile's own `plugins/` folder, with
   `ergates` in its `plugins.enabled` (see Install). Call
   `POST /api/plugins/ergates/profiles/<name>/plugin` once per named profile,
-  or run the installer that roadmap Plan 5 adds. The route links to the
-  root's copy and never replaces a folder: remove a copy of the plugin at
+  or run `python -m ergates.install` (see Install), which does this for every
+  profile at once. The route links to the root's copy and never replaces a
+  folder: remove a copy of the plugin at
   `<root>/profiles/<name>/plugins/ergates` first, or the route answers 500
   `internal`. It takes effect on the profile's next session.
 

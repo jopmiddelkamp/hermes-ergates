@@ -213,6 +213,11 @@ def test_check_gateway_lifecycle_outside_a_hermes_runtime_fails_loudly(without_h
         hermes_adapter.check_gateway_lifecycle("thijs", "Check the unpaid invoices.")
 
 
+def test_listing_the_profiles_needs_the_hermes_runtime(without_hermes):
+    with pytest.raises(ImportError):
+        hermes_adapter.profile_names()
+
+
 def test_outside_a_hermes_runtime_the_grant_and_the_toolset_are_unknown(without_hermes):
     """Rule 3 of the tool gate then does not apply; Hermes is not there to run a tool anyway."""
     assert hermes_adapter.granted_toolsets("thijs") is None

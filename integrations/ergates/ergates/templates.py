@@ -6,10 +6,14 @@ with exactly the ``ProposalTemplate`` fields::
     {"template_id": "bookkeeper-readonly", "soul": "...",
      "enabled_toolsets": ["file"], "enabled_mcp_servers": []}
 
-The server only reads them; deployment installs them (roadmap Plan 5,
-``deploy/templates/``). The accept route answers the template with the
+The server only reads them; ``python -m ergates.install`` installs them
+from ``deploy/templates/``. The accept route answers the template with the
 accepted proposal, so the app configures the new profile from what the
 server holds, never from what the model proposed.
+
+``enabled_toolsets`` must name at least one toolset: ``profiles.configure``
+treats an empty list as "remove the toolset pin", and the new agent would
+get Hermes's default toolsets instead of none.
 """
 
 from __future__ import annotations
@@ -61,5 +65,6 @@ def _is_template(data: Any, template_id: str) -> bool:
         and data.get("template_id") == template_id
         and isinstance(data.get("soul"), str)
         and strings(data.get("enabled_toolsets"))
+        and bool(data["enabled_toolsets"])
         and strings(data.get("enabled_mcp_servers"))
     )

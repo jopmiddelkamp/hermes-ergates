@@ -30,6 +30,13 @@ approvals:
   cron_mode: deny
   unattended_mode: deny
 
+# Hermes loads the plugin in a profile only when that profile enables it.
+# The app's provisioning and `python -m ergates.install` both do this; it is
+# here so a profile made by hand from this file starts with it.
+plugins:
+  enabled:
+    - ergates
+
 # TODO (P0, not yet configured/tested -- 03 section 9 and 11 section 4.1):
 #   - This profile must be provisioned with mirror_credentials: false and an
 #     approved role template (04 section 6) -- never created by copying the

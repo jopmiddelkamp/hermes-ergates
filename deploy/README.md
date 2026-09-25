@@ -23,6 +23,9 @@ deploy/
   profiles/
     concierge/{config.yaml,SOUL.md}            # default/launch profile
     specialist-template/{config.yaml,SOUL.md}  # copy per specialist during provisioning
+  templates/<template_id>.json     # reviewed role templates; `python -m ergates.install`
+                                   #   copies them into /opt/data/ergates/templates
+  tests/test_static.py             # the wiring rules below, checked in CI
   README.md                        # this file
 ```
 
@@ -99,25 +102,11 @@ replace it with a hash afterwards. UNVERIFIED: the hash command's import path
 being the Hermes app root; if it fails, fall back to the plaintext variable
 and record it as a gap.
 
-### Verify the integration plugin is installed
-
 The plugin is not copied anywhere: `docker-compose.yml` bind-mounts
 `../integrations/ergates` read-only at `/opt/data/plugins/ergates`, which is
 the user-plugin directory Hermes scans (`get_hermes_home()/plugins`, per
-`hermes_cli/plugins_discovery.py`). Confirm it actually loaded before
-provisioning anything that depends on it -- otherwise the ntfy publisher
-token in step 2 below is being stored for a plugin that is not there:
-
-```bash
-docker compose exec hermes-serve hermes plugins doctor /opt/data/plugins/ergates
-docker compose exec hermes-gateway hermes plugins doctor /opt/data/plugins/ergates
-```
-
-Expect two registered tools (`ergates_propose_agent`,
-`ergates_create_reminder`) and four hooks (`pre_tool_call`,
-`pre_approval_request`, `post_approval_response`, `post_llm_call`). The
-gateway matters separately: that is the process where the hooks actually
-fire.
+`hermes_cli/plugins_discovery.py`). Step 4 of the first-run provisioning
+below enables it in every profile and installs the proposal templates.
 
 ## First-run credential provisioning
 
@@ -173,15 +162,40 @@ already done above, before first start.
    name (for example `ergates-attention`), and subscribe the devices to the
    same one.
 
-3. **Concierge and specialist profiles**: copy `profiles/concierge/` and
-   `profiles/specialist-template/` into the mounted data volume as real
-   Hermes profiles, then fill in every `TODO` each `config.yaml` calls out
-   (workspace volumes, effective toolset, MCP include list) before treating
-   a profile as ready. Specialist profiles must be provisioned with
-   `mirror_credentials: false` against an approved role template -- never by
-   copying the concierge's credentials (04 section 6; 11 section 4.1).
+3. **Concierge and specialist profiles**: the concierge is the default
+   profile, so `profiles/concierge/config.yaml` is the Hermes root's
+   `config.yaml`: merge its keys into `data/hermes/config.yaml` (the file
+   `hermes setup` wrote) and copy `profiles/concierge/SOUL.md` to
+   `data/hermes/SOUL.md`. It enables the plugin and holds the install-wide
+   push settings; add the publisher token from step 2 as
+   `plugins.entries.ergates.settings.ntfy.token`, and the app's connection
+   id (the app's Settings, "Connection id (for push links)") as
+   `...ntfy.connection_id`. Then fill in every `TODO` each `config.yaml`
+   calls out (workspace volumes, effective toolset, MCP include list) before
+   treating a profile as ready. Specialists are normally created by the app
+   from a template in `templates/`, with `mirror_credentials: false`; a
+   specialist made by hand from `profiles/specialist-template/` goes to
+   `data/hermes/profiles/<name>/` -- never copy the concierge's credentials
+   (04 section 6; 11 section 4.1).
 
-4. **Schedule the plugin's retry/retention sweep** (below). A failed push is
+4. **Install the plugin into every profile, and the templates**, as the
+   `hermes` user, then restart the controllers: `hermes serve` mounts the
+   plugin's routes only when it starts.
+
+   ```bash
+   docker compose exec -T -u hermes -e PYTHONPATH=/opt/data/plugins/ergates hermes-serve python -m ergates.install
+   docker compose restart hermes-serve hermes-gateway
+   docker compose exec -T -u hermes -e PYTHONPATH=/opt/data/plugins/ergates hermes-serve python -m ergates.install --check
+   # ergates.install: templates=installed (bookkeeper-readonly, general-assistant)
+   # ergates.install: profile=default plugin=enabled
+   ```
+
+   `--check` exits 0 only when every profile would load the plugin and the
+   installed templates equal `templates/`. Run step 4 again after every
+   update of this repository and after making a profile by hand; the app
+   enables the plugin in the profiles it creates.
+
+5. **Schedule the plugin's retry/retention sweep** (below). A failed push is
    scheduled for a retry that nothing in Hermes runs, so without this step
    the retry machinery and every retention rule are dead code.
 
@@ -323,13 +337,11 @@ These are called out, not hidden, because this file is a draft:
    contract requires one.
 7. **Backup/restore** above is a written procedure, not yet an executed
    drill.
-8. **The plugin mount and the periodic sweep have not been run in this
-   stack.** `hermes plugins doctor` passes on the plugin directory locally,
-   and the discovery path (`get_hermes_home()/plugins`) is read from the
-   pinned source, but neither the mount nor the
-   `docker compose exec ... python -m ergates.flush` cron line has been
-   executed against a running container. Run both during the P0 spike; the
-   doctor step above is the check that proves the mount half.
+8. **The plugin mount, the installer and the periodic sweep have not been
+   run in this stack.** The contract tests run `python -m ergates.install`
+   and the plugin against the pinned Hermes, but neither the mount nor the
+   `docker compose exec ...` lines have run against a container. First-run
+   step 4 (`python -m ergates.install --check`) proves the mount half.
 
 ## Corrections applied after review
 

@@ -9,12 +9,19 @@ wrong container, a profile without the approval settings.
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 import pytest
 import yaml
 
 DEPLOY = Path(__file__).resolve().parents[1]
+# The accept route's own template check; the ergates package needs no dependency.
+sys.path.insert(0, str(DEPLOY.parent / "integrations" / "ergates"))
+from ergates.templates import load_template  # noqa: E402
+
+TEMPLATES = sorted(path.stem for path in (DEPLOY / "templates").glob("*.json"))
+TEMPLATE_MOUNT = "./templates:/opt/ergates/templates:ro"
 COMPOSE_TEXT = (DEPLOY / "docker-compose.yml").read_text(encoding="utf-8")
 COMPOSE = yaml.safe_load(COMPOSE_TEXT)
 SERVICES = COMPOSE["services"]
@@ -107,3 +114,36 @@ def test_each_profile_has_a_soul(name: str) -> None:
 def test_only_the_concierge_multiplexes_the_gateway() -> None:
     assert profile("concierge")["gateway"] == {"multiplex_profiles": True}
     assert "gateway" not in profile("specialist-template")
+
+
+@pytest.mark.parametrize("name", PROFILES)
+def test_each_profile_enables_the_plugin(name: str) -> None:
+    """Hermes loads a user plugin only when the active home's config.yaml enables it."""
+    assert "ergates" in profile(name)["plugins"]["enabled"]
+
+
+def test_the_concierge_holds_the_install_wide_push_settings_without_a_secret() -> None:
+    """The concierge's config.yaml is the Hermes root's, where every hook and the sweep read ntfy.*."""
+    ntfy = profile("concierge")["plugins"]["entries"]["ergates"]["settings"]["ntfy"]
+    assert ntfy == {"server": "http://ntfy", "topic": "ergates-attention"}
+    assert "entries" not in profile("specialist-template")["plugins"]
+
+
+def test_there_are_templates_and_each_is_one_the_accept_route_serves() -> None:
+    assert TEMPLATES
+    for template_id in TEMPLATES:
+        template = load_template(DEPLOY / "templates", template_id)
+        assert template["enabled_toolsets"], template_id
+        assert "{{" not in template["soul"], template_id
+
+
+def test_the_concierge_proposes_exactly_the_shipped_templates() -> None:
+    soul = (DEPLOY / "profiles" / "concierge" / "SOUL.md").read_text(encoding="utf-8")
+    named = sorted(set(re.findall(r"`template_id: ([a-z0-9][a-z0-9_-]*)`", soul)))
+    assert named == TEMPLATES
+
+
+def test_hermes_serve_mounts_the_templates_read_only_outside_the_data_volume() -> None:
+    """The installer copies them into /opt/data/ergates/templates as the hermes user; a bind
+    mount inside /opt/data would make Docker create /opt/data/ergates owned by root."""
+    assert TEMPLATE_MOUNT in SERVICES["hermes-serve"]["volumes"]

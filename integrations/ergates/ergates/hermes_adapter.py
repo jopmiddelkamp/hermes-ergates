@@ -117,6 +117,17 @@ def profile_exists(profile: str) -> bool:
     return bool(hermes_profile_exists(profile))
 
 
+def profile_names() -> list[str]:
+    """``default`` and every live named profile of this Hermes install, in Hermes's order.
+
+    Hermes's ``list_profile_names`` also lists a deleted profile whose
+    folder is still there; :func:`profile_exists` leaves those out.
+    """
+    from hermes_cli.profiles import list_profile_names
+
+    return [name for name in list_profile_names() if profile_exists(name)]
+
+
 def check_schedule(profile: str, schedule: str) -> None:
     """Raise ``ValueError`` unless Hermes cron would accept ``schedule`` for ``profile`` now.
 

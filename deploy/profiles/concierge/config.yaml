@@ -34,6 +34,21 @@ approvals:
   cron_mode: deny
   unattended_mode: deny
 
+# The concierge is the default profile, so this file is the Hermes root's
+# config.yaml. `hermes serve` mounts the plugin's routes only when the root
+# enables it, and every hook and the sweep read the install-wide push
+# settings here. The publisher token and the app's connection id are added
+# during first-run provisioning (deploy/README.md); never commit them.
+plugins:
+  enabled:
+    - ergates
+  entries:
+    ergates:
+      settings:
+        ntfy:
+          server: http://ntfy
+          topic: ergates-attention
+
 # TODO (P0, not yet configured/tested -- 03 section 9):
 #   - Workspace volumes: an explicit, reviewed host<->container path mapping
 #     for this profile's persistent workspace. Never mount the whole Hermes
@@ -41,5 +56,3 @@ approvals:
 #   - Effective toolset: the concierge's actual tool/connector allowlist,
 #     including the ergates_propose_agent tool from integrations/ergates.
 #   - MCP include list: which MCP servers this profile may reach.
-#   - ntfy routing: the topic/token this profile's attention hooks publish
-#     to (see integrations/ergates/README.md "Configuration").

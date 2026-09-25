@@ -57,6 +57,8 @@ def test_an_id_that_is_not_a_safe_file_name_is_unknown(tmp_path, template_id):
     json.dumps({**TEMPLATE, "soul": None}),
     json.dumps({**TEMPLATE, "enabled_toolsets": "file"}),
     json.dumps({**TEMPLATE, "enabled_mcp_servers": [""]}),
+    # profiles.configure reads [] as "no toolset pin": the agent would get Hermes's defaults.
+    json.dumps({**TEMPLATE, "enabled_toolsets": []}),
 ])
 def test_a_broken_template_file_is_unknown_and_logged_without_its_content(tmp_path, caplog, content):
     directory = templates_dir(tmp_path)

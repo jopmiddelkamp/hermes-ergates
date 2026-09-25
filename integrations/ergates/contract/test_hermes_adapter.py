@@ -383,3 +383,15 @@ def test_the_gateway_lifecycle_guard_refuses_prose_and_depends_on_the_active_pro
         "\n"
         "        return get_active_profile_name() or None"
     )
+
+
+def test_the_profile_listing_names_default_and_every_profile_folder(hermes: PinnedSource) -> None:
+    """profile_names() keeps only the live ones: this listing includes deleted profiles."""
+    assert _arguments(hermes.function(PROFILES, "list_profile_names")) == []
+    # hermes_cli/profiles.py:282-285
+    assert hermes.lines(PROFILES, 282, 285) == (
+        '    names = ["default"]\n'
+        "    with contextlib.suppress(OSError):\n"
+        "        names.extend(entry.name for entry in _iter_named_profile_dirs(live_only=False))\n"
+        "    return names"
+    )
