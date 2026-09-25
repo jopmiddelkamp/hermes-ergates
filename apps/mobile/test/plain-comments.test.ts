@@ -18,10 +18,20 @@ import { describe, expect, it } from 'vitest'
 
 const APP = path.resolve(import.meta.dirname, '..')
 const FOLDERS = ['app', 'src', 'test']
-const PLAN_ID =
-  /\broadmap\b|\breview focus\b|\.superpowers\b|\bimplementer-rules\b|\brulings?\b|\breview (?:issue|finding|point|comment)s? #?\d+/i
-const PLAN_ID_CASED =
-  /\b(?:[Dd]ecisions?|[Cc]ontracts?) [CD]\d+\b|\b[CD]\d{1,2}\b|\bPlan \d+\b|\bTask \d+\b|\b[Bb]ug \d+\b|\([IM]\d{1,2}\b|\b(?:Critical|Important|Minor) \d+[a-z]?\b/
+const PLAN_ID = new RegExp(
+  [
+    String.raw`\broadmap\b|\breview focus\b|\.superpowers\b|\bimplementer-rules\b`,
+    String.raw`\brulings? \d+(?:(?:,| and) \d+)*\b|\bruling,? (?:Critical|Important|Minor) \d+[a-z]?`,
+    String.raw`\breview (?:issue|finding|point|comment)s? #?\d+`
+  ].join('|'),
+  'i'
+)
+const PLAN_ID_CASED = new RegExp(
+  [
+    String.raw`\b(?:[Dd]ecisions?|[Cc]ontracts?) [CD]\d+\b|\b[CD]\d{1,2}\b|\bPlan \d+\b|\bTask \d+\b|\b[Bb]ug \d+\b`,
+    String.raw`\([IM]\d{1,2}\b|\((?:Critical|Important|Minor) \d+[a-z]?\)|\b(?:Critical|Important|Minor) \d+(?:\([a-z]\)|[a-z]\))`
+  ].join('|')
+)
 const TEST_FUNCTIONS = new Set(['describe', 'it', 'test'])
 
 type Found = { line: number; text: string }
@@ -176,10 +186,18 @@ describe('planning ids', () => {
     'review point 3',
     'review comments 12',
     '(spec 5.4, ruling 11)',
-    'the same-direction ruling',
+    'ruling 12',
+    'Ruling 12: the last turn',
+    'rulings 5 and 6',
+    'rulings 3, 4 and 7',
+    '(Critical 1a)',
+    '(Important 2)',
+    'Critical 1(a)',
+    'ruling, Critical 1a',
     '(ruling, Critical 1a)',
-    'Important 3',
-    'Minor 12'
+    'Ruling, Critical 1b: the turn',
+    '(spec 12.3 anchor, ruling Critical 1b)',
+    'Critical 1b).'
   ])('are found in %j', text => {
     expect(namesPlanningId(text)).toBe(true)
   })
@@ -197,7 +215,13 @@ describe('planning ids', () => {
     'the page it was ISSUED at',
     'a review comment on the pull request',
     'the critical path',
-    'a minor version bump'
+    'a minor version bump',
+    'a court ruling',
+    "the judge's ruling was final",
+    'the same-direction ruling',
+    'Important 3 steps remain',
+    'bump to Minor 12',
+    'Critical 5 users were affected'
   ])(
     'leave %j alone',
     text => {

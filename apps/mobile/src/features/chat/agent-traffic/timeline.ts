@@ -177,7 +177,11 @@ function inCandidateRange(head: number | undefined, live: { afterRowId: number |
   return live.beforeRowId === undefined || head <= live.beforeRowId
 }
 
-/** Live sealed answers no durable row explains yet (spec 12.3 fallback). */
+/**
+ * Live sealed answers no durable row explains yet (spec 12.3 fallback). Each keeps the durable turns
+ * that could be its home expanded until a reconciliation places it; one that follows the human's own
+ * local send in its turn is explained by that send and retains nothing.
+ */
 function retainedLiveAnchors(items: ChatItem[], turns: Turn[]): RetainedAnchor[] {
   const retained: RetainedAnchor[] = []
   const heads = turns.map(turn => rowIdOf(items[turn.start]!))
@@ -201,8 +205,8 @@ function retainedLiveAnchors(items: ChatItem[], turns: Turn[]): RetainedAnchor[]
  *
  * The candidates are bounded on both sides by row ids, never by position: a turn older than the
  * live turn's start cannot hold its answer, and neither can one that began after the snapshot that
- * first retained it. When no turn falls in the range, the turn that holds
- * the retained item is the only candidate.
+ * first retained it. When no turn falls in the range, the turn that holds the retained item is the
+ * only candidate.
  */
 function mayCorrespondToRetained(items: ChatItem[], turns: Turn[], index: number, retained: RetainedAnchor[]): boolean {
   const head = rowIdOf(items[turns[index]!.start]!)
@@ -390,7 +394,9 @@ function foldTurns(items: ChatItem[], input: TimelineInput): Map<number, Folded>
 }
 
 // ---------------------------------------------------------------------------
-// Placement (spec 5.5 anchor)
+// Placement (spec 5.5 anchor). An exchange or receipt sits behind its own row, found by row id,
+// or behind the newest older row when its own is not loaded, never by list position; a live-only
+// send sits at its tool row.
 // ---------------------------------------------------------------------------
 
 /** The index of the item an exchange or a receipt sits behind; -1 means "before every item". */
@@ -430,7 +436,10 @@ interface PlacedReceipt {
   detail: string
 }
 
-/** Unpaired and not-loaded receipts render as a notice, in place of their row (spec 5.5). */
+/**
+ * Unpaired and not-loaded receipts render as a notice, in place of their row (spec 5.5): with no
+ * send to fold into, the notice is the only place their delivery update shows.
+ */
 function placeUnpairedReceipts(items: ChatItem[], build: ReturnType<typeof buildExchanges>): Map<number, PlacedReceipt[]> {
   const placed = new Map<number, PlacedReceipt[]>()
   for (const receipt of build.unpaired) {
@@ -444,7 +453,11 @@ function placeUnpairedReceipts(items: ChatItem[], build: ReturnType<typeof build
   return placed
 }
 
-/** Items an exchange already speaks for, plus the rows that are never rendered at all. */
+/**
+ * Items an exchange already speaks for, plus the rows that are never rendered at all: a receipt item
+ * (folded into its exchange or drawn as a notice) and a `message_agent` tool row without an id,
+ * which can never be paired.
+ */
 function hiddenItemIds(items: ChatItem[], members: Set<string>, folded: Map<number, Folded>): Set<string> {
   const hidden = new Set<string>()
   for (const item of items) {
@@ -560,7 +573,8 @@ function assemble(input: TimelineInput): Assembled {
     const previous = mergeInto
     // Same peer and nothing visible in between: the rows sum up into one "N messages with <peer>" row,
     // whatever their direction; an input row that was folded into an exchange draws no line and so
-    // does not break the run (owner request 2026-09-14; runs used to merge only in one direction).
+    // does not break the run (owner request 2026-09-14; before it, only exchanges of the same
+    // direction merged).
     if (previous !== null && peerKey(previous.exchange.peer) === peerKey(exchange.peer)) {
       const merged = mergeConsecutive(previous.exchange, exchange)
       lines[previous.index] = exchangeLine(merged)
@@ -571,7 +585,8 @@ function assemble(input: TimelineInput): Assembled {
       mergeInto = { index: lines.length - 1, exchange }
     }
 
-    // A receipt that only carried a delivery update sits beside the row it belongs to.
+    // A paired receipt that only carried a delivery update draws its notice right after the exchange
+    // row, so the update reads beside the send it is about.
     if (exchange.notice) {
       const processId = exchange.evidence.processId
       pushNotice(`notice-${exchange.id}`, DELIVERY_UPDATE, (processId !== undefined ? receiptRaw.get(processId) : undefined) ?? '')

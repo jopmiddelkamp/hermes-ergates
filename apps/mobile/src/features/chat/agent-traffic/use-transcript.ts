@@ -115,7 +115,10 @@ export function useTranscriptWindow(port: GatewayPort, opts: UseTranscriptOption
   /** `tailWanted` as of the current render, readable from inside the `queryFn`. */
   const tailWantedRef = useRef(tailWanted)
   tailWantedRef.current = tailWanted
-  /** The last automatic fetch failed: wait for the next trigger instead of spinning. */
+  /**
+   * The last automatic fetch failed: wait for the next trigger listed above instead of retrying, so a
+   * broken route is not fetched again in a loop.
+   */
   const blockedRef = useRef(false)
   /** How many tail pages this trigger has had discarded as stale. */
   const staleTailRef = useRef({ wanted: NO_TAIL_HANDLED, rounds: 0 })

@@ -170,7 +170,8 @@ export function deliveryFromReason(reason: string | undefined): Delivery {
 }
 
 // ---------------------------------------------------------------------------
-// Body reading (spec 5.2)
+// Body reading (spec 5.2). A relay reply or CLI text that yields a reply body reads as settled:
+// the worker prints the target's reply only after the message was delivered.
 // ---------------------------------------------------------------------------
 
 function outcomeReading(delivery: Delivery, reply: Reply, extra?: { status?: string; reason?: string; error?: string; deliveryId?: string }): OutcomeReading {
@@ -256,7 +257,11 @@ function readCliTextBody(body: string, exitCode: number | 'unknown', trimmed: bo
   return exitCode === 0 ? outcomeReading('settled', { kind: 'empty' }) : outcomeReading('unknown', { kind: 'none' })
 }
 
-/** Reads a parsed receipt's body per the grammar's ordered branches (spec 5.2). */
+/**
+ * Reads a parsed receipt's body per the grammar's ordered branches (spec 5.2). A JSON `failed`
+ * status that carries a `reason` takes its delivery from the reason table; CLI text with nothing
+ * left reads as settled on exit code 0 and as unknown otherwise.
+ */
 export function readBody(receipt: ParsedReceipt, opts: { pairedResultHasDeliveryId: boolean }): BodyReading {
   const { body, trimmed } = receipt
 

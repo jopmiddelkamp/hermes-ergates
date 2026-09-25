@@ -18,14 +18,15 @@ from pathlib import Path
 PACKAGE = Path(__file__).resolve().parents[1]
 SKIPPED_PARTS = {"__pycache__", "node_modules"}
 PLAN_ID = re.compile(
-    r"(?i:\broadmap\b|\breview focus\b|\.superpowers\b|\bimplementer-rules\b|\brulings?\b"
+    r"(?i:\broadmap\b|\breview focus\b|\.superpowers\b|\bimplementer-rules\b"
+    r"|\brulings? \d+(?:(?:,| and) \d+)*\b|\bruling,? (?:Critical|Important|Minor) \d+[a-z]?"
     r"|\breview (?:issue|finding|point|comment)s? #?\d+)"
     r"|\b(?:[Dd]ecisions?|[Cc]ontracts?) [CD]\d+\b|\b[CD]\d{1,2}\b|\bPlan \d+\b|\bTask \d+\b|\b[Bb]ug \d+\b"
-    r"|\([IM]\d{1,2}\b|\b(?:Critical|Important|Minor) \d+[a-z]?\b"
+    r"|\([IM]\d{1,2}\b|\((?:Critical|Important|Minor) \d+[a-z]?\)|\b(?:Critical|Important|Minor) \d+(?:\([a-z]\)|[a-z]\))"
 )
 # The same ids inside a function or class name, e.g. ``test_bug8_...`` or ``..._c3_body``.
 PLAN_ID_IN_NAME = re.compile(
-    r"(?i)(?:^|_)(?:bug_?\d+|review_focus|review_(?:issue|finding|point|comment)_?\d+|rulings?|roadmap"
+    r"(?i)(?:^|_)(?:bug_?\d+|review_focus|review_(?:issue|finding|point|comment)_?\d+|rulings?_?\d+|roadmap"
     r"|[cd]\d{1,2}|plan_?\d+|task_?\d+)(?=_|$)"
 )
 
@@ -107,14 +108,22 @@ def test_the_patterns_catch_each_kind_of_planning_id():
         "review point 3",
         "review comments 12",
         "(spec 5.4, ruling 11)",
-        "a controller ruling",
+        "ruling 12",
+        "Ruling 12: the last turn",
+        "rulings 5 and 6",
+        "rulings 3, 4 and 7",
+        "(Critical 1a)",
+        "(Important 2)",
+        "Critical 1(a)",
+        "ruling, Critical 1a",
         "(ruling, Critical 1a)",
-        "Important 3",
-        "Minor 12",
+        "Ruling, Critical 1b: the turn",
+        "(spec 12.3 anchor, ruling Critical 1b)",
+        "Critical 1b).",
     ):
         assert PLAN_ID.search(text), text
     for name in ("test_bug8_x", "test_review_focus_3_x", "test_x_c3_body", "test_x_c5_shape",
-                 "test_review_issue_4_x", "test_x_per_ruling"):
+                 "test_review_issue_4_x", "test_ruling_12_x"):
         assert PLAN_ID_IN_NAME.search(name), name
 
 
@@ -133,7 +142,14 @@ def test_the_patterns_leave_adr_docs_and_hermes_references_alone():
         "a review comment on the pull request",
         "the critical path",
         "a minor version bump",
+        "a court ruling",
+        "the judge's ruling was final",
+        "a controller ruling",
+        "Important 3 steps remain",
+        "bump to Minor 12",
+        "Critical 5 users were affected",
     ):
         assert not PLAN_ID.search(text), text
-    for name in ("test_ci_local", "test_decode_utf8", "test_a_template_file_is_read", "test_review_is_skipped"):
+    for name in ("test_ci_local", "test_decode_utf8", "test_a_template_file_is_read", "test_review_is_skipped",
+                 "test_a_court_ruling_stands"):
         assert not PLAN_ID_IN_NAME.search(name), name

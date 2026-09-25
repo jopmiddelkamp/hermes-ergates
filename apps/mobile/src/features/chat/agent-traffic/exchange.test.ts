@@ -613,7 +613,7 @@ describe('exchangeCopy', () => {
 })
 
 // ---------------------------------------------------------------------------
-// mergeConsecutive (spec 5.4)
+// mergeConsecutive (spec 5.4): the bodies of merged exchanges add up into the row's count
 // ---------------------------------------------------------------------------
 
 describe('mergeConsecutive', () => {

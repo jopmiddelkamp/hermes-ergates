@@ -461,13 +461,19 @@ export function buildExchanges(evidence: Evidence, opts: { roster: RosterPeer[];
 }
 
 // ---------------------------------------------------------------------------
-// Copy (spec 5.4) — derived, never stored
+// Copy (spec 5.4) — derived, never stored. "N messages with <peer>" counts every body the app
+// holds for the row, sent and reply bodies alike, across merged exchanges.
 // ---------------------------------------------------------------------------
 
 const UNKNOWN_OUTCOME = 'Delivery outcome unknown'
 const LATEST_OUTCOME_UNAVAILABLE = ' · latest outcome unavailable'
 
-/** The roster display name; a peer with neither a name nor a handle is still named, never blank. */
+/**
+ * The roster display name; a peer with neither a name nor a handle is still named, never blank.
+ * A remote peer reads `@<agent> on <peer>`, or `an agent on <peer>` when the agent is unknown
+ * (`peers.ts`); the app has no peer-registry read at the Hermes pin, so a bare target that is not
+ * a roster profile reads as a local handle.
+ */
 export function peerName(peer: PeerRef): string {
   return peer.display.name || peer.handle || 'an unknown teammate'
 }
@@ -504,7 +510,10 @@ export function memberStates(x: Pick<Exchange, 'phase' | 'state' | 'bodies' | 'g
   return x.group?.states ?? [{ phase: x.phase, state: x.state, bodies: x.bodies }]
 }
 
-/** Spec 12.4: openable when any member holds a recorded body; a send still in flight holds none yet. */
+/**
+ * Spec 12.4: openable when any member holds a recorded body. A send still in flight holds none yet:
+ * its text is live tool arguments, not a durable record.
+ */
 export function isOpenable(x: Pick<Exchange, 'phase' | 'state' | 'bodies' | 'group'>): boolean {
   return memberStates(x).some(m => m.phase !== 'sending' && m.bodies >= 1)
 }
@@ -512,7 +521,10 @@ export function isOpenable(x: Pick<Exchange, 'phase' | 'state' | 'bodies' | 'gro
 type SuffixBucket = 'waiting' | 'failed' | 'refused' | 'cancelled' | 'unknown'
 const SUFFIX_ORDER: SuffixBucket[] = ['waiting', 'failed', 'refused', 'cancelled', 'unknown']
 
-/** Which suffix bucket one member falls into; settled replies and admitted sends fall into none. */
+/**
+ * Which suffix bucket one member falls into. Settled replies and admitted sends with no reply fall
+ * into none: the 5.4 table does not call them waiting.
+ */
 function suffixBucket(m: MemberState): SuffixBucket | null {
   if (m.phase === 'sending') return 'waiting'
   const { delivery, reply, latestOutcomeUnavailable } = m.state
@@ -553,8 +565,9 @@ export function exchangeCopy(x: Pick<Exchange, 'state' | 'phase' | 'peer' | 'bod
 // ---------------------------------------------------------------------------
 
 /**
- * Folds two adjacent exchanges with the same peer into one row: the bodies add up, the later
- * exchange owns the state, and the first one keeps the anchor so the row never moves.
+ * Folds two adjacent exchanges with the same peer into one row: the bodies add up (the N of
+ * "N messages with <peer>"), the later exchange owns the state, and the first one keeps the anchor
+ * so the row never moves.
  * Adjacency is the timeline's decision (spec 5.4), not this function's.
  */
 export function mergeConsecutive(a: Exchange, b: Exchange): Exchange {

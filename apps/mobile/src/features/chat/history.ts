@@ -21,7 +21,11 @@ export type DeliveryState = 'submitting' | 'acknowledged' | 'queued' | 'unconfir
 
 export type TurnOutcome = 'completed' | 'failed' | 'unknown'
 
-/** Where a live turn started, as the reducer knew the chat then (spec 12.3 input-row anchor). */
+/**
+ * Where a live turn started, as the reducer knew the chat then (spec 12.3 input-row anchor).
+ * Reconciliation uses it to find the answer's durable input row: for a local turn the one fresh user
+ * row with the local send's text, else the one fresh input row of any kind (`resolveAnchorRowId`).
+ */
 export interface LiveAnchor {
   /** The newest durable row id known when the turn started; `null` when none was. */
   afterRowId: number | null
@@ -317,9 +321,10 @@ function uniqueAnswerIndex(fresh: ChatItem[], start: number): number | undefined
 }
 
 /**
- * Spec 12.3: carry every recorded outcome forward by row id, then move each live sealed
- * answer's outcome onto its durable row when — and only when — the match is unambiguous. A live
- * answer without such a match is retained, with its outcome, until the next reconciliation.
+ * Spec 12.3: carry every recorded outcome forward by row id, so an outcome survives reconciliation
+ * (spec 12.6), then move each live sealed answer's outcome onto its durable row when — and only
+ * when — the match is unambiguous; a moved outcome overrides the carried copy. A live answer
+ * without such a match is retained, with its outcome, until the next reconciliation.
  */
 export function transferOutcomes(items: ChatItem[], fresh: ChatItem[]): { fresh: ChatItem[]; retained: ChatItem[] } {
   const previous = new Map<number, TurnOutcome>()

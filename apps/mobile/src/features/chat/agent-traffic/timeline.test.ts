@@ -339,7 +339,7 @@ describe("buildTimeline: the answer to this bot's own dispatch stays expanded (H
   })
 })
 
-describe('buildTimeline: consecutive merge (spec 5.4, adjacency)', () => {
+describe('buildTimeline: consecutive merge (spec 5.4; only rows adjacent in the timeline merge)', () => {
   it('merges two sends to the same peer that end up adjacent', () => {
     const { lines } = buildTimeline(input({ items: senderItems(), rows: senderRows() }))
     const merged = lines.find(line => line.key === 'x-call_nRwha9TQ0oE9AugWq67WcB4K')
@@ -389,7 +389,7 @@ describe('buildTimeline: consecutive merge (spec 5.4, adjacency)', () => {
   })
 })
 
-describe('buildTimeline: notices', () => {
+describe('buildTimeline: notices (a short visible text by kind; the raw receipt only in the detail)', () => {
   const ITEMS: ChatItem[] = [
     { kind: 'user', id: 'h-user-9', rowId: 9, text: 'ask Kevin', at: 1789375700 },
     { kind: 'assistant', id: 'h-assistant-10', rowId: 10, text: '', at: 1789375701, reasoning: 'calling message_agent' },
