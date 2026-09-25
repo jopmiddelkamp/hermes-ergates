@@ -50,6 +50,12 @@ def profile(name: str) -> dict:
     return yaml.safe_load((DEPLOY / "profiles" / name / "config.yaml").read_text(encoding="utf-8"))
 
 
+def config_lines(relative: str) -> list[str]:
+    """The settings of the proxy or ingress config: stripped lines, without blanks and comments."""
+    lines = (DEPLOY / relative).read_text(encoding="utf-8").splitlines()
+    return [line.strip() for line in lines if line.strip() and not line.strip().startswith("#")]
+
+
 def test_the_stack_is_serve_gateway_ntfy_the_egress_proxy_and_the_ingress() -> None:
     assert set(SERVICES) == {"hermes-serve", "hermes-gateway", "ntfy", "egress-proxy", "ingress"}
 
@@ -91,6 +97,20 @@ def test_only_the_egress_proxy_and_the_ingress_have_a_route_out() -> None:
         assert sorted(SERVICES[name]["networks"]) == ["edge", "internal"], name
 
 
+def test_both_networks_are_created_by_this_file() -> None:
+    """An `external` network is made elsewhere, with settings these checks cannot see."""
+    assert [name for name, network in COMPOSE["networks"].items() if "external" in network] == []
+
+
+def test_the_internal_network_has_no_gateway_on_the_host() -> None:
+    """An internal bridge still gets an address on the host by default, and its containers reach
+    host services listening on 0.0.0.0 through it. The isolated gateway mode (Docker Engine 28.0)
+    assigns none, and with IPv6 off no IPv6 gateway takes its place."""
+    internal = COMPOSE["networks"]["internal"]
+    assert internal["driver_opts"] == {"com.docker.network.bridge.gateway_mode_ipv4": "isolated"}
+    assert internal["enable_ipv6"] is False
+
+
 @pytest.mark.parametrize("service", BEHIND_THE_PROXY)
 def test_every_service_behind_the_proxy_is_told_to_use_it(service: str) -> None:
     environment = SERVICES[service]["environment"]
@@ -101,7 +121,7 @@ def test_every_service_behind_the_proxy_is_told_to_use_it(service: str) -> None:
 
 
 def test_the_proxy_allows_only_https_tunnels_to_listed_hosts() -> None:
-    conf = [line.strip() for line in (DEPLOY / "proxy" / "squid.conf").read_text(encoding="utf-8").splitlines()]
+    conf = config_lines("proxy/squid.conf")
     rules = [line for line in conf if line.startswith("http_access")]
     assert rules == [
         "http_access deny !CONNECT",
@@ -117,6 +137,23 @@ def test_the_proxy_allows_only_https_tunnels_to_listed_hosts() -> None:
     ]
 
 
+def test_the_proxy_config_includes_none_of_the_image_defaults() -> None:
+    """The image's conf.d/debian.conf allows every local network; an include would bring it back."""
+    assert [line for line in config_lines("proxy/squid.conf") if line.startswith("include")] == []
+
+
+def test_the_proxy_keeps_the_file_descriptor_cap_the_image_sets() -> None:
+    """The image sets it in conf.d/rock.conf, which this config does not include."""
+    assert "max_filedescriptors 1024" in config_lines("proxy/squid.conf")
+
+
+def test_the_proxy_logs_to_the_file_the_image_follows() -> None:
+    """Squid opens its logs after dropping to the `proxy` user, and a log it cannot open stops it
+    at start; a stdio: target on the container's output is such a log. The image's entrypoint
+    follows /var/log/squid/access.log onto the container output instead."""
+    assert [line for line in config_lines("proxy/squid.conf") if "stdio:" in line] == []
+
+
 def test_the_allowlist_is_bare_host_names_and_reaches_the_ntfy_upstream() -> None:
     hosts = (DEPLOY / "proxy" / "allowed-domains.txt").read_text(encoding="utf-8").split()
     assert hosts
@@ -126,12 +163,17 @@ def test_the_allowlist_is_bare_host_names_and_reaches_the_ntfy_upstream() -> Non
 
 
 def test_the_ingress_forwards_the_two_listeners_to_their_services() -> None:
-    config = [line.strip() for line in (DEPLOY / "ingress" / "haproxy.cfg").read_text(encoding="utf-8").splitlines()]
+    config = config_lines("ingress/haproxy.cfg")
     assert "mode tcp" in config
     assert sorted(line for line in config if line.startswith("bind ")) == ["bind :8080", "bind :9119"]
     servers = sorted(line.split()[2] for line in config if line.startswith("server "))
     assert servers == ["hermes-serve:9119", "ntfy:80"]
     assert SERVICES["ingress"]["volumes"] == ["./ingress/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro"]
+
+
+def test_the_ingress_serves_no_stats_page() -> None:
+    """A stats listener would publish HAProxy's own status page through the ingress's ports."""
+    assert [line for line in config_lines("ingress/haproxy.cfg") if line.startswith("stats")] == []
 
 
 def test_hermes_serve_listens_on_its_container_network_for_the_ingress() -> None:

@@ -11,9 +11,13 @@
 #     through terminal.backend: docker from a profile's config.yaml, not a
 #     service here) never get that socket and run with no network.
 #   - The controllers and ntfy sit only on `internal`, a network with no
-#     route out. Their one way out is `egress-proxy`, which allows HTTPS to
-#     the hosts in proxy/allowed-domains.txt and nothing else, so a tool that
-#     ignores the proxy settings cannot reach the internet either.
+#     route out and no gateway address on the host (Docker Engine 28.0 or
+#     later). Their one network path out is `egress-proxy`, which allows HTTPS
+#     to the hosts in proxy/allowed-domains.txt and nothing else, so a client
+#     that ignores the proxy settings cannot reach the internet or a service
+#     on the host either. This constrains network clients, not a compromised
+#     controller: code running in a controller can use its Docker socket to
+#     start a container outside this network.
 #   - `ingress` is the one published door: it forwards the VPS's Tailscale IP
 #     ports 9119 (hermes serve) and NTFY_PORT (ntfy) as plain TCP to the
 #     internal services. Nothing is published on 0.0.0.0, and no service uses
@@ -55,7 +59,9 @@ services:
     # service, including this command. Only the command (CMD) is overridden.
     # 0.0.0.0 inside the container: the Tailscale IP exists only on the host,
     # and `ingress` is what publishes this port there. A non-loopback bind
-    # keeps Hermes's dashboard auth on from the first request.
+    # keeps Hermes's dashboard auth on from the first request. Binding 0.0.0.0
+    # also turns off Hermes's Host-header check against DNS rebinding
+    # (hermes_cli/web_server.py accepts any Host then); the auth gate stays on.
     command: ["hermes", "serve", "--host", "0.0.0.0", "--port", "9119", "--skip-build"]
     environment:
       <<: *through-the-egress-proxy
@@ -192,6 +198,13 @@ networks:
   internal:
     driver: bridge
     internal: true
+    # By default an internal bridge still has an address on the host, and
+    # containers reach host services listening on 0.0.0.0 (sshd, for one)
+    # through it. The isolated gateway mode assigns none; it needs Docker
+    # Engine 28.0 or later. IPv6 stays off, so no IPv6 gateway replaces it.
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+    enable_ipv6: false
   # The proxy's way out and the ingress's published ports.
   edge:
     driver: bridge

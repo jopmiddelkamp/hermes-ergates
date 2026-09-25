@@ -34,10 +34,14 @@ deploy/
 
 ## Install
 
-Prerequisites on the VPS: Docker + Docker Compose v2, and Tailscale already
-installed and connected (`tailscale ip -4` must return an address). This
-draft assumes both exist on the host already -- neither is a compose
-service here (see "Deliberately out of scope" in `docker-compose.yml`).
+Prerequisites on the VPS: Docker Engine 28.0 or later with Docker Compose
+v2, and Tailscale already installed and connected (`tailscale ip -4` must
+return an address). Engine 28.0 added the isolated gateway mode the
+`internal` network uses (see "Egress and ingress"), and it includes the fix
+for CVE-2024-29018, DNS lookups leaking out of internal networks (fixed in
+23.0.11 and 25.0.5). This draft assumes Docker and Tailscale exist on the
+host already -- neither is a compose service here (see "Deliberately out of
+scope" in `docker-compose.yml`).
 
 **Generate the dashboard credentials before the first `up -d`, not after.**
 The dashboard bind is non-loopback, so Hermes's auth gate is on from the
@@ -116,12 +120,16 @@ below enables it in every profile and installs the proposal templates.
 ## Egress and ingress
 
 The controllers and ntfy sit only on the Compose network `internal`, which
-has no route out. They reach the internet only through `egress-proxy`
-(Squid), and only as HTTPS to a host listed in `proxy/allowed-domains.txt`;
-plain HTTP, other ports, IP addresses and unlisted hosts are denied. Every
-service behind the proxy gets `HTTP_PROXY`/`HTTPS_PROXY` pointing at it, but
-that is only the address: a tool that ignores the variables has no route
-out at all (04 section 7).
+has no route out and, in the isolated gateway mode, no address on the host,
+so they cannot reach a service listening on the host either. Their one
+network path out is `egress-proxy` (Squid), and only as HTTPS to a host
+listed in `proxy/allowed-domains.txt`; plain HTTP, other ports, IP addresses
+and unlisted hosts are denied. Every service behind the proxy gets
+`HTTP_PROXY`/`HTTPS_PROXY` pointing at it, but that is only the address: a
+client that ignores the variables has no network path out at all (04
+section 7). This constrains network clients, not a compromised controller:
+both controllers hold the Docker socket, so code running in one can start a
+container outside `internal` and past the proxy.
 
 `proxy/allowed-domains.txt` ships with `ntfy.sh`, the iOS wake-up upstream,
 and nothing else: no model provider is reachable until you add its hosts.
@@ -131,7 +139,7 @@ providers, the same in the Hermes image (v2026.9.11) and at the contract pin:
 
 | Provider | Hosts |
 |---|---|
-| Anthropic | `api.anthropic.com`; a Claude sign-in token also refreshes at `platform.claude.com` and `console.anthropic.com` |
+| Anthropic | `api.anthropic.com`; a Claude sign-in token also refreshes at `platform.claude.com` (Hermes falls back to `console.anthropic.com`, which its own source says returns 404, so that one is optional) |
 | OpenAI API | `api.openai.com` |
 | OpenAI Codex (ChatGPT sign-in) | `chatgpt.com`, `auth.openai.com` |
 | GitHub Copilot | `api.githubcopilot.com`, `api.github.com` (token exchange), `github.com` (device sign-in) |
@@ -144,6 +152,15 @@ registry (`hermes_cli/auth.py`). The allowlist is per host: a listed host
 allows every path on it, so `api.github.com` opens all of GitHub's API.
 Denied requests show in `docker compose logs egress-proxy` with
 `TCP_DENIED`; add a host only when you know why the stack needs it.
+
+Hermes installs some optional backends from PyPI the first time they are
+used (`tools/lazy_deps.py`, on unless `security.allow_lazy_installs: false`).
+Behind this proxy those installs fail with `TCP_DENIED` unless `pypi.org`
+and `files.pythonhosted.org` are listed. Listing them lets any code in the
+controllers download any package from PyPI. Leaving them out keeps that
+door shut, and `security.allow_lazy_installs: false` then turns the failed
+install into a message that names the missing feature. That trade-off is
+yours.
 
 The only published ports belong to `ingress` (HAProxy), on `TAILSCALE_IP`:
 9119 for `hermes serve` and `NTFY_PORT` for ntfy, forwarded as plain TCP, so
