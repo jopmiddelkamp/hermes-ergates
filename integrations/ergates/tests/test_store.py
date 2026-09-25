@@ -46,6 +46,15 @@ def test_the_store_runs_in_wal_mode(store):
         assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
 
 
+def test_a_commit_asks_sqlite_to_flush_the_drive_not_just_the_os_cache(store):
+    """On macOS, fsync() alone does not survive a power loss (man 2 fsync);
+    only F_FULLFSYNC does, and SQLite issues it only when PRAGMA fullfsync is
+    on. Without this, PRAGMA synchronous = FULL is not the durability
+    guarantee it looks like."""
+    with store.transaction() as conn:
+        assert conn.execute("PRAGMA fullfsync").fetchone()[0] == 1
+
+
 def test_the_store_file_and_folder_are_private(store):
     assert stat.S_IMODE(os.stat(store.path).st_mode) == 0o600
     assert stat.S_IMODE(os.stat(store.path.parent).st_mode) == 0o700

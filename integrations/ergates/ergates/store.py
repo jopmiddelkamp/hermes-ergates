@@ -201,6 +201,11 @@ class ControlStore:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA synchronous = FULL")
+        # On macOS, fsync() only reaches the drive's write cache, not the
+        # platter (man 2 fsync); only F_FULLFSYNC does. SQLite issues
+        # F_FULLFSYNC on a commit only when this pragma is on. It has no
+        # effect on Linux, where fsync() already flushes the drive.
+        conn.execute("PRAGMA fullfsync = ON")
         return conn
 
     def _migrate(self) -> None:
