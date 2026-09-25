@@ -77,5 +77,7 @@ export function useGatewayRegistry(): GatewayRegistry {
 /** The port for a saved connection; stable across renders for the same id and URL. */
 export function useGateway(connection: ConnectionRecord): ConnectedGateway {
   const registry = useGatewayRegistry()
+  // Keyed on the id and the URL, not the record: a record that changes only its label or `primary` flag keeps its gateway.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   return useMemo(() => registry.get(connection), [registry, connection.id, connection.baseUrl])
 }

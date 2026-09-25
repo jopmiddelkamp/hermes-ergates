@@ -58,7 +58,7 @@ describe('re-opening the chat', () => {
   })
 
   it('submits each queued item once when a re-open lands during the outbox flush', async () => {
-    const answers: Array<ReturnType<typeof held>> = []
+    const answers: ReturnType<typeof held>[] = []
     const gateway = new FakeGateway({
       onSubmit: () => {
         const answer = held()
@@ -92,7 +92,7 @@ describe('re-opening the chat', () => {
   })
 
   it('stops the previous open\'s queue from flushing once the chat re-opens', async () => {
-    const answers: Array<ReturnType<typeof held>> = []
+    const answers: ReturnType<typeof held>[] = []
     const gateway = new FakeGateway({
       onSubmit: () => {
         const answer = held()

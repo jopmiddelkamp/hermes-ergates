@@ -51,7 +51,7 @@ const asFixture = (value: unknown): ReceiptFixture => value as ReceiptFixture
 // its worker and read its body exactly as the fixture's `expect` says.
 // -----------------------------------------------------------------------
 
-const singleReceiptFixtures: Array<[string, ReceiptFixture]> = [
+const singleReceiptFixtures: [string, ReceiptFixture][] = [
   ['receipt-cli', asFixture(receiptCli)],
   ['receipt-cli-second', asFixture(receiptCliSecond)],
   ['receipt-refusal-json', asFixture(receiptRefusalJson)],
@@ -94,7 +94,7 @@ describe.each(singleReceiptFixtures)('%s', (_name, fixture) => {
 // Batch fixtures: parse as `{ kind: 'receipts' }` with the expected count.
 // -----------------------------------------------------------------------
 
-const batchFixtures: Array<[string, ReceiptFixture]> = [
+const batchFixtures: [string, ReceiptFixture][] = [
   ['receipt-batch-two', asFixture(receiptBatchTwo)],
   ['receipt-batch-three', asFixture(receiptBatchThree)],
 ]

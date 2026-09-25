@@ -278,7 +278,7 @@ function Chat({ devSend, devInject, devFocus }: { devSend?: string; devInject?: 
           return null
       }
     },
-    [name, profile, connectionId, router, session, runWithAlert, openActivity, theme.colors.mutedForeground]
+    [profile, connectionId, router, session, runWithAlert, openActivity, theme.colors.mutedForeground]
   )
 
   return (

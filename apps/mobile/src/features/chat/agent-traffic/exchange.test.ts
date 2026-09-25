@@ -559,7 +559,7 @@ describe('exchangeCopy', () => {
     return exchangeCopy({ state: state({}), phase: 'settled', peer: kevinPeer, bodies: 1, pairing: 'paired', ...over })
   }
 
-  const rows: Array<[string, Partial<Pick<Exchange, 'state' | 'phase' | 'bodies'>>, string]> = [
+  const rows: [string, Partial<Pick<Exchange, 'state' | 'phase' | 'bodies'>>, string][] = [
     ['sending', { phase: 'sending' }, 'Messaging Kevin…'],
     ['admitted, none', { state: state({ delivery: 'admitted' }) }, 'Messaged Kevin'],
     ['queued, none', { state: state({ delivery: 'queued' }) }, 'Messaged Kevin · waiting for a reply'],

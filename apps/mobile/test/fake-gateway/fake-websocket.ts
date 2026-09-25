@@ -23,7 +23,7 @@ export class FakeWebSocket {
 
   readonly url: string
   readyState = FakeWebSocket.CONNECTING
-  sent: Array<Record<string, unknown>> = []
+  sent: Record<string, unknown>[] = []
   private readonly listeners = new Map<string, Set<Listener>>()
 
   constructor(url: string) {

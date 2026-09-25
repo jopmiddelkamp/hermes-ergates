@@ -36,6 +36,8 @@
     "@vitest/coverage-v8": "5.0.0",
     "dependency-cruiser": "18.4.0",
     "eas-cli": "24.7.0",
+    "eslint": "9.39.5",
+    "eslint-config-expo": "57.0.2",
     "typescript": "~6.0.3",
     "vite": "^8.3.0",
     "vitest": "5.0.0"
@@ -48,7 +50,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "expo lint",
+    "lint": "eslint --max-warnings 0 .",
     "release:check": "node scripts/release.mjs check",
     "release:setup": "node scripts/release.mjs setup",
     "release:ios-credentials": "node scripts/release.mjs ios-credentials",

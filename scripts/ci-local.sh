@@ -24,6 +24,7 @@ job_mobile() {
     npm ci --no-audit --no-fund
   fi
   npm run typecheck
+  npm run lint
   npm run test:coverage
   npm run depcruise
 }

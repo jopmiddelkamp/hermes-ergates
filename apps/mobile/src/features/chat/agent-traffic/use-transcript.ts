@@ -298,7 +298,6 @@ export function useTranscriptWindow(port: GatewayPort, opts: UseTranscriptOption
     void runTail(tailWanted)
     // `retryNonce` is a wake-up signal for a discarded page, not a value this
     // effect reads (spec 5.8).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, loadedWindow, tailWanted, retryNonce, runTail, refetch, isError, isFetching, clearAutoBlock])
 
   // (b) Evidence that must be older than the loaded window (spec 5.5).
@@ -325,7 +324,6 @@ export function useTranscriptWindow(port: GatewayPort, opts: UseTranscriptOption
         blockedRef.current = true
       }
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, needsOlder, loadedWindow, retryNonce, runFetch])
 
   // (d) iOS suspends the socket within seconds: whatever happened while the app

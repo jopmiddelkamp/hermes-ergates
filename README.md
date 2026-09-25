@@ -29,7 +29,7 @@ Connect in the app with `http://127.0.0.1:9119` and the token.
 | Job | What it checks |
 |---|---|
 | `lint` | the workflow files (actionlint) and the runner script |
-| `mobile` | `npm run typecheck`, Vitest with the coverage gate, the ADR-029 dependency rules |
+| `mobile` | `npm run typecheck`, ESLint (`npm run lint`, no warnings allowed), Vitest with the coverage gate, the ADR-029 dependency rules |
 | `integration` | the Python suite with a 90% branch-coverage gate, including the Hermes boundary guard |
 | `contract` | facts about the pinned Hermes source the integration relies on, and the integration running inside the pinned Hermes (its adapter, routes and tool gate) |
 | `deploy` | `docker compose config` and static checks of `deploy/` |

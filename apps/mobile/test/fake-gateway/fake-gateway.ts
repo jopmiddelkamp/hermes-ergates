@@ -97,7 +97,7 @@ export class FakeConnection implements GatewayConnection {
   /** Count of `prompt.submit` requests this connection has answered. */
   submitCalls = 0
   /** Every RPC this connection saw, in order: `[method, params]`. */
-  readonly requests: Array<{ method: string; params: Record<string, unknown> }> = []
+  readonly requests: { method: string; params: Record<string, unknown> }[] = []
   lastError: ConnectionFailure | null = null
 
   private readonly script: FakeScript

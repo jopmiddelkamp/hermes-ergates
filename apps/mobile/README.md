@@ -34,7 +34,8 @@ For a gateway on the Tailscale VPS (password mode) enter its URL; the app reads 
 | `npm run test:coverage` | The same tests with the coverage gate (thresholds in `vitest.config.mts`) |
 | `npm run typecheck` | `tsc --noEmit` (TypeScript 6 strict) |
 | `npm run depcruise` | The ADR-029 dependency rules in `.dependency-cruiser.cjs` |
-| `../../scripts/ci-local.sh mobile` | The CI `mobile` job: typecheck, coverage gate, dependency rules |
+| `npm run lint` | ESLint with `eslint-config-expo` (hooks rules included); fails on any warning |
+| `../../scripts/ci-local.sh mobile` | The CI `mobile` job: typecheck, lint, coverage gate, dependency rules |
 | `ERGATES_LIVE=1 ERGATES_TOKEN=… npx vitest run test/live` | Smoke check against a real backend (docs/11 section 3) |
 | `ERGATES_LIVE=1 ERGATES_RECORD=1 ERGATES_TOKEN=… ERGATES_OUT=… npx vitest run test/live/agent-traffic-record.live.test.ts` | Re-record the bot-to-bot traffic fixtures (sanitize by hand before copying into `test/fixtures/agent-traffic/`) |
 | `npx expo prebuild --platform ios --clean` | Regenerate the native project after changing plugins in `app.json` |

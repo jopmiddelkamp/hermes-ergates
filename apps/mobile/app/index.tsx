@@ -54,11 +54,12 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   const [menu, setMenu] = useState<{ bot: Bot; anchor: AnchorRect } | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
+  const refetchHome = home.refetch
   useFocusEffect(
     useCallback(() => {
       setActiveConnection(connectionId)
-      void gateway.restore().then(() => home.refetch())
-    }, [connectionId, gateway, home.refetch, setActiveConnection])
+      void gateway.restore().then(() => refetchHome())
+    }, [connectionId, gateway, refetchHome, setActiveConnection])
   )
 
   // New installs pin the concierge only (docs/10 "Home"): once, when no organization exists for this connection.

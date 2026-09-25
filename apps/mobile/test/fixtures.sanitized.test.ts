@@ -20,7 +20,7 @@ import { describe, expect, it } from 'vitest'
 const FIXTURES_DIR = path.resolve(import.meta.dirname, 'fixtures')
 
 /** Forbidden markers. Each is a plain description plus the pattern that finds it. */
-const FORBIDDEN: Array<{ label: string; pattern: RegExp }> = [
+const FORBIDDEN: { label: string; pattern: RegExp }[] = [
   { label: 'a macOS/Linux home path', pattern: /\/Users\/|\/home\// },
   { label: 'a macOS app-support path', pattern: /Library\/Application Support/ },
   { label: "the operator's account name", pattern: /jopmiddelkamp/i },

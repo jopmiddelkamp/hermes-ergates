@@ -4,7 +4,7 @@ import { isGatewayError } from '../errors'
 import { HttpClient, mergeCookieHeader, normalizeBaseUrl, splitSetCookie, type HttpAuthState } from './http'
 
 function fetchStub(status: number, body: unknown, headers: Record<string, string> = {}) {
-  const calls: Array<{ url: string; init: RequestInit }> = []
+  const calls: { url: string; init: RequestInit }[] = []
   const impl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     calls.push({ url: String(url), init: init ?? {} })
     return new Response(typeof body === 'string' ? body : JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } })

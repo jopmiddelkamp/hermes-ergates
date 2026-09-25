@@ -30,6 +30,7 @@ export const SPEECH_DISCLOSURE = 'Speech may be processed by Apple or Google whe
  */
 function supportsOnDevice(): boolean {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- a synchronous check; import() is async
     const m = require('expo-speech-recognition') as { ExpoSpeechRecognitionModule: { supportsOnDeviceRecognition(): boolean } }
     return m.ExpoSpeechRecognitionModule.supportsOnDeviceRecognition()
   } catch {
