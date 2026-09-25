@@ -118,7 +118,9 @@ def build_ntfy_publish(
     headers["Click"] = click_url
     headers["X-Tags"] = _ECHO_TAG
     headers["Priority"] = "default"
-    if _SEQUENCE_ID_RE.match(event_id or ""):
+    # fullmatch: ``$`` also matches before a final newline, which would put a
+    # line break in a header value.
+    if _SEQUENCE_ID_RE.fullmatch(event_id or ""):
         headers["X-Sequence-ID"] = event_id
     return {"url": f"{server.rstrip('/')}/{topic}", "headers": headers, "body": GENERIC_BODY, "event_id": event_id}
 

@@ -132,7 +132,7 @@ def test_a_resent_push_carries_its_event_id_as_the_ntfy_sequence_id():
     assert first["headers"]["X-Sequence-ID"] == again["headers"]["X-Sequence-ID"] == event_id
 
 
-@pytest.mark.parametrize("event_id", ["", "has space", "x" * 65, "a/b"])
+@pytest.mark.parametrize("event_id", ["", "has space", "x" * 65, "a/b", "evt-1\n"])
 def test_an_event_id_ntfy_would_refuse_as_a_sequence_id_is_left_out(event_id):
     spec = build_ntfy_publish("https://x", "t", "", title="T", click_url="c", event_id=event_id)
 
