@@ -61,7 +61,8 @@ function defaultTranscriptPage(sessionId: string, opts: T.TranscriptQuery): T.Tr
 export type SubmitOutcome = T.GatewayEventFrame[] | 'timeout' | 'reject' | { status: T.SubmitResult['status']; events?: T.GatewayEventFrame[] }
 
 export interface FakeScript {
-  onSubmit?: (text: string) => SubmitOutcome
+  /** A returned promise keeps that `prompt.submit` in flight until it settles. */
+  onSubmit?: (text: string) => SubmitOutcome | Promise<SubmitOutcome>
   /** Overrides merged onto the default (gap-since-lastSeen) replay result. */
   replay?: Partial<T.ReplayResult>
   readyEpoch?: string
@@ -105,6 +106,8 @@ export class FakeConnection implements GatewayConnection {
   private readonly stateHandlers = new Set<(state: ConnectionState) => void>()
   private readonly log: T.GatewayEventFrame[] = []
   private seqCounter = 1000
+  /** Rejecters of the requests still waiting for an answer. */
+  private readonly inFlight = new Set<(err: Error) => void>()
 
   constructor(profile: string, script: FakeScript) {
     this.profile = profile
@@ -119,9 +122,17 @@ export class FakeConnection implements GatewayConnection {
   async request<R>(method: string, params: Record<string, unknown> = {}): Promise<R> {
     this.requests.push({ method, params })
     if (method === 'prompt.submit') {
-      return this.submit(params) as unknown as R
+      return this.track(this.submit(params)) as unknown as R
     }
     return {} as R
+  }
+
+  /** Settles with `work`, unless the socket closes first (see `setState`). */
+  private track<V>(work: Promise<V>): Promise<V> {
+    return new Promise<V>((resolve, reject) => {
+      this.inFlight.add(reject)
+      work.then(resolve, reject).finally(() => this.inFlight.delete(reject))
+    })
   }
 
   /** The methods this connection saw, in order. */
@@ -129,11 +140,11 @@ export class FakeConnection implements GatewayConnection {
     return this.requests.map(r => r.method)
   }
 
-  private submit(params: Record<string, unknown>): T.SubmitResult {
+  private async submit(params: Record<string, unknown>): Promise<T.SubmitResult> {
     this.submitCalls += 1
     const sessionId = String(params.session_id ?? '')
     const text = String(params.text ?? '')
-    const outcome = this.script.onSubmit ? this.script.onSubmit(text) : []
+    const outcome = this.script.onSubmit ? await this.script.onSubmit(text) : []
     if (outcome === 'timeout') {
       throw new GatewayError('timeout', 'The gateway did not answer in time.')
     }
@@ -195,13 +206,13 @@ export class FakeConnection implements GatewayConnection {
     return this.seqCounter
   }
 
-  /** Test hook: a brief transport blip - closed, then open again. */
+  /** Test hook: a brief transport blip - closed (in-flight requests fail), then open again. */
   simulateDrop(): void {
     this.setState('closed')
     this.setState('open')
   }
 
-  /** Test hook: the socket is down until `simulateOnline`. */
+  /** Test hook: the socket is down until `simulateOnline`; in-flight requests fail. */
   simulateOffline(): void {
     this.setState('closed')
   }
@@ -215,6 +226,16 @@ export class FakeConnection implements GatewayConnection {
     this.stateValue = state
     for (const handler of this.stateHandlers) {
       handler(state)
+    }
+    if (state === 'closed') {
+      // Like the real client (vendor/hermes/shared/json-rpc-gateway.ts, `close`
+      // and the socket's close listener): a closed socket rejects every request
+      // still in flight, and the adapter maps that to a `network` error.
+      const pending = [...this.inFlight]
+      this.inFlight.clear()
+      for (const reject of pending) {
+        reject(new GatewayError('network', 'No connection to the gateway.'))
+      }
     }
   }
 }

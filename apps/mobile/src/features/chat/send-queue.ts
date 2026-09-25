@@ -153,6 +153,11 @@ export class SendQueue {
    * An authenticated reconnect: send the items that never left the device, in
    * order. Items that were already submitted are NOT resent — their outcome is
    * unknown and only the user may decide (ADR-027).
+   *
+   * Each item's status is read from the store again right before its send, not
+   * from the list taken when the flush started: while an earlier send awaited
+   * its answer, a re-opened chat's queue may have sent the item already. Only a
+   * `queued_unsent` item goes out; a `submitting` one is in flight elsewhere.
    */
   async flush(): Promise<void> {
     if (this.flushing || !this.options.isOnline()) {
@@ -160,14 +165,15 @@ export class SendQueue {
     }
     this.flushing = true
     try {
-      for (const stored of this.mine()) {
+      for (const { localId } of this.mine()) {
         if (!this.options.isOnline()) {
           return
         }
-        const item = reconnectItem(stored)
-        if (item.status !== 'submitting') {
+        const stored = this.options.outbox.list().find(i => i.localId === localId)
+        if (stored?.status !== 'queued_unsent') {
           continue
         }
+        const item = reconnectItem(stored)
         this.options.outbox.update(item.localId, { status: 'submitting', error: undefined })
         this.options.dispatch({ type: 'submit/retry', localId: item.localId })
         await this.deliver(item)

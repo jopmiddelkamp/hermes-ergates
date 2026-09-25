@@ -288,7 +288,10 @@ export function createSessionController(options: SessionControllerOptions): Sess
         profile,
         submit: (text, opts) => port.sessions.submit(chat.liveSessionId, text, opts),
         dispatch,
-        isOnline: () => connection?.state === 'open',
+        // Bound to this open attempt, not to the controller-wide `connection`: a
+        // re-open sets that again, and a queue left from the previous attempt
+        // must stop flushing instead of sending on the new attempt's behalf.
+        isOnline: () => !run.cancelled && opened.state === 'open',
         isBusy: () => state.live.streaming,
         now,
         newLocalId: options.newLocalId ?? defaultLocalId
