@@ -29,8 +29,10 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Optional
 
 from .attention import AttentionJournal
+from .paths import store_path
 from .proposals import ProposalJournal
-from .reminders import ReminderJournal
+from .reminders import CronPort, ReminderService, UnavailableCron
+from .store import ControlStore
 from .tool import flush_retries, hermes_home, send_ntfy
 
 logger = logging.getLogger("ergates.flush")
@@ -110,7 +112,7 @@ def flush_once(
     *,
     now: Optional[float] = None,
     publish: Callable[[Dict[str, Any]], None] = send_ntfy,
-    get_job: Optional[Callable[..., Optional[Dict[str, Any]]]] = None,
+    cron: Optional[CronPort] = None,
 ) -> Dict[str, int]:
     """Run one expiry pass, one retention pass and one retry pass. Counts only, never content.
 
@@ -118,13 +120,19 @@ def flush_once(
     ``ntfy.topic`` is unset, exactly like the hook path: a deployment
     without push still gets its retention sweep.
 
-    ``get_job`` is optional and, when given, lets the reminder sweep drop
-    receipts whose cron job has been deleted natively; without it the
-    reminder journal falls back to its 30-day idle rule.
+    ``cron`` is optional and, when given, lets the reminder sweep drop
+    receipts whose cron job has been deleted natively; without it the sweep
+    applies only the 30-day idle rule (:class:`~ergates.reminders.UnavailableCron`).
     """
     moment = time.time() if now is None else now
     root = journal_root(home)
     attention = AttentionJournal(root)
+    store = ControlStore(store_path(home))
+    try:
+        reminders = ReminderService(store, cron or UnavailableCron(), clock=lambda: moment)
+        pruned_reminders = reminders.prune(moment)
+    finally:
+        store.close()
     counts = {
         "retried": 0,
         # Expiries are reported separately from deletions: an expired approval
@@ -134,7 +142,7 @@ def flush_once(
         "expired_notifications": attention.expire_pending(moment),
         "pruned_notifications": attention.prune(moment),
         "pruned_proposals": ProposalJournal(root).prune(moment),
-        "pruned_reminders": ReminderJournal(root).prune(moment, get_job),
+        "pruned_reminders": pruned_reminders,
     }
     server, topic = settings.get("server"), settings.get("topic")
     if server and topic:

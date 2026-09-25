@@ -1,51 +1,37 @@
-"""Idempotent reminder creation on top of Hermes cron.
+"""Idempotent reminder creation on top of Hermes cron, recorded in the control store.
 
-Hermes remains the scheduler (docs/11-implementation-readiness.md section
-4.3): this module never runs a timer itself. It serializes reminder creation
-per (profile, schedule, timezone, prompt) through a
-:class:`~ergates.journal.Journal` so that retries -- from the app, from an
-agent, or from a disconnect-after-create -- are safe: the same request
-returns the same receipt instead of creating a duplicate cron job, and a
-request that reuses an id with a different payload is reported as a conflict
-rather than silently overwriting a different reminder.
+Hermes remains the scheduler (docs/11 section 4.3); this module never runs a
+timer. A reminder request becomes one row in ``reminder_receipts``, and every
+change to that row is a versioned compare-and-set: it names the ``version``
+it read and fails when another writer got there first. That makes the retry
+cases safe:
 
-Both Hermes calls are injected callables rather than a hardcoded transport,
-so this module stays usable against the cron REST surface, the
-``cron.manage`` RPC, or a test double, and is fully unit-testable without a
-running Hermes instance:
+- Two identical requests at the same moment: one claims the receipt and
+  calls cron; the other waits for it and returns the same receipt.
+- A job deleted natively (Routines screen): only the request that still
+  holds the version that saw the job missing creates it again (roadmap
+  bug 1).
+- A create whose answer was lost: the receipt is ``uncertain``, and the next
+  request reconciles it through the job's unique name instead of creating
+  blindly. A ``creating`` receipt older than :data:`IN_FLIGHT_SECONDS` is
+  treated the same way: its creator died (roadmap bug 3).
+- The retention sweep deletes only the receipt version it inspected (roadmap
+  bug 2).
 
-``create_job(body, *, profile) -> dict``
-    ``body`` holds only real :class:`CronJobCreate` fields
-    (``hermes_cli/web_models.py`` at the pin): ``schedule``, ``prompt``,
-    ``name``. The owning **profile is passed out of band**, as the
-    keyword-only ``profile`` argument, because cron scopes by profile
-    outside the body -- ``?profile=`` on ``POST /api/cron/jobs``
-    (``hermes_cli/web_routers/cron.py``, ``_cron_profile_home``) or the
-    ``profile`` parameter of the ``cron.manage`` RPC
-    (``tui_gateway/methods_tools.py``). An implementation that ignores
-    ``profile`` writes into the wrong profile's cron store.
+Cron is reached only through :class:`CronPort` and never inside a store
+transaction, so a slow scheduler never holds the store's write lock. The
+roadmap's contract C2 names the production port, ``hermes_adapter.HermesCron``.
+A process without cron access prunes with :class:`UnavailableCron`, which
+applies only the 30-day idle rule.
 
-``get_job(job_id, *, profile) -> dict | None``
-    Optional, but strongly recommended: without it a receipt can outlive
-    the cron job it names. 11 section 4.3 keeps list/edit/**delete** on
-    native cron, so the job can disappear behind this module's back; when
-    the lookup says the job is gone, the receipt is dropped and the next
-    request creates a fresh reminder instead of reporting success for a
-    reminder that will never fire. ``None`` means "no such job"; raising
-    means "could not tell", and the receipt is then kept. Mirrors
-    ``cron.jobs.get_job`` / ``GET /api/cron/jobs/{job_id}?profile=`` at the
-    pin.
+The receipt keeps hashes, never the prompt (docs/04 sections 4 and 8).
 
 **Timezone is advisory.** Hermes 0.21.2 has no per-job timezone:
-``CronJobCreate``, ``cron.jobs.create_job`` and the ``cron.manage`` RPC all
-accept none, and ``timezone`` is a single global config key
-(``hermes_cli/config_defaults.py``; empty = server-local). So the timezone
-is *not* sent to the scheduler -- it is kept in the idempotency key, so two
-requests that differ only in zone stay two distinct requests instead of
-collapsing into one, and echoed back on the receipt as
-``timezone_advisory`` to make the gap explicit to the caller. A reminder
-fires in the server's timezone until per-job timezone support exists
-upstream.
+``CronJobCreate``, ``cron.jobs.create_job`` and the ``cron.manage`` RPC accept
+none, and ``timezone`` is one global config key. The zone stays in the
+idempotency key, so two requests that differ only in zone stay two
+reminders, and comes back on the receipt as ``timezone_advisory``. A
+reminder fires in the server's timezone.
 """
 
 from __future__ import annotations
@@ -53,38 +39,81 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import sqlite3
 import time
-from typing import Any, Callable, Dict, Optional
+from dataclasses import dataclass
+from typing import Callable, Literal, Protocol
 
-from .journal import Journal, JournalError, is_safe_id
+from .store import ControlStore
 
 logger = logging.getLogger(__name__)
 
-_FIELD_SEPARATOR = "\x1f"  # ASCII unit separator: never appears in normal text input
-
 SECONDS_PER_DAY = 86400
-
-# A receipt that has not been used for this long is dropped by the retention
-# sweep (04 section 8). Deliberately much longer than the proposal window:
-# a reminder receipt stays relevant for as long as its cron job exists, and
-# the job-existence check below is the primary collector -- this is the
-# backstop for receipts whose job lookup is unavailable.
 REMINDER_MAX_IDLE_SECONDS = 30 * SECONDS_PER_DAY
+# A `creating` receipt younger than this belongs to a creator that is still
+# inside create_job. The in-process Hermes cron answers in milliseconds.
+IN_FLIGHT_SECONDS = 60
+# How long a second request waits for that creator before it answers uncertain.
+IN_FLIGHT_WAIT_SECONDS = 5.0
+POLL_SECONDS = 0.02
+# Decisions per request; each extra round means another writer changed the receipt.
+MAX_ROUNDS = 3
 
-_CREATING = "creating"
-_CREATED = "created"
-_UNCERTAIN = "uncertain"
-_CONFLICT = "conflict"
+CREATING = "creating"
+CREATED = "created"
+UNCERTAIN = "uncertain"
+
+_FIELD_SEPARATOR = "\x1f"  # ASCII unit separator: never appears in normal text input
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_PROFILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")  # Hermes profile ids at the pin
+_VIEW_KEYS = ("id", "request_id", "profile", "state", "job_id", "timezone_advisory", "payload_hash")
 
 
-class ReminderCreationError(Exception):
-    """Raised when a reminder request cannot be journaled at all.
+class CronPort(Protocol):
+    """The cron operations reminders need. Every call is scoped to one profile."""
 
-    A bad ``request_id``, a receipt dropped underneath a concurrent
-    creator, or a receipt that exists but cannot be read. The last case
-    matters most: a damaged receipt must stop the request, never fall
-    through to a second ``create_job`` -- "unreadable" is not "absent".
+    def create_job(self, profile: str, *, schedule: str, prompt: str, name: str) -> dict: ...
+
+    def get_job(self, profile: str, job_id: str) -> dict | None: ...  # None = no such job; raise = could not tell
+
+    def find_job_ids_by_name(self, profile: str, name: str) -> list[str]: ...
+
+
+class CronUnavailable(RuntimeError):
+    """Raised by :class:`UnavailableCron`: this process cannot reach cron."""
+
+
+class UnavailableCron:
+    """A :class:`CronPort` for a process without cron access.
+
+    Every call raises :class:`CronUnavailable`, which callers treat as "could
+    not tell": the retention sweep then applies only its 30-day idle rule.
     """
+
+    def create_job(self, profile: str, *, schedule: str, prompt: str, name: str) -> dict:
+        raise CronUnavailable("cron is not reachable from this process")
+
+    def get_job(self, profile: str, job_id: str) -> dict | None:
+        raise CronUnavailable("cron is not reachable from this process")
+
+    def find_job_ids_by_name(self, profile: str, name: str) -> list[str]:
+        raise CronUnavailable("cron is not reachable from this process")
+
+
+@dataclass(frozen=True)
+class ReminderOutcome:
+    """What :meth:`ReminderService.create` did, and the receipt it did it with."""
+
+    status: Literal["created", "existing", "conflict", "uncertain"]
+    receipt: dict
+
+
+class ReminderError(Exception):
+    """A request that cannot be served. ``code`` is ``"invalid"`` or ``"unknown_profile"``."""
+
+    def __init__(self, message: str, *, code: str = "invalid") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def _normalize(value: str) -> str:
@@ -93,321 +122,246 @@ def _normalize(value: str) -> str:
 
 
 def idempotency_key(profile: str, schedule: str, timezone: str, prompt: str) -> str:
-    """Stable content hash for one (profile, schedule, timezone, prompt) reminder request.
+    """Stable content hash of one (profile, schedule, timezone, prompt) request.
 
-    Two requests that normalize to the same profile/schedule/timezone/prompt
-    always produce the same value, so a retry -- including one from a
-    different process -- is recognized as the same request rather than
-    creating a second cron job.
-
-    ``timezone`` stays in the hash even though Hermes cannot schedule by it
-    (see the module docstring): dropping it would collapse two reminders
-    that the caller asked to fire at different wall-clock times into one
-    receipt, which is a worse failure than the advisory gap.
-
-    This is both the ``payload_hash`` stored on every receipt and the
-    fallback journal id used when the caller supplies no ``request_id``.
+    The ``payload_hash`` of every receipt, and the receipt id when the caller
+    supplies no ``request_id``.
     """
-    parts = (
-        _normalize(profile),
-        _normalize(schedule),
-        _normalize(timezone),
-        _normalize(prompt),
-    )
-    canonical = _FIELD_SEPARATOR.join(parts)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    parts = (_normalize(profile), _normalize(schedule), _normalize(timezone), _normalize(prompt))
+    return hashlib.sha256(_FIELD_SEPARATOR.join(parts).encode("utf-8")).hexdigest()
 
 
 def prompt_hash(prompt: str) -> str:
-    """sha256 hex digest of the normalized prompt. The receipt stores this, never the prompt.
-
-    11 section 4.3 defines the receipt as the idempotency key plus the
-    normalized schedule/timezone/prompt **hash** and the resulting cron job
-    id; 04 section 4/8 keeps user content out of integration journals. The
-    prompt lives in Hermes's own cron store, which is its system of record.
-    """
+    """sha256 hex digest of the normalized prompt. The receipt stores this, never the prompt."""
     return hashlib.sha256(_normalize(prompt).encode("utf-8")).hexdigest()
 
 
-def routine_name(profile: str, label: Optional[str] = None, *, payload_hash: str = "") -> str:
-    """``[bot:<profile>] <label>`` -- the display convention clients filter on.
+def routine_name(profile: str, label: str | None, receipt_id: str) -> str:
+    """``[bot:<profile>] <label or "reminder"> · <first 8 hex of sha256(receipt_id)>``.
 
-    docs/06 section 6: routine names use the ``[bot:<profile>] `` prefix as a
-    *display* convention (not a subscription or an idempotency key), and the
-    gateway's own ``cron.manage`` list path documents the same
-    ``[bot:<name>]`` client-side filter. ``name`` is a label in
-    ``CronJobCreate``, not a profile field, so this is where the profile
-    belongs in the body.
-
-    The default label carries a short slice of the payload hash so two
-    reminders for the same bot are distinguishable in a cron listing (and
-    to ``resolve_job_ref``, which errors on an ambiguous name) without the
-    name ever carrying prompt text.
+    The ``[bot:<profile>] `` prefix is the display convention clients filter
+    routines on (docs/06 section 6). The tag makes the name unique per
+    receipt, which is what lets an uncertain create be reconciled by name.
+    The name never carries prompt text.
     """
-    suffix = label if label else f"reminder {payload_hash[:8]}".strip()
-    return f"[bot:{_normalize(profile)}] {suffix}".rstrip()
+    tag = hashlib.sha256(receipt_id.encode("utf-8")).hexdigest()[:8]
+    text = _normalize(label) if label and label.strip() else "reminder"
+    return f"[bot:{_normalize(profile)}] {text} · {tag}"
 
 
-class ReminderJournal(Journal):
-    """Reminder receipts under ``ergates/reminders/``, with job-existence retention.
-
-    A receipt holds the idempotency key (its own id), the owning profile,
-    the normalized schedule, the advisory timezone, the payload and prompt
-    **hashes**, the request id and the resulting cron job id -- never the
-    prompt text.
-    """
-
-    def __init__(self, root):
-        super().__init__(root, "reminders")
-
-    def prune(
-        self,
-        now: float,
-        get_job: Optional[Callable[..., Optional[Dict[str, Any]]]] = None,
-    ) -> int:
-        """Drop receipts whose cron job is gone, or that have been unused for 30 days.
-
-        The job-existence rule is the real collector: once the reminder has
-        been deleted in the Routines screen (native cron, per 11 section
-        4.3), its receipt is worse than useless -- it makes the next
-        identical request report success without creating anything. The
-        30-day idle rule is the backstop for receipts whose job cannot be
-        looked up (no ``get_job`` injected, or the lookup failed). Returns
-        the number of records removed.
-        """
-        # Snapshot under the lock, look jobs up outside it (``get_job`` is a
-        # network call in any real wiring and must not hold the directory
-        # flock), then remove under the lock again.
-        with self._lock():
-            snapshot = [(path, self._try_read(path)) for path in sorted(self._record_paths())]
-        doomed = []
-        for path, record in snapshot:
-            if record is None:
-                continue
-            if job_is_gone(record, get_job):
-                doomed.append(path)
-                continue
-            last_used = record.get("last_seen_at") or record.get("created_at")
-            if last_used is None:
-                continue
-            try:
-                idle = now - float(last_used)
-            except (TypeError, ValueError):  # pragma: no cover - hand-edited record
-                continue
-            if idle > REMINDER_MAX_IDLE_SECONDS:
-                doomed.append(path)
-        removed = 0
-        with self._lock():
-            for path in doomed:
-                if path.exists():
-                    path.unlink(missing_ok=True)
-                    removed += 1
-        return removed
+def _validate(profile, schedule, timezone, prompt, request_id, label) -> None:
+    for name, value in (("profile", profile), ("schedule", schedule), ("prompt", prompt)):
+        if not isinstance(value, str) or not value.strip():
+            raise ReminderError(f"{name} is required and must be a non-empty string")
+    if not _PROFILE_RE.match(profile.strip()):
+        raise ReminderError("profile must be a Hermes profile name")
+    if not isinstance(timezone, str):
+        raise ReminderError("timezone must be a string")
+    if request_id is not None and not (isinstance(request_id, str) and _REQUEST_ID_RE.match(request_id)):
+        raise ReminderError("request_id must be 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit")
+    if label is not None and not isinstance(label, str):
+        raise ReminderError("label must be a string")
 
 
-def job_is_gone(
-    record: Dict[str, Any],
-    get_job: Optional[Callable[..., Optional[Dict[str, Any]]]],
-) -> bool:
-    """True only when ``get_job`` positively reports the receipt's cron job as absent.
-
-    "Could not tell" (no lookup injected, no job id yet, or the lookup
-    raised) is never "gone": deleting a receipt on a transport error would
-    turn one unreachable cron API into a duplicate reminder.
-    """
-    if get_job is None:
-        return False
-    if record.get("state") != _CREATED:
-        return False
-    job_id = record.get("job_id")
-    if not job_id:
-        return False
-    try:
-        return get_job(job_id, profile=record.get("profile")) is None
-    except Exception as exc:
-        # Exception type only: an adapter may raise with a response body that
-        # carries prompt text, and prompts never enter logs.
-        logger.warning(
-            "reminders: cron job lookup for %r failed (%s), keeping the receipt",
-            job_id, type(exc).__name__,
-        )
-        return False
+def _view(row: sqlite3.Row | dict) -> dict:
+    """The C3 ``ReminderReceipt`` of a stored receipt."""
+    return {key: row[key] for key in _VIEW_KEYS}
 
 
-class ReminderCreator:
-    """Creates Hermes cron reminders exactly once per idempotency key."""
+def _get(conn: sqlite3.Connection, receipt_id: str) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM reminder_receipts WHERE id = ?", (receipt_id,)).fetchone()
 
-    def __init__(
-        self,
-        journal: Journal,
-        create_job: Callable[..., Dict[str, Any]],
-        get_job: Optional[Callable[..., Optional[Dict[str, Any]]]] = None,
-        *,
-        now: Callable[[], float] = time.time,
-    ):
-        self._journal = journal
-        self._create_job = create_job
-        self._get_job = get_job
-        self._now = now
+
+def _swap(conn: sqlite3.Connection, row, *, state: str, job_id: str | None, now: float) -> sqlite3.Row | None:
+    """Compare-and-set: move ``row`` to ``state``/``job_id`` iff it is still at ``row["version"]``."""
+    cursor = conn.execute(
+        "UPDATE reminder_receipts SET state = ?, job_id = ?, version = version + 1, updated_at = ? "
+        "WHERE id = ? AND version = ?",
+        (state, job_id, now, row["id"], row["version"]),
+    )
+    return _get(conn, row["id"]) if cursor.rowcount == 1 else None
+
+
+class ReminderService:
+    """Creates Hermes cron reminders exactly once per receipt id."""
+
+    def __init__(self, store: ControlStore, cron: CronPort, *, clock: Callable[[], float] = time.time) -> None:
+        self._store = store
+        self._cron = cron
+        self._clock = clock
 
     def create(
-        self,
-        profile: str,
-        schedule: str,
-        timezone: str,
-        prompt: str,
-        *,
-        request_id: Optional[str] = None,
-        label: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Create (or return the existing receipt for) a reminder.
+        self, profile: str, schedule: str, timezone: str, prompt: str, *,
+        request_id: str | None = None, label: str | None = None,
+    ) -> ReminderOutcome:
+        """Create, return, or reconcile the reminder of one request.
 
-        ``request_id`` is the caller's own per-attempt id (the app's outbox
-        id). When given it becomes the journal id, which is what makes 11
-        section 4.3's "retries with a different payload must fail" real:
-        the same id arriving with a different ``payload_hash`` is a caller
-        bug (an edited prompt resent under the old id), and it comes back
-        as ``state: "conflict"`` with **no** cron job created, instead of
-        quietly creating a second reminder. With no ``request_id`` the
-        journal id falls back to the payload hash itself, where a changed
-        payload is simply a different id -- safe against duplicates, but
-        unable to detect reuse, which is why callers that can supply an id
-        should.
-
-        - Same id, same payload, job still present: returns the existing
-          receipt without calling ``create_job`` again.
-        - Same id, same payload, job gone (checked through ``get_job``):
-          drops the stale receipt and creates once, so deleting a reminder
-          natively and asking for it again works.
-        - Same id, different payload: ``state: "conflict"``, no job.
-        - New id: claims the receipt, calls ``create_job`` once, and records
-          the resulting job id. If ``create_job`` raises (e.g. the request
-          was sent but the response never arrived), the receipt is marked
-          ``"uncertain"`` before the exception propagates, so a caller can
-          reconcile instead of blindly retrying.
+        The receipt id is ``request_id`` (the app's per-attempt outbox id) when
+        given, else the payload hash. The same id with a different payload is
+        a ``conflict`` and creates nothing. A failed ``create_job`` is not
+        raised: the receipt and the outcome are ``uncertain``, and the next
+        request reconciles.
         """
-        content_hash = idempotency_key(profile, schedule, timezone, prompt)
-        key = self._journal_id(request_id, content_hash)
-
-        existing = self._read_receipt(key)
-        if existing is not None:
-            outcome = self._reuse_or_discard(key, existing, content_hash, request_id)
-            if outcome is not None:
-                return outcome
-
-        now = self._now()
-        claimed = self._journal.claim(key, {
-            "profile": profile,
-            "schedule": _normalize(schedule),
-            "timezone_advisory": _normalize(timezone),
-            "prompt_hash": prompt_hash(prompt),
-            "payload_hash": content_hash,
+        _validate(profile, schedule, timezone, prompt, request_id, label)
+        payload = idempotency_key(profile, schedule, timezone, prompt)
+        receipt_id = request_id if request_id is not None else payload
+        fresh = {
+            "id": receipt_id,
             "request_id": request_id,
-            "state": _CREATING,
-            "job_id": None,
-            "created_at": now,
-            "last_seen_at": now,
-        })
-        if claimed is None:
-            # Lost a race to another creator (thread or process) between the
-            # read above and this claim; re-read and validate like a normal hit.
-            existing = self._read_receipt(key)
-            if existing is None:  # pragma: no cover - defensive; claim/read are locked together
-                raise ReminderCreationError(f"idempotency key {key!r} vanished after claim race")
-            outcome = self._reuse_or_discard(key, existing, content_hash, request_id)
+            "profile": _normalize(profile),
+            "job_name": routine_name(profile, label, receipt_id),
+            "timezone_advisory": _normalize(timezone),
+            "payload_hash": payload,
+            "prompt_hash": prompt_hash(prompt),
+        }
+        row = None
+        for _ in range(MAX_ROUNDS):
+            step, row = self._decide(fresh)
+            if step == "conflict":
+                logger.warning("reminders: request id %r reused with a different payload", receipt_id)
+                return ReminderOutcome("conflict", _view(row))
+            if step == "create":
+                outcome = self._create(row, schedule, prompt)
+            elif step == "verify":
+                outcome = self._verify(row, schedule, prompt)
+            elif step == "wait":
+                outcome = self._wait(row)
+            else:
+                outcome = self._reconcile(row, schedule, prompt)
             if outcome is not None:
                 return outcome
-            raise ReminderCreationError(
-                f"receipt {key!r} was dropped as stale by a concurrent creator; retry"
-            )
+        logger.warning("reminders: receipt %r kept changing during this request; reporting it uncertain", receipt_id)
+        return ReminderOutcome("uncertain", _view(self._current(row)))
 
-        try:
-            job = self._create_job(
-                {
-                    # CronJobCreate fields only (hermes_cli/web_models.py at the
-                    # pin). No `timezone` (unsupported upstream) and no
-                    # `profile` (scoped out of band, below).
-                    "schedule": schedule,
-                    "prompt": prompt,
-                    "name": routine_name(profile, label, payload_hash=content_hash),
-                },
-                profile=profile,
-            )
-        except Exception:
-            try:
-                self._journal.update(key, state=_UNCERTAIN)
-            except JournalError:
-                # Never mask the creator's own failure with a journal one.
-                logger.warning("reminders: could not mark receipt %r uncertain", key)
-            raise
+    def prune(self, now: float) -> int:
+        """Drop receipts idle for 30 days, and ``created`` receipts whose job is gone.
 
-        job_id = job.get("id") if isinstance(job, dict) else None
-        return self._journal.update(key, state=_CREATED, job_id=job_id)
-
-    def _update_receipt(self, key: str, **fields: Any) -> Dict[str, Any]:
-        """``Journal.update`` with the same fail-closed contract as :meth:`_read_receipt`."""
-        try:
-            return self._journal.update(key, **fields)
-        except JournalError as exc:
-            raise ReminderCreationError(
-                f"reminder receipt {key!r} exists but cannot be updated ({exc}); "
-                "repair or remove the receipt, then retry"
-            ) from exc
-
-    def _read_receipt(self, key: str) -> Optional[Dict[str, Any]]:
-        """The stored receipt, or ``None`` when there is none. Fails closed on a damaged one.
-
-        ``Journal.read`` raises :class:`~ergates.journal.JournalError` for a
-        record that exists but cannot be parsed. Swallowing that would be
-        the exact duplicate-creation bug the receipt exists to prevent: the
-        request would look new, ``claim`` would find the file in the way,
-        and the reconciliation path would have nothing to reconcile. So it
-        surfaces as a refusal the caller has to act on.
+        Each deletion names the version the sweep inspected, so a receipt that
+        a request changed in the meantime survives. Returns how many were removed.
         """
+        with self._store.read() as conn:
+            snapshot = conn.execute("SELECT * FROM reminder_receipts").fetchall()
+        removed = 0
+        for row in snapshot:
+            if now - row["updated_at"] <= REMINDER_MAX_IDLE_SECONDS and not self._job_is_gone(row):
+                continue
+            with self._store.transaction() as conn:
+                cursor = conn.execute(
+                    "DELETE FROM reminder_receipts WHERE id = ? AND version = ?", (row["id"], row["version"]),
+                )
+            removed += cursor.rowcount
+        return removed
+
+    def _decide(self, fresh: dict) -> tuple[str, sqlite3.Row]:
+        """One transaction: claim a new receipt, or pick the next step for an existing one."""
+        now = self._clock()
+        with self._store.transaction() as conn:
+            row = _get(conn, fresh["id"])
+            if row is None:
+                conn.execute(
+                    "INSERT INTO reminder_receipts (id, request_id, profile, state, job_id, job_name, "
+                    "timezone_advisory, payload_hash, prompt_hash, version, created_at, updated_at) "
+                    "VALUES (:id, :request_id, :profile, 'creating', NULL, :job_name, :timezone_advisory, "
+                    ":payload_hash, :prompt_hash, 1, :now, :now)",
+                    {**fresh, "now": now},
+                )
+                return "create", _get(conn, fresh["id"])
+            if row["payload_hash"] != fresh["payload_hash"]:
+                return "conflict", row
+            if row["state"] == CREATED:
+                return "verify", row
+            if row["state"] == CREATING and now - row["updated_at"] < IN_FLIGHT_SECONDS:
+                return "wait", row
+            return "reconcile", _swap(conn, row, state=CREATING, job_id=None, now=now)
+
+    def _create(self, row, schedule: str, prompt: str) -> ReminderOutcome:
         try:
-            return self._journal.read(key)
-        except JournalError as exc:
-            raise ReminderCreationError(
-                f"reminder receipt {key!r} exists but cannot be read ({exc}); "
-                "no cron job was created -- repair or remove the receipt, then retry"
-            ) from exc
+            job = self._cron.create_job(row["profile"], schedule=schedule, prompt=prompt, name=row["job_name"])
+        except Exception as exc:
+            # Class name only: an adapter error can carry a response body with prompt text.
+            logger.warning("reminders: create_job for receipt %r failed (%s)", row["id"], type(exc).__name__)
+            return self._settle(row, UNCERTAIN, None, "uncertain")
+        job_id = job.get("id") if isinstance(job, dict) else None
+        if not job_id:
+            logger.warning("reminders: create_job for receipt %r returned no job id", row["id"])
+            return self._settle(row, UNCERTAIN, None, "uncertain")
+        return self._settle(row, CREATED, str(job_id), "created")
 
-    def _journal_id(self, request_id: Optional[str], content_hash: str) -> str:
-        if request_id is None:
-            return content_hash
-        if not is_safe_id(request_id):
-            raise ReminderCreationError(
-                "request_id must be a single safe path segment "
-                "(letters, digits, '.', '_', '-'; 128 characters or fewer)"
+    def _verify(self, row, schedule: str, prompt: str) -> ReminderOutcome | None:
+        """Trust a ``created`` receipt only while cron still has its job."""
+        try:
+            gone = self._cron.get_job(row["profile"], row["job_id"]) is None
+        except Exception as exc:
+            logger.warning("reminders: lookup of job %r failed (%s); keeping the receipt", row["job_id"], type(exc).__name__)
+            gone = False
+        if gone:
+            with self._store.transaction() as conn:
+                claimed = _swap(conn, row, state=CREATING, job_id=None, now=self._clock())
+            if claimed is None:
+                return None
+            logger.info("reminders: job %r of receipt %r is gone; creating it again", row["job_id"], row["id"])
+            return self._create(claimed, schedule, prompt)
+        with self._store.transaction() as conn:
+            # A use restarts the idle clock and bumps the version, so a
+            # retention sweep that read the receipt earlier cannot delete it.
+            cursor = conn.execute(
+                "UPDATE reminder_receipts SET version = version + 1, updated_at = ? "
+                "WHERE id = ? AND state = ? AND job_id = ?",
+                (self._clock(), row["id"], CREATED, row["job_id"]),
             )
-        return request_id
+            touched = _get(conn, row["id"]) if cursor.rowcount == 1 else None
+        return ReminderOutcome("existing", _view(touched)) if touched is not None else None
 
-    def _reuse_or_discard(
-        self,
-        key: str,
-        existing: Dict[str, Any],
-        content_hash: str,
-        request_id: Optional[str],
-    ) -> Optional[Dict[str, Any]]:
-        """The receipt to return, or ``None`` when it was stale and has been dropped."""
-        if existing.get("payload_hash") != content_hash:
-            # Never overwrite and never create: the caller reused an id for a
-            # different reminder, which 11 section 4.3 requires to fail.
-            logger.warning("reminders: request id %r reused with a different payload", key)
-            return {
-                "id": key,
-                "request_id": request_id,
-                "state": _CONFLICT,
-                "job_id": None,
-                "payload_hash": content_hash,
-                "recorded_payload_hash": existing.get("payload_hash"),
-            }
-        if job_is_gone(existing, self._get_job):
-            logger.info(
-                "reminders: receipt %r names cron job %r which no longer exists; "
-                "dropping the receipt and creating a fresh reminder",
-                key, existing.get("job_id"),
-            )
-            self._journal.delete(key)
-            return None
-        return self._update_receipt(key, last_seen_at=self._now())
+    def _wait(self, row) -> ReminderOutcome | None:
+        """Another request is inside create_job: wait for its answer, then decide again."""
+        deadline = time.monotonic() + IN_FLIGHT_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            time.sleep(POLL_SECONDS)
+            current = self._read(row["id"])
+            if current is None or current["version"] != row["version"]:
+                return None
+        return ReminderOutcome("uncertain", _view(row))
+
+    def _reconcile(self, row, schedule: str, prompt: str) -> ReminderOutcome:
+        """Find the job an uncertain or abandoned create may have made, by its unique name."""
+        try:
+            job_ids = self._cron.find_job_ids_by_name(row["profile"], row["job_name"])
+        except Exception as exc:
+            logger.warning("reminders: cannot reconcile receipt %r (%s)", row["id"], type(exc).__name__)
+            return self._settle(row, UNCERTAIN, None, "uncertain")
+        if len(job_ids) == 1:
+            return self._settle(row, CREATED, str(job_ids[0]), "existing")
+        if not job_ids:
+            return self._create(row, schedule, prompt)
+        logger.warning("reminders: %d cron jobs carry the name of receipt %r", len(job_ids), row["id"])
+        return self._settle(row, UNCERTAIN, None, "uncertain")
+
+    def _settle(self, row, state: str, job_id: str | None, status: str) -> ReminderOutcome:
+        with self._store.transaction() as conn:
+            settled = _swap(conn, row, state=state, job_id=job_id, now=self._clock())
+        if settled is not None:
+            return ReminderOutcome(status, _view(settled))
+        current = self._current(row)
+        logger.warning("reminders: receipt %r changed while its cron call ran", row["id"])
+        return ReminderOutcome("existing" if current["state"] == CREATED else "uncertain", _view(current))
+
+    def _read(self, receipt_id: str) -> sqlite3.Row | None:
+        with self._store.read() as conn:
+            return _get(conn, receipt_id)
+
+    def _current(self, row) -> dict:
+        """The receipt as stored now; ``row`` marked uncertain when it was deleted meanwhile."""
+        current = self._read(row["id"])
+        return dict(current) if current is not None else {**dict(row), "state": UNCERTAIN}
+
+    def _job_is_gone(self, row) -> bool:
+        """True only when cron positively reports the job of a ``created`` receipt as absent."""
+        if row["state"] != CREATED:
+            return False
+        try:
+            return self._cron.get_job(row["profile"], row["job_id"]) is None
+        except CronUnavailable:
+            return False
+        except Exception as exc:
+            logger.warning("reminders: lookup of job %r failed (%s); keeping the receipt", row["job_id"], type(exc).__name__)
+            return False

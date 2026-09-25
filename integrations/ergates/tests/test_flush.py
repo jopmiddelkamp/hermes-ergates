@@ -20,8 +20,9 @@ from ergates.flush import (
     profile_home,
     settings_from_config,
 )
+from conftest import rows
 from ergates.proposals import PROPOSED_STATE, ProposalJournal
-from ergates.reminders import REMINDER_MAX_IDLE_SECONDS, ReminderJournal
+from ergates.reminders import REMINDER_MAX_IDLE_SECONDS, ReminderService
 
 
 SETTINGS = {"server": "https://ntfy.example.internal", "topic": "ergates-alerts", "token": "tok"}
@@ -155,7 +156,7 @@ def test_flush_once_never_retries_an_expired_approval(tmp_path):
 # --- the retention pass -----------------------------------------------------
 
 
-def test_flush_once_prunes_all_three_journals(tmp_path):
+def test_flush_once_prunes_all_three_journals(tmp_path, store, cron):
     """Every journal here has a prune and nothing called any of them, so agent
     briefings, reminder receipts and delivery metadata accumulated forever
     (04 section 8)."""
@@ -167,11 +168,8 @@ def test_flush_once_prunes_all_three_journals(tmp_path):
     ProposalJournal(root).claim("expired-proposal", {
         "state": PROPOSED_STATE, "expires_at": "2020-01-01T00:00:00Z",
     })
-    ReminderJournal(root).claim("idle-reminder", {
-        "state": "created", "job_id": "job-1", "profile": "thijs",
-        "created_at": now - REMINDER_MAX_IDLE_SECONDS - 60,
-        "last_seen_at": now - REMINDER_MAX_IDLE_SECONDS - 60,
-    })
+    idle_since = now - REMINDER_MAX_IDLE_SECONDS - 60
+    ReminderService(store, cron, clock=lambda: idle_since).create("thijs", "0 9 * * *", "UTC", "Check invoices.")
 
     counts = flush_once(tmp_path, {}, now=now)
 
@@ -180,20 +178,17 @@ def test_flush_once_prunes_all_three_journals(tmp_path):
     assert counts["pruned_reminders"] == 1
     assert AttentionJournal(root).list() == []
     assert ProposalJournal(root).list() == []
-    assert ReminderJournal(root).list() == []
+    assert rows(store, "reminder_receipts") == []
 
 
-def test_flush_once_drops_a_reminder_receipt_whose_job_is_gone(tmp_path):
-    root = journal_root(tmp_path)
-    ReminderJournal(root).claim("receipt", {
-        "state": "created", "job_id": "job-1", "profile": "thijs",
-        "created_at": time.time(), "last_seen_at": time.time(),
-    })
+def test_flush_once_drops_a_reminder_receipt_whose_job_is_gone(tmp_path, store, cron):
+    outcome = ReminderService(store, cron).create("thijs", "0 9 * * *", "UTC", "Check invoices.")
+    cron.delete_job(outcome.receipt["job_id"])
 
-    counts = flush_once(tmp_path, {}, get_job=lambda job_id, *, profile: None)
+    counts = flush_once(tmp_path, {}, cron=cron)
 
     assert counts["pruned_reminders"] == 1
-    assert ReminderJournal(root).read("receipt") is None
+    assert rows(store, "reminder_receipts") == []
 
 
 def test_flush_once_on_an_untouched_home_is_a_no_op(tmp_path):
