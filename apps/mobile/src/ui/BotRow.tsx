@@ -7,7 +7,7 @@
 import { useRef } from 'react'
 import { View } from 'react-native'
 
-import { useAvatar, type Bot } from '@/features/agents/roster'
+import { useAvatar, type Bot } from '@/features/agents'
 import { formatRowTime } from '@/lib/time'
 
 import type { AnchorRect } from './ActionMenu'

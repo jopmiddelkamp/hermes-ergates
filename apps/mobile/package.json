@@ -54,7 +54,7 @@
     "release": "node scripts/release.mjs ship all",
     "release:ios": "node scripts/release.mjs ship ios",
     "release:android": "node scripts/release.mjs ship android",
-    "depcruise": "depcruise --config .dependency-cruiser.cjs --ignore-known .dependency-cruiser-known-violations.json app src test vendor"
+    "depcruise": "depcruise --config .dependency-cruiser.cjs app src test vendor"
   },
   "private": true
 }

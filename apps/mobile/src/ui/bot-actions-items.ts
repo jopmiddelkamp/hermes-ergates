@@ -6,7 +6,7 @@
  * write and the platform dialogs.
  */
 
-import type { Bot } from '@/features/agents/roster'
+import type { Bot } from '@/features/agents'
 import type { Section } from '@/state/organization'
 
 import type { IconName } from './icons'

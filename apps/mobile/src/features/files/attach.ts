@@ -7,7 +7,7 @@
  * Pure validation helpers are separated so they run in Node tests.
  */
 
-import { AVATAR_MAX_BYTES } from '@/features/agents/editor'
+import { AVATAR_MAX_BYTES } from '@/features/agents'
 import { userMessage } from '@/gateway/errors'
 import type { GatewayPort } from '@/gateway/port'
 

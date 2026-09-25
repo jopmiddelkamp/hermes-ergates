@@ -10,7 +10,7 @@ import * as Clipboard from 'expo-clipboard'
 import React, { useState } from 'react'
 import { Alert, Platform } from 'react-native'
 
-import type { Bot } from '@/features/agents/roster'
+import type { Bot } from '@/features/agents'
 import type { Section } from '@/state/organization'
 
 import { ActionMenu, type AnchorRect } from './ActionMenu'

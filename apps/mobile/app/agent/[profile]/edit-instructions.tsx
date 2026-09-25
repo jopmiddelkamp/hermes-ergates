@@ -8,7 +8,7 @@ import { useRouter } from 'expo-router'
 import React from 'react'
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native'
 
-import { useEditBotContext } from '@/features/agents/editor-context'
+import { useEditBotContext } from '@/features/agents'
 import { useTheme } from '@/theme/provider'
 import { IconButton } from '@/ui/IconButton'
 import { Screen } from '@/ui/Screen'

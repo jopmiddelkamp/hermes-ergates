@@ -10,8 +10,8 @@ import { Stack, useLocalSearchParams } from 'expo-router'
 import React from 'react'
 import { ActivityIndicator, View } from 'react-native'
 
-import { ChatSessionProvider } from '@/features/chat/chat-session-context'
-import { usePrimaryConnection } from '@/features/settings/connections'
+import { ChatSessionProvider } from '@/features/chat'
+import { usePrimaryConnection } from '@/features/settings'
 import { useTheme } from '@/theme/provider'
 
 /** A deep link straight to Activity or a transcript gets the chat beneath it, so Back always returns to the conversation. */

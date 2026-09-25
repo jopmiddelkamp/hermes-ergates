@@ -7,7 +7,7 @@
 import React, { useState } from 'react'
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 
-import type { ChatItem } from '@/features/chat/history'
+import type { ChatItem } from '@/features/chat'
 import type { ApprovalChoice } from '@/gateway/types'
 import { useTheme } from '@/theme/provider'
 import { Button } from '@/ui/Button'

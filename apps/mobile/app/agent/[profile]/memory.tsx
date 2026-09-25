@@ -11,7 +11,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 
 import { userMessage } from '@/gateway/errors'
 import { useGateway } from '@/gateway/registry'
-import { usePrimaryConnection } from '@/features/settings/connections'
+import { usePrimaryConnection } from '@/features/settings'
 import { useTheme } from '@/theme/provider'
 import { Card } from '@/ui/Card'
 import { IconButton } from '@/ui/IconButton'

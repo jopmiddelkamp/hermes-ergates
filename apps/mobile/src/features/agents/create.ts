@@ -6,9 +6,7 @@
  */
 
 import { userMessage } from '@/gateway/errors'
-import type { GatewayPort } from '@/gateway/port'
-
-import { BOT_CHAT_TITLE } from '../chat/canonical-chat'
+import { BOT_CHAT_TITLE, type GatewayPort } from '@/gateway/port'
 
 export const PROFILE_NAME_RE = /^[a-z0-9][a-z0-9-]{1,31}$/
 

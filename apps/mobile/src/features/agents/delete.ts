@@ -6,10 +6,9 @@
  * deletes the profile. Every step is reported so an interruption is visible.
  */
 
+import { belongsTo, isActive } from '@/features/routines'
 import { userMessage } from '@/gateway/errors'
 import type { GatewayPort } from '@/gateway/port'
-
-import { belongsTo, isActive } from '../routines/routines'
 
 export type DeleteStep = 'routines' | 'profile'
 

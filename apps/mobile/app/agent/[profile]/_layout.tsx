@@ -10,8 +10,8 @@ import { Stack, useLocalSearchParams } from 'expo-router'
 import React from 'react'
 import { ActivityIndicator, View } from 'react-native'
 
-import { EditBotProvider } from '@/features/agents/editor-context'
-import { usePrimaryConnection } from '@/features/settings/connections'
+import { EditBotProvider } from '@/features/agents'
+import { usePrimaryConnection } from '@/features/settings'
 import { useGateway } from '@/gateway/registry'
 
 /** Deep links to a subpage (Home long-press → Edit Bot) get the details page beneath them, so `edit` is always a real modal. */

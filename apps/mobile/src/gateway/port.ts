@@ -9,6 +9,12 @@
 
 import type * as T from './types'
 
+/**
+ * The title of a profile's canonical chat. Hermes resolves a bot's Bot Chat by
+ * this exact title, so it is part of the wire contract, not a feature detail.
+ */
+export const BOT_CHAT_TITLE = 'Bot Chat'
+
 export type ConnectionState = 'connecting' | 'open' | 'closed' | 'error'
 
 /** One live socket to `/api/ws?profile=<name>`; owns replay and heartbeat. */

@@ -15,7 +15,7 @@
 
 import React, { createContext, useContext, useMemo, useRef, type ReactNode } from 'react'
 
-import { useAvatar, useRoster, type Bot } from '@/features/agents/roster'
+import { useAvatar, useRoster, type Bot } from '@/features/agents'
 import type { GatewayPort } from '@/gateway/port'
 import { useGateway } from '@/gateway/registry'
 import { useDeviceStore } from '@/state/device-store'

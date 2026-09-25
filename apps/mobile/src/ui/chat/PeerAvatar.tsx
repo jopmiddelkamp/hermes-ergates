@@ -9,10 +9,10 @@
 
 import { useDeviceStore, type Connection } from '@/state/device-store'
 import { useGateway } from '@/gateway/registry'
-import { useAvatar } from '@/features/agents/roster'
+import { useAvatar } from '@/features/agents'
 import { useTheme } from '@/theme/provider'
 import { Avatar } from '@/ui/Avatar'
-import type { PeerRef } from '@/features/chat/agent-traffic/types'
+import type { PeerRef } from '@/features/chat'
 
 export interface PeerAvatarProps {
   peer: PeerRef

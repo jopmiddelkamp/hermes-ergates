@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import React from 'react'
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
 
-import { signOut, usePrimaryConnection } from '@/features/settings/connections'
+import { signOut, usePrimaryConnection } from '@/features/settings'
 import { useGateway, useGatewayRegistry } from '@/gateway/registry'
 import { useDeviceStore } from '@/state/device-store'
 import { useTheme } from '@/theme/provider'

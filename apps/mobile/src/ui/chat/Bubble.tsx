@@ -1,7 +1,7 @@
 import React from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 
-import type { ChatItem } from '@/features/chat/history'
+import type { ChatItem } from '@/features/chat'
 import { formatClock } from '@/lib/time'
 import { useTheme } from '@/theme/provider'
 import { MarkdownText } from '@/ui/MarkdownText'

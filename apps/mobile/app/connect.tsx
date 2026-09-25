@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router'
 import React, { useEffect, useState } from 'react'
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native'
 
-import { connectGateway, probeGateway } from '@/features/settings/connections'
+import { connectGateway, probeGateway } from '@/features/settings'
 import { useGatewayRegistry } from '@/gateway/registry'
 import type { BackendStatus } from '@/gateway/types'
 import { useTheme } from '@/theme/provider'

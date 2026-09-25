@@ -19,8 +19,8 @@ import {
   useRoutines,
   validateRoutine,
   type RoutineDraft
-} from '@/features/routines/routines'
-import { usePrimaryConnection } from '@/features/settings/connections'
+} from '@/features/routines'
+import { usePrimaryConnection } from '@/features/settings'
 import { userMessage } from '@/gateway/errors'
 import { useGateway } from '@/gateway/registry'
 import type { CronJob, CronRun } from '@/gateway/types'

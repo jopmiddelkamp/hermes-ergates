@@ -7,7 +7,7 @@
 import React, { useState } from 'react'
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 
-import type { PendingAttachment } from '@/features/files/attach'
+import type { PendingAttachment } from '@/features/files'
 import { useTheme } from '@/theme/provider'
 import { Icon } from '@/ui/icons'
 import { IconButton } from '@/ui/IconButton'

@@ -19,12 +19,12 @@
  */
 
 import { isGatewayError } from '@/gateway/errors'
-import type { GatewayPort } from '@/gateway/port'
+import { BOT_CHAT_TITLE, type GatewayPort } from '@/gateway/port'
 import type { HistoryMessage, ProfileSummary, SessionRow } from '@/gateway/types'
 
 import type { ResumeSnapshot } from './session-reducer'
 
-export const BOT_CHAT_TITLE = 'Bot Chat'
+export { BOT_CHAT_TITLE }
 export const PROFILE_SESSION_LIST_LIMIT = 200
 
 export type CanonicalDecision = { action: 'resume'; storedId: string } | { action: 'create' }
