@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import threading
 from typing import Any, Dict, Optional
 
@@ -21,7 +22,7 @@ from .attention import AttentionService
 from .delivery import DeliveryWorker, ntfy_settings, send_ntfy
 from .paths import hermes_root, store_path
 from .proposals import ProposalError, ProposalService, validate_proposal
-from .store import ControlStore
+from .store import ControlStore, StoreError
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +95,9 @@ def propose_handler(
     """Validate a proposal, record its receipt as ``"proposed"``, and return it as JSON.
 
     Always returns a JSON string, per the Hermes tool contract: a validation
-    failure or a proposal-id collision comes back as ``{"error": "..."}``
-    rather than raising. Never creates a profile.
+    failure, a proposal-id collision or a store failure comes back as
+    ``{"error": "..."}`` rather than raising. A store failure names the
+    exception class only. Never creates a profile.
 
     ``source_session_id`` is backend-owned: Hermes dispatches tool handlers
     as ``handler(args, task_id=..., session_id=...)`` (``tools/registry.py``'s
@@ -122,6 +124,10 @@ def propose_handler(
         service.record(proposal)
     except ProposalError as exc:
         return json.dumps({"error": str(exc)})
+    except (StoreError, sqlite3.Error) as exc:
+        # Class name only: a store error message can carry the file path.
+        logger.warning("ergates: the proposal could not be recorded (%s)", type(exc).__name__)
+        return json.dumps({"error": f"the proposal could not be recorded ({type(exc).__name__})"})
     return json.dumps(proposal)
 
 

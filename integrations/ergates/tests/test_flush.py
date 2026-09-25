@@ -12,6 +12,7 @@ import pytest
 
 from conftest import raw_bytes, rows
 from ergates.attention import APPROVAL_TTL_SECONDS, RETENTION_SECONDS, AttentionService
+from ergates.delivery import LEASE_SECONDS
 from ergates.flush import flush_once, load_settings, main, profile_home, settings_from_config, settings_home
 from ergates.proposals import ProposalService, validate_proposal
 from ergates.reminders import REMINDER_MAX_IDLE_SECONDS, ReminderService
@@ -142,6 +143,31 @@ def test_flush_once_never_pushes_an_expired_approval(tmp_path, store):
     assert published == []
     assert rows(store, "attention_events")[0]["state"] == "expired"   # kept for its seven-day audit window
     assert rows(store, "attention_outbox")[0]["state"] == "cancelled"
+
+
+def test_the_lease_counts_from_the_claim_not_from_the_start_of_the_sweep(tmp_path, store, clock, monkeypatch):
+    """Expiry and retention share one timestamp, the start of the sweep. The
+    delivery pass must not: after a slow retention phase, a lease counted from
+    the start would already have run out when the worker claims the row, and
+    a second worker could send the same push."""
+    event_id = _approval(store, clock())
+    prune = ProposalService.prune
+
+    def slow_prune(self, now):
+        clock.advance(300)
+        return prune(self, now)
+
+    monkeypatch.setattr(ProposalService, "prune", slow_prune)
+    leases = []
+
+    def publish(spec):
+        claimed = next(row for row in rows(store, "attention_outbox") if row["event_id"] == event_id)
+        leases.append((claimed["lease_until"], clock()))
+
+    counts = flush_once(tmp_path, SETTINGS, clock=clock, publish=publish)
+
+    assert counts["retried"] == 1
+    assert leases == [(clock() + LEASE_SECONDS, clock())]
 
 
 # --- the retention pass -----------------------------------------------------

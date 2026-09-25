@@ -7,6 +7,8 @@ configured").
 """
 
 import json
+import logging
+import sqlite3
 import sys
 import threading
 import time
@@ -21,7 +23,7 @@ from ergates.attention import AttentionService
 from ergates.delivery import DeliveryWorker, NtfySettings
 from ergates.paths import store_path
 from ergates.proposals import ProposalService, payload_hash, validate_proposal
-from ergates.store import ControlStore
+from ergates.store import ControlStore, StoreError
 from ergates.tool import (
     _resolve_profile,
     completed_platforms,
@@ -101,6 +103,32 @@ def test_propose_handler_returns_an_error_payload_for_invalid_input(proposals, s
     payload = json.loads(result)
     assert "error" in payload
     assert rows(store, "proposal_receipts") == []
+
+
+def _drop_the_receipts_table(store):
+    with store.transaction() as conn:
+        conn.execute("DROP TABLE proposal_steps")
+        conn.execute("DROP TABLE proposal_receipts")
+
+
+@pytest.mark.parametrize(
+    ("break_the_store", "error_class"),
+    [(lambda store: store.close(), StoreError), (_drop_the_receipts_table, sqlite3.OperationalError)],
+    ids=["closed-store", "missing-table"],
+)
+def test_propose_handler_returns_an_error_payload_when_the_store_fails(proposals, store, caplog, break_the_store,
+                                                                       error_class):
+    """The Hermes tool contract: a handler always returns a JSON string. The
+    error names the exception class only; its message can carry a file path."""
+    break_the_store(store)
+
+    with caplog.at_level(logging.WARNING, logger="ergates.tool"):
+        result = propose_handler(_valid_args(), service=proposals)
+
+    assert json.loads(result) == {"error": f"the proposal could not be recorded ({error_class.__name__})"}
+    assert error_class.__name__ in caplog.text
+    assert "proposal_receipts" not in result + caplog.text
+    assert "closed" not in result + caplog.text
 
 
 def test_propose_handler_attaches_the_backend_session_id_never_a_model_supplied_one(proposals, store):

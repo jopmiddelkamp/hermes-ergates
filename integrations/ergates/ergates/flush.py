@@ -119,6 +119,7 @@ def flush_once(
     now: Optional[float] = None,
     publish: Callable[[Dict[str, Any]], None] = send_ntfy,
     cron: Optional[CronPort] = None,
+    clock: Callable[[], float] = time.time,
 ) -> Dict[str, int]:
     """Run one expiry pass, one retention pass and one delivery pass. Counts only, never content.
 
@@ -131,12 +132,16 @@ def flush_once(
     ``cron`` is optional and, when given, lets the reminder sweep drop
     receipts whose cron job has been deleted natively; without it the sweep
     applies only the 30-day idle rule (:class:`~ergates.reminders.UnavailableCron`).
+
+    Expiry and retention run on one timestamp, ``now`` (default: ``clock()``
+    at the start). The delivery pass runs on ``clock`` itself, so each lease
+    counts from its own claim, however long the passes before it took.
     """
-    moment = time.time() if now is None else now
-    clock = lambda: moment  # noqa: E731 - one timestamp for the whole sweep
+    moment = clock() if now is None else now
+    frozen = lambda: moment  # noqa: E731 - one timestamp for expiry and retention
     store = ControlStore(store_path(root))
     try:
-        attention = AttentionService(store, clock=clock)
+        attention = AttentionService(store, clock=frozen)
         counts = {
             "retried": 0,
             # Expiries are reported separately from deletions: an expired approval
@@ -145,8 +150,8 @@ def flush_once(
             # tell "N approvals timed out unanswered" from "N records aged out".
             "expired_notifications": attention.expire(moment),
             "pruned_notifications": attention.prune(moment),
-            "pruned_proposals": ProposalService(store, clock=clock).prune(moment),
-            "pruned_reminders": ReminderService(store, cron or UnavailableCron(), clock=clock).prune(moment),
+            "pruned_proposals": ProposalService(store, clock=frozen).prune(moment),
+            "pruned_reminders": ReminderService(store, cron or UnavailableCron(), clock=frozen).prune(moment),
         }
         ntfy = ntfy_settings(settings)
         if ntfy is not None:
