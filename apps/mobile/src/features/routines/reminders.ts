@@ -7,7 +7,8 @@
  * Rules:
  *  - one request id per reminder the user tries to create; the same reminder
  *    sent again (a deliberate "Try again") reuses it, a changed one gets a new id;
- *  - an uncertain answer (202, or no answer at all) is never resent by the app;
+ *  - an uncertain answer (202, a server failure, or no answer at all) is never
+ *    resent by the app;
  *  - the label is the routine's name, which the user types: never prompt text.
  *
  * Pure: the screen renders this.
@@ -76,7 +77,9 @@ export function reminderResult(outcome: ReminderOutcome | undefined, error: unkn
     }
   }
   if (isGatewayError(error)) {
-    if (error.kind === 'timeout' || error.kind === 'network') {
+    // A 5xx can come after the cron job was made (the server may answer 503
+    // once Hermes created it), so it is no proof that nothing was created.
+    if (error.kind === 'timeout' || error.kind === 'network' || (error.status ?? 0) >= 500) {
       return { kind: 'uncertain', message: UNCERTAIN }
     }
     if (error.code === 'invalid') {

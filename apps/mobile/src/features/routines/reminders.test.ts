@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 
 import { FakeErgates } from '@test/fake-gateway/fake-ergates'
 
-import { GatewayError } from '@/gateway/errors'
+import { GatewayError, mapErgatesError } from '@/gateway/errors'
 
 import { newRequestId, ReminderAttempts, reminderResult } from './reminders'
 
@@ -57,6 +57,24 @@ describe('ReminderAttempts', () => {
     expect(ergates.jobs).toHaveLength(1)
     expect(ergates.calls.filter(c => c.op === 'createReminder')).toHaveLength(2)
   })
+
+  it('lets a deliberate resend after a server failure that came after the job was made end with one job', async () => {
+    const ergates = new FakeErgates({ hasProfile: name => name === 'thijs' })
+    const attempts = new ReminderAttempts()
+    ergates.failInternal('createReminder', 'after')
+
+    const first = await ergates.createReminder(attempts.requestFor('thijs', draft, 'Europe/Amsterdam')).then(
+      () => null,
+      (err: unknown) => err
+    )
+    expect(reminderResult(undefined, first).kind).toBe('uncertain')
+    const again = await ergates.createReminder(attempts.requestFor('thijs', draft, 'Europe/Amsterdam'))
+
+    expect(reminderResult(again, null)).toEqual({ kind: 'created' })
+    expect(ergates.jobs).toHaveLength(1)
+    const ids = ergates.calls.filter(c => c.op === 'createReminder').map(c => (c.args[0] as { request_id: string }).request_id)
+    expect(new Set(ids).size).toBe(1)
+  })
 })
 
 describe('reminderResult', () => {
@@ -70,6 +88,18 @@ describe('reminderResult', () => {
   it('treats a lost answer like a 202: uncertain, and only the user resends', () => {
     for (const err of [new GatewayError('timeout', 'The gateway did not answer in time.'), new GatewayError('network', 'No connection to the gateway.')]) {
       expect(reminderResult(undefined, err).kind).toBe('uncertain')
+    }
+  })
+
+  it('treats a server failure (5xx) as uncertain: the cron job may exist already', () => {
+    const errors = [
+      mapErgatesError(503, { error: { code: 'store_unavailable', message: 'the Ergates control store is unavailable' } }),
+      mapErgatesError(500, { error: { code: 'internal', message: 'The request could not be completed.' } }),
+      // A proxy in front of the gateway answers without a C3 body.
+      mapErgatesError(502, 'Bad Gateway')
+    ]
+    for (const err of errors) {
+      expect(reminderResult(undefined, err)).toEqual({ kind: 'uncertain', message: expect.stringContaining('Check the Routines list first') })
     }
   })
 

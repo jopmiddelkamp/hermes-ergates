@@ -101,6 +101,12 @@ function RoutineEditor({
   }, [job, loadedFor, profile])
 
   const errors = validateRoutine(draft)
+  // An edit makes the last create's notice stale: Save now sends something
+  // else (or, edited back, the same request under the same id).
+  const edit = (field: keyof RoutineDraft) => (text: string) => {
+    setNotice(null)
+    setDraft(d => ({ ...d, [field]: text }))
+  }
   const toggleBusy = mutations.pause.isPending || mutations.resume.isPending
   const saveBusy = createReminder.isPending || mutations.update.isPending
 
@@ -202,14 +208,14 @@ function RoutineEditor({
           <Field
             label="Name"
             value={draft.title}
-            onChangeText={t => setDraft(d => ({ ...d, title: t }))}
+            onChangeText={edit('title')}
             placeholder="Morning briefing"
             error={submitted ? errors.title : undefined}
           />
           <Field
             label="Instruction"
             value={draft.instruction}
-            onChangeText={t => setDraft(d => ({ ...d, instruction: t }))}
+            onChangeText={edit('instruction')}
             placeholder="Summarize overnight messages and open loops."
             multiline
             error={submitted ? errors.instruction : undefined}
@@ -217,17 +223,17 @@ function RoutineEditor({
           <Field
             label="Schedule"
             value={draft.schedule}
-            onChangeText={t => setDraft(d => ({ ...d, schedule: t }))}
+            onChangeText={edit('schedule')}
             placeholder="every day at 09:00, or 0 9 * * 1"
             error={submitted ? errors.schedule : undefined}
           />
-          {/* Hermes interprets a schedule in the gateway's configured timezone and
-              `cron.manage add` takes no per-job zone at the pin (cron/jobs.py
+          {/* Hermes interprets a schedule in the time zone it is configured for,
+              and `cron.manage add` takes no per-job zone at the pin (cron/jobs.py
               `create_job`), so the input cannot promise the device's zone.
               `next_run` is an absolute instant, so it is still displayed here in
               the device's zone. */}
           <Text style={[styles.hint, { color: theme.colors.mutedForeground }]}>
-            Times are read in the gateway&apos;s timezone, which may differ from this phone&apos;s.
+            Times are read in the time zone Hermes is configured for, which may differ from this phone&apos;s.
           </Text>
           {job ? (
             <Text style={[styles.hint, { color: theme.colors.mutedForeground }]}>Next run: {nextRunLabel(job, new Date(), tz)} (shown in {tz})</Text>

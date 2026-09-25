@@ -60,7 +60,7 @@ export class RealGateway implements GatewayPort {
       },
       fetchImpl: options.fetchImpl
     })
-    this.ergates = createErgatesApi(this.http)
+    this.ergates = createErgatesApi(this.http, () => this.restore())
   }
 
   private key(kind: 'token' | 'cookie' | 'mode'): string {

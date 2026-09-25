@@ -175,3 +175,45 @@ describe('logout', () => {
     expect(gateway.authMode).toBe('none')
   })
 })
+
+describe('ergates routes after a cold start', () => {
+  /** A gateway on stored credentials, never restored by a screen, and a fetch double that answers 401 without them. */
+  async function coldGateway(stored: Record<string, string>, expected: { header: string; value: string }) {
+    const secrets = new MemorySecretStore()
+    for (const [key, value] of Object.entries(stored)) {
+      await secrets.set(key, value)
+    }
+    const sent: Record<string, string>[] = []
+    const receipt = { proposal_id: 'p-1', state: 'proposed', reserved_profile_name: 'pim', expires_at: '2999-01-01T00:00:00Z', completed_steps: [], step_status: {}, next_step: 'profile_created', template: null }
+    const reminder = { request_id: 'r-1', profile: 'pim', job_id: 'j-1', state: 'created' }
+    const impl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>
+      sent.push(headers)
+      if (headers[expected.header] !== expected.value) {
+        return new Response(JSON.stringify({ detail: 'Unauthorized' }), { status: 401, headers: { 'content-type': 'application/json' } })
+      }
+      const path = new URL(String(url)).pathname
+      const body = path.endsWith('/reminders') ? { receipt: reminder } : { proposal: receipt }
+      return new Response(JSON.stringify(body), { status: path.endsWith('/reminders') ? 201 : 200, headers: { 'content-type': 'application/json' } })
+    }) as unknown as typeof fetch
+    const gateway = new RealGateway({ connectionId: 'c1', baseUrl: 'http://gw.local', secrets, fetchImpl: impl })
+    return { gateway, sent }
+  }
+
+  it('loads the stored token before the first Ergates call (a push link opens a chat without Home)', async () => {
+    const { gateway, sent } = await coldGateway({ 'ergates.c1.mode': 'token', 'ergates.c1.token': 'tok-1' }, { header: 'X-Hermes-Session-Token', value: 'tok-1' })
+
+    await expect(gateway.ergates.getProposal('p-1')).resolves.toMatchObject({ proposal_id: 'p-1', state: 'proposed' })
+    expect(sent).toHaveLength(1)
+    expect(gateway.authMode).toBe('token')
+  })
+
+  it('loads the stored cookie before a reminder create too', async () => {
+    const { gateway, sent } = await coldGateway({ 'ergates.c1.mode': 'password', 'ergates.c1.cookie': 'hermes_session_at=abc' }, { header: 'Cookie', value: 'hermes_session_at=abc' })
+
+    const outcome = await gateway.ergates.createReminder({ request_id: 'r-1', profile: 'pim', schedule: '0 9 * * *', timezone: 'Europe/Amsterdam', prompt: 'Check the invoices.' })
+
+    expect(outcome.status).toBe('created')
+    expect(sent).toHaveLength(1)
+  })
+})

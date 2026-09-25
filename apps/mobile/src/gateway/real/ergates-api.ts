@@ -22,9 +22,15 @@ export const REMINDER_TIMEOUT_MS = 60_000
 
 const REMINDER_STATUS: Partial<Record<number, T.ReminderOutcome['status']>> = { 201: 'created', 200: 'existing', 202: 'uncertain' }
 
-export function createErgatesApi(http: HttpClient): ErgatesApi {
+/**
+ * `ready` loads the connection's stored credential before a call (the
+ * gateway's `restore()`): a cold start through a push link opens a chat
+ * without Home, which is what restores it for the other routes.
+ */
+export function createErgatesApi(http: HttpClient, ready: () => Promise<unknown> = async () => undefined): ErgatesApi {
   /** A 2xx JSON object, or the C3 error as a `GatewayError`. */
   const call = async (method: string, path: string, body?: unknown): Promise<Record<string, unknown>> => {
+    await ready()
     const answer = await http.exchange(method, `${ERGATES_BASE}${path}`, body)
     if (answer.status < 200 || answer.status >= 300 || !answer.body || typeof answer.body !== 'object') {
       throw mapErgatesError(answer.status, answer.body)
@@ -36,6 +42,7 @@ export function createErgatesApi(http: HttpClient): ErgatesApi {
   return {
     health: async () => (await call('GET', '/health')) as unknown as T.ErgatesHealth,
     createReminder: async req => {
+      await ready()
       const answer = await http.exchange('POST', `${ERGATES_BASE}/reminders`, req, { timeoutMs: REMINDER_TIMEOUT_MS })
       const body = answer.body as { receipt?: T.ReminderReceipt; error?: { code?: unknown } } | undefined
       const status = REMINDER_STATUS[answer.status]
