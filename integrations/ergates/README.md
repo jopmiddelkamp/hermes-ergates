@@ -80,11 +80,12 @@ every named profile at once, and installs the proposal templates: it checks
 every `<template_id>.json` in `--templates` (default `/opt/ergates/templates`,
 where `deploy/docker-compose.yml` mounts `deploy/templates`) the way the
 accept route would, then makes `<root>/ergates/templates/` hold exactly
-those files. One invalid template installs nothing. `--check` changes
-nothing and reports the same facts; the exit code is 0 only when every
-profile would load the plugin and the templates match. Run it as the user
-that owns the Hermes root, inside the Hermes runtime; `hermes serve` mounts
-the routes only when it starts, so restart it after the first run.
+those files. One invalid template installs nothing. `--check` changes no
+template or plugin setting and reports the same facts; the exit code is 0
+only when every profile would load the plugin and the templates match. Run
+it as the user that owns the Hermes root, inside the Hermes runtime;
+`hermes serve` mounts the routes only when it starts, so restart it after
+the first run.
 
 ## Configuration
 
@@ -204,7 +205,10 @@ and answers the same receipt.
   session's tools from `platform_toolsets` and ignores the toolset pin, so
   the agent can still see a tool the gate refuses. A profile without a pin
   (the default profile) is not narrowed, and the `ergates` tools are never
-  blocked this way.
+  blocked this way. A template must pin the owner toolset names Hermes
+  registers a tool's toolset under (`web`, not a sub-toolset such as
+  `search`): pinning a sub-toolset name grants every tool of its owner
+  toolset, not only that sub-toolset's own tools.
 
 The profile is always `ctx.profile_name` read at the moment of the call
 (`hermes_adapter.current_profile`), never once at registration: a

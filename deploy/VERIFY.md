@@ -308,10 +308,19 @@ grep -rl "<a word from one of your drafts>" "$dir"
 
 The first `grep` names a file; the second finds none.
 
-Separately, with the phone locked before this build is ever opened, launch
-the app while it is locked: it reads empty and saves nothing
-(expo-secure-store "not found", not an error). Unlock and relaunch: the
-stored data is back.
+Separately, check the two locked-launch cases (a locked phone can only reach
+either through a background path -- a notification tap or the OS resuming a
+backgrounded app -- never a fresh tap on the home screen icon):
+
+- **A legacy plaintext blob and no key yet** (this build's very first launch,
+  while locked): the read returns the plaintext as is, so the owner still
+  sees connections and drafts, not an empty app. Sealing it fails silently
+  (the keychain refuses a write while locked); the blob stays plaintext
+  until a later launch that happens unlocked reseals it.
+- **An already-sealed blob and an existing key, locked launch:** the
+  keychain read throws while locked, so the read comes back empty and
+  nothing is written under that name (the stored blob is kept, not
+  overwritten). Unlock and relaunch: the stored data is back.
 
 Result:
 
