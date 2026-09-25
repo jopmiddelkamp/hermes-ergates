@@ -240,6 +240,9 @@ def test_a_create_that_returns_no_job_id_is_uncertain(store, clock):
         def create_job(self, profile, *, schedule, prompt, name):
             return {"ok": True}
 
+        def find_job_ids_by_name(self, profile, name):
+            return []
+
     outcome = ReminderService(store, NoIdCron(), clock=clock).create(*ARGS)
 
     assert outcome.status == "uncertain"
@@ -527,3 +530,82 @@ def test_unavailable_cron_raises_for_every_call():
     ):
         with pytest.raises(reminders.CronUnavailable):
             call()
+
+
+# --- regression: a fresh claim must reconcile by name instead of creating
+# blindly, or an idempotent retry can end up with two live cron jobs for the
+# same receipt id -------------------------------------------------------
+
+
+def test_reg_idle_prune_then_an_identical_request_adopts_the_existing_job(service, cron, store, clock):
+    """The 30-day idle rule can delete a `created` receipt whose cron job is
+    still alive (idle-ness is checked before job liveness in `prune`). The
+    identical request that follows then finds no row (`_decide` sees a fresh
+    claim) and must find the surviving job by its deterministic name instead
+    of calling `create_job` again. The outcome is `existing`, not `created`:
+    `_reconcile`'s one-match branch always reports `existing`, because no new
+    job was made -- `created` is reserved for a request that actually made one."""
+    first = service.create(*ARGS)
+    clock.advance(REMINDER_MAX_IDLE_SECONDS + 1)
+    assert service.prune(clock()) == 1
+
+    again = service.create(*ARGS)
+
+    assert again.status == "existing"
+    assert again.receipt["job_id"] == first.receipt["job_id"]
+    assert len(cron.jobs) == 1
+    assert len(cron.create_calls) == 1
+
+
+def test_reg_prune_racing_verify_does_not_orphan_the_live_job(service, cron, store, clock):
+    """`prune` reads its snapshot and looks each job up outside any lock. If it
+    runs between a concurrent request's own job lookup (inside `_verify`) and
+    that request's version-bump touch, it can delete the `created` receipt out
+    from under a request that just saw the job alive. That request's touch
+    then misses (0 rows), so it loops back into `_decide` and finds no row --
+    the same fresh-claim path as the idle-prune case above, forced here by an
+    interleaving instead of a preceding call to `prune`."""
+    first = service.create(*ARGS)
+    clock.advance(REMINDER_MAX_IDLE_SECONDS + 1)  # idle from prune's point of view
+    cron.on_get = lambda: service.prune(clock())  # fires inside _verify's own get_job call
+
+    second = service.create(*ARGS)
+
+    assert second.status == "existing"
+    assert second.receipt["job_id"] == first.receipt["job_id"]
+    assert len(cron.jobs) == 1
+    assert len(cron.create_calls) == 1
+
+
+def test_reg_a_stale_creating_receipt_whose_job_was_actually_made_is_adopted_not_recreated(
+    service, cron, store, clock,
+):
+    """A `creating` receipt has no job yet to check for liveness, so `prune`
+    can only remove it through the 30-day idle rule -- even when its creator
+    died right after `create_job` actually succeeded. The next identical
+    request is then a fresh claim again; it must adopt the surviving job
+    through the name lookup instead of creating a second one."""
+    real_create_job = cron.create_job
+
+    class Died(BaseException):
+        """The process dies right after create_job returns; nothing after it runs."""
+
+    def create_job_then_die(*args, **kwargs):
+        real_create_job(*args, **kwargs)
+        raise Died()
+
+    cron.create_job = create_job_then_die
+    with pytest.raises(Died):
+        service.create(*ARGS)
+    assert _state(store, idempotency_key(*ARGS))["state"] == "creating"
+    cron.create_job = real_create_job
+
+    clock.advance(REMINDER_MAX_IDLE_SECONDS + 1)
+    assert service.prune(clock()) == 1  # the stale `creating` receipt; its job is untouched
+
+    adopted = service.create(*ARGS)
+
+    assert adopted.status == "existing"
+    assert adopted.receipt["job_id"] == "job-1"
+    assert len(cron.jobs) == 1
+    assert len(cron.create_calls) == 1

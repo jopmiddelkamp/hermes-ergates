@@ -220,9 +220,7 @@ class ReminderService:
             if step == "conflict":
                 logger.warning("reminders: request id %r reused with a different payload", receipt_id)
                 return ReminderOutcome("conflict", _view(row))
-            if step == "create":
-                outcome = self._create(row, schedule, prompt)
-            elif step == "verify":
+            if step == "verify":
                 outcome = self._verify(row, schedule, prompt)
             elif step == "wait":
                 outcome = self._wait(row)
@@ -265,7 +263,15 @@ class ReminderService:
                     ":payload_hash, :prompt_hash, 1, :now, :now)",
                     {**fresh, "now": now},
                 )
-                return "create", _get(conn, fresh["id"])
+                # A fresh claim's receipt id is deterministic (the request id, or
+                # else the payload hash), so its job name is too: a prior job by
+                # that name can still be alive even though this row is brand new
+                # (the receipt that named it was pruned, or its creator died
+                # after create_job actually succeeded). Reconcile by name first
+                # instead of calling create_job blindly, so a repeat of an
+                # already-satisfied request adopts the surviving job instead of
+                # making a second one.
+                return "reconcile", _get(conn, fresh["id"])
             if row["payload_hash"] != fresh["payload_hash"]:
                 return "conflict", row
             if row["state"] == CREATED:
