@@ -18,7 +18,7 @@ flowchart TB
   CORE --> STATE[Hermes profiles and session state]
   CORE --> SBX[Docker shell sandbox per profile: no network by default]
   CORE --> MCP[Trusted host-side MCP servers]
-  CORE --> EDGE[Allowlisted outbound proxy]
+  CORE --> EDGE[Outbound proxy: standard-mode or strict allowlist]
   MCP --> EDGE
   EDGE --> PROVIDERS[Model and connector services]
   SERVE -.->|server event source: P0 integration gate| INT[Ergates integration package]
@@ -175,7 +175,7 @@ Cron's default in-process polling interval is 60 seconds. Retain it for ordinary
 | `hermes-gateway` | Same pinned image/data root; working Docker CLI and daemon access; explicit `gateway.multiplex_profiles: true`; profile-specific platform config; permitted provider/MCP/ntfy routes |
 | Shell sandboxes | One identity per profile; persistent workspace mapping with host/container paths deliberately aligned; no Docker socket or provider/MCP credentials; `docker_network: false` by default |
 | ntfy | Pinned image; persisted cache/auth stores; deny-by-default ACL; publish token and per-device subscriptions; private Tailscale-reachable listener; outbound upstream wake-up access |
-| Outbound proxy | Explicit provider and approved connector host allowlist; the controllers' direct outbound route must not bypass it; local management ports blocked from sandboxes |
+| Outbound proxy | Two modes (`EGRESS_MODE`): standard denies private/internal/special-use ranges and allows any other public host (the default, and what `browser`-toolset agents need); strict allows only an explicit provider/connector host allowlist. Either way the controllers' direct outbound route must not bypass it; local management ports blocked from sandboxes |
 | Tailscale | On the VPS and phone; restricted service access; verify native networking and background reachability |
 | Optional admin SPA | Run dashboard mode instead of serve on that HTTP endpoint, or a separate private port; account for any agent execution it can launch |
 
