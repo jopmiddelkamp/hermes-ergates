@@ -13,11 +13,14 @@
 import { useEffect, useState } from 'react'
 import { Keyboard, Modal, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native'
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+
 import { useTheme } from '@/theme/provider'
 
 import { Button } from './Button'
 import { Field } from './Field'
 import { Icon, type IconName } from './icons'
+import { menuPosition } from './menu-position'
 import { SurfaceProvider } from './surface-context'
 
 const MENU_WIDTH = 240
@@ -69,19 +72,6 @@ export interface ActionMenuProps {
   onClose: () => void
 }
 
-/** Keeps the menu's card within the given height, preferring below the anchor. */
-function computePosition(anchor: AnchorRect, windowWidth: number, availableHeight: number, menuHeight: number) {
-  const fitsBelow = anchor.y + anchor.height + MARGIN + menuHeight <= availableHeight - MARGIN
-  let top = fitsBelow ? anchor.y + anchor.height + MARGIN : Math.max(MARGIN, anchor.y - MARGIN - menuHeight)
-  // A tall menu placed above a low anchor, or a keyboard that shrank the
-  // available height, can still overshoot the bottom edge; pull it back up.
-  top = Math.min(top, availableHeight - menuHeight - MARGIN)
-  top = Math.max(top, MARGIN)
-  const maxLeft = Math.max(MARGIN, windowWidth - MENU_WIDTH - MARGIN)
-  const left = Math.min(Math.max(anchor.x, MARGIN), maxLeft)
-  return { top, left }
-}
-
 /** Tracks the on-screen keyboard height, only while `active` (the Create level's field can take focus). */
 function useKeyboardHeight(active: boolean): number {
   const [height, setHeight] = useState(0)
@@ -109,8 +99,10 @@ export function ActionMenu({ visible, anchor, items, createSection, onClose }: A
 
   const rowsHeight = items.reduce((total, row) => total + (row.kind === 'separator' ? SEPARATOR_HEIGHT : theme.hit), 0)
   const menuHeight = rowsHeight + (createSection ? CREATE_FORM_HEIGHT : 0) + MARGIN * 2
-  const availableHeight = height - keyboardHeight
-  const position = anchor ? computePosition(anchor, width, availableHeight, menuHeight) : null
+  const insets = useSafeAreaInsets()
+  const position = anchor
+    ? menuPosition({ anchor, screen: { width, height }, insets, keyboardHeight, menu: { width: MENU_WIDTH, height: menuHeight }, margin: MARGIN })
+    : null
 
   return (
     <Modal transparent visible={visible && !!position} animationType="fade" onRequestClose={onClose}>
