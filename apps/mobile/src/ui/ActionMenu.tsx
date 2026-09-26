@@ -18,6 +18,7 @@ import { useTheme } from '@/theme/provider'
 import { Button } from './Button'
 import { Field } from './Field'
 import { Icon, type IconName } from './icons'
+import { SurfaceProvider } from './surface-context'
 
 const MENU_WIDTH = 240
 const MENU_RADIUS = 16
@@ -121,56 +122,56 @@ export function ActionMenu({ visible, anchor, items, createSection, onClose }: A
       />
       {position ? (
         <View
-          style={[
-            styles.shadowWrapper,
-            { top: position.top, left: position.left, width: MENU_WIDTH, shadowColor: theme.colors.foreground }
-          ]}
+          style={[styles.card, { top: position.top, left: position.left, width: MENU_WIDTH }]}
         >
-          <View style={[styles.surface, { backgroundColor: theme.colors.popover }]}>
-            {items.map(row =>
-              row.kind === 'separator' ? (
-                <View key={row.key} style={[styles.separator, { backgroundColor: theme.colors.border }]} />
-              ) : (
-                <Pressable
-                  key={row.key}
-                  // The row decides whether the menu closes: submenu rows only
-                  // change level, and terminal rows close themselves.
-                  onPress={row.onPress}
-                  accessibilityRole="button"
-                  accessibilityLabel={row.label}
-                  accessibilityState={{ selected: row.selected }}
-                  style={({ pressed }) => [
-                    styles.row,
-                    { minHeight: theme.hit, backgroundColor: pressed ? theme.colors.muted : 'transparent' }
-                  ]}
-                >
-                  {row.icon ? (
-                    <Icon name={row.icon} size={18} color={row.destructive ? theme.colors.destructive : theme.colors.foreground} />
-                  ) : null}
-                  <Text
-                    numberOfLines={1}
-                    style={[styles.label, { color: row.destructive ? theme.colors.destructive : theme.colors.foreground }]}
+          {/* The card is the Field's surface on the Create level, so its fill stays visible in dark themes. */}
+          <SurfaceProvider color={theme.colors.popover}>
+            <View style={[styles.surface, { backgroundColor: theme.colors.popover, borderColor: theme.colors.border }]}>
+              {items.map(row =>
+                row.kind === 'separator' ? (
+                  <View key={row.key} style={[styles.separator, { backgroundColor: theme.colors.border }]} />
+                ) : (
+                  <Pressable
+                    key={row.key}
+                    // The row decides whether the menu closes: submenu rows only
+                    // change level, and terminal rows close themselves.
+                    onPress={row.onPress}
+                    accessibilityRole="button"
+                    accessibilityLabel={row.label}
+                    accessibilityState={{ selected: row.selected }}
+                    style={({ pressed }) => [
+                      styles.row,
+                      { minHeight: theme.hit, backgroundColor: pressed ? theme.colors.muted : 'transparent' }
+                    ]}
                   >
-                    {row.label}
-                  </Text>
-                  {row.chevron ? <Icon name="chevron-right" size={18} color={theme.colors.mutedForeground} /> : null}
-                </Pressable>
-              )
-            )}
-            {createSection ? (
-              <View style={styles.createForm}>
-                <Field
-                  label=""
-                  value={createSection.value}
-                  onChangeText={createSection.onChangeText}
-                  placeholder="Section name"
-                  accessibilityLabel="Section name"
-                  autoFocus
-                />
-                <Button label="Create" onPress={createSection.onCreate} disabled={createSection.disabled} />
-              </View>
-            ) : null}
-          </View>
+                    {row.icon ? (
+                      <Icon name={row.icon} size={18} color={row.destructive ? theme.colors.destructive : theme.colors.foreground} />
+                    ) : null}
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.label, { color: row.destructive ? theme.colors.destructive : theme.colors.foreground }]}
+                    >
+                      {row.label}
+                    </Text>
+                    {row.chevron ? <Icon name="chevron-right" size={18} color={theme.colors.mutedForeground} /> : null}
+                  </Pressable>
+                )
+              )}
+              {createSection ? (
+                <View style={styles.createForm}>
+                  <Field
+                    label=""
+                    value={createSection.value}
+                    onChangeText={createSection.onChangeText}
+                    placeholder="Section name"
+                    accessibilityLabel="Section name"
+                    autoFocus
+                  />
+                  <Button label="Create" onPress={createSection.onCreate} disabled={createSection.disabled} />
+                </View>
+              ) : null}
+            </View>
+          </SurfaceProvider>
         </View>
       ) : null}
     </Modal>
@@ -182,15 +183,14 @@ const styles = StyleSheet.create({
     // The one literal color in src/ui: a translucent backdrop, the same on every theme.
     backgroundColor: 'rgba(0,0,0,0.25)'
   },
-  shadowWrapper: {
-    position: 'absolute',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 8
+  // No shadow: in dark themes a shadow drawn in a light color glows. A hairline
+  // border in the separator color marks the card's edge on every theme instead.
+  card: {
+    position: 'absolute'
   },
   surface: {
     borderRadius: MENU_RADIUS,
+    borderWidth: StyleSheet.hairlineWidth,
     paddingVertical: MARGIN,
     overflow: 'hidden'
   },
