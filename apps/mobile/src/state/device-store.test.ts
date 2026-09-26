@@ -43,7 +43,7 @@ describe('organization actions', () => {
     const store = newStore()
 
     store.getState().createSection('c1', { id: 'prive', name: 'Prive', collapsed: false, order: 0 })
-    store.getState().moveToSection('c1', 'linh', 'prive')
+    store.getState().moveRowsToSection('c1', ['linh'], 'prive')
     store.getState().pin('c1', 'linh')
 
     let org = store.getState().organization.c1

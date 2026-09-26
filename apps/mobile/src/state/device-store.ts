@@ -90,7 +90,6 @@ export interface DeviceState extends PersistedDeviceState {
   unpin(connectionId: string, profile: string): void
   pinMany(connectionId: string, profiles: string[]): void
   unpinMany(connectionId: string, profiles: string[]): void
-  moveToSection(connectionId: string, profile: string, sectionId: string | null): void
   moveRowsToSection(connectionId: string, profiles: string[], sectionId: string | null): void
   applyMove(connectionId: string, move: OrderMove): void
   adoptProfiles(connectionId: string, rows: BotRow[]): void
@@ -223,7 +222,6 @@ export function createDeviceStore(storage: PersistStorage<PersistedDeviceState>,
           unpin: (connectionId, profile) => updateOrg(connectionId, org => orgActions.unpin(org, profile)),
           pinMany: (connectionId, profiles) => updateOrg(connectionId, org => orgActions.pinMany(org, profiles)),
           unpinMany: (connectionId, profiles) => updateOrg(connectionId, org => orgActions.unpinMany(org, profiles)),
-          moveToSection: (connectionId, profile, sectionId) => updateOrg(connectionId, org => orgActions.moveToSection(org, profile, sectionId)),
           moveRowsToSection: (connectionId, profiles, sectionId) => updateOrg(connectionId, org => orgActions.moveRowsToSection(org, profiles, sectionId)),
           applyMove: (connectionId, move) => updateOrg(connectionId, org => orgActions.applyMove(org, move)),
           adoptProfiles: (connectionId, rows) => updateOrg(connectionId, org => orgActions.adoptProfiles(org, rows)),

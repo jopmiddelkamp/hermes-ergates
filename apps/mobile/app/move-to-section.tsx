@@ -5,7 +5,7 @@
  */
 
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useRef, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 
 import { canCreateSection, newSection, parseProfiles, sectionChoices } from '@/features/agents'
@@ -39,17 +39,35 @@ function MoveToSection({ connectionId, profiles, onDone }: { connectionId: strin
   const moveRowsToSection = useDeviceStore(s => s.moveRowsToSection)
   const createSection = useDeviceStore(s => s.createSection)
   const [name, setName] = useState('')
+  // A ref, not state: state only takes effect on the next render, so a second
+  // tap landing in the same frame (before the pop transition unmounts this
+  // screen) would still read `false` and run again — minting a second, empty,
+  // orphaned section, or moving and popping twice. The ref is set synchronously
+  // before anything else runs, so every entry point (Create, every row) shares
+  // one guard and this page calls `onDone()` at most once.
+  const done = useRef(false)
 
-  const moveTo = (sectionId: string | null) => {
-    moveRowsToSection(connectionId, profiles, sectionId)
-    onDone()
+  const runOnce = (fn: () => void) => {
+    if (done.current) {
+      return
+    }
+    done.current = true
+    fn()
   }
 
-  const create = () => {
-    const section = newSection(organization.sections, name)
-    createSection(connectionId, section)
-    moveTo(section.id)
-  }
+  const moveTo = (sectionId: string | null) =>
+    runOnce(() => {
+      moveRowsToSection(connectionId, profiles, sectionId)
+      onDone()
+    })
+
+  const create = () =>
+    runOnce(() => {
+      const section = newSection(organization.sections, name)
+      createSection(connectionId, section)
+      moveRowsToSection(connectionId, profiles, section.id)
+      onDone()
+    })
 
   return (
     <Page title="Move to Section" onBack={onDone}>

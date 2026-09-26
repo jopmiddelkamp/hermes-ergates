@@ -14,7 +14,7 @@ export interface SectionChoice {
   checked: boolean
 }
 
-/** Profile names are `[a-z0-9-]` (`PROFILE_NAME_RE`), so a comma never occurs inside one. */
+/** Profile names are `^[a-z0-9][a-z0-9_-]{0,63}$` (Hermes), so a comma never occurs inside one. */
 export function profilesParam(profiles: string[]): string {
   return profiles.join(',')
 }
