@@ -515,3 +515,37 @@ chat screen and come back before it resolves: exactly one submit reaches
 the server, and the bubble resolves once, not twice.
 
 Result:
+
+### V24 Home edit mode dragging on Android
+
+On an Android phone, with a pinned concierge and at least two other pins, one
+empty section, one section with a few agents, and enough agents to scroll:
+
+1. Build the dev client from `apps/mobile` with `npx expo run:android`. The
+   build passes; before the cookies patch it stopped at
+   `Could not find method jcenter()`.
+2. Handle and scroll: open Home, tap the edit icon. Holding a ≡ handle
+   briefly lifts its row; a swipe on a row body, or a quick swipe that starts
+   on a handle, scrolls the list; a tap on a row toggles its circle.
+3. Cross-group drops: drag a No section row into a section, in front of a
+   row there; drag it back into No section; drag one right under the empty
+   section's header. Each stays where it was dropped after tapping ✕.
+4. Pinned rules: a pin dragged below the Pinned group slides back; a No
+   section row dragged into the Pinned group slides back; the concierge has
+   no handle and no pin can pass above it; two pins swap places.
+5. Section drag: touch a section header's ≡: only the section headers show,
+   the touched header stays under the finger; drag it and drop: the sections
+   take the new order and the list expands. Touch the ≡ and lift without
+   dragging: the whole list comes back. On a debug build, note whether the
+   headers-only list appears before the header moves.
+6. Auto-scroll: drag a row to the bottom edge, then to the top edge: the list
+   scrolls both ways and the row drops where the finger is.
+7. Haptics: with Settings → Haptics on, a light tap on pick-up and on drop;
+   with Haptics off, none.
+8. Back: the system Back button leaves Edit mode, also right after a drop,
+   and Home keeps the new order.
+9. Section page: long-press a section name, on Home and in Edit mode: the
+   Section page opens. Rename a section; delete another and confirm: its
+   agents appear at the end of No section, pins unchanged.
+
+Result:

@@ -1,89 +1,263 @@
 /**
- * The Home list in Edit mode (docs/10 "Home edit mode"). Draws the flat
- * `EditItem` list from `buildEditItems` with one component: captions, section
- * headers and rows with a selection circle. A tap toggles a row's selection;
- * screen readers get Move up and Move down on each row and section header.
- * A long-press on a section header, or its Edit section action, opens the
- * Section page.
- * A drag list can replace this component: it takes the same items and
- * reports each drop as an `OrderMove` through `onMove`.
+ * The Home list in Edit mode (docs/10 "Home edit mode"): a drag list over the
+ * flat `EditItem` list from `buildEditItems`. Rows, pins and section headers
+ * carry a ≡ handle, and only the handle starts a drag: a tap on a row still
+ * toggles its selection, a swipe on a row scrolls, and a long-press on a
+ * section name opens the Section page. Every rule comes from the agents
+ * feature's drop rules: the live slot rule in the sort strategy, each drop as
+ * one `OrderMove` through `onMove`, and the headers-only list while a section
+ * header is dragged. Screen readers get Move up and Move down instead, and
+ * Edit section on a section header.
  */
 
-import { Pressable, ScrollView, StyleSheet, Text, View, type AccessibilityActionEvent } from 'react-native'
+import React, { useEffect, useMemo, useReducer } from 'react'
+import { Pressable, StyleSheet, Text, View, type AccessibilityActionEvent, type AccessibilityActionInfo } from 'react-native'
+import Animated, { useAnimatedReaction, useAnimatedRef, useSharedValue, type SharedValue } from 'react-native-reanimated'
+import Sortable, {
+  useCommonValuesContext,
+  type DragStartParams,
+  type SortableGridDragEndParams,
+  type SortableGridRenderItem,
+  type SortStrategyFactory
+} from 'react-native-sortables'
 
-import { EDIT_SECTION_ACTION, editRowLabel, moveActions, moveStep, useAvatar, type Bot, type EditItem, type MoveAction, type Selection } from '@/features/agents'
+import {
+  EDIT_ITEM_HEIGHT,
+  EDIT_SECTION_ACTION,
+  NO_SECTION_DRAG,
+  dropMove,
+  editRowLabel,
+  hasHandle,
+  listPadding,
+  moveActions,
+  moveStep,
+  nextOrder,
+  nextSectionDrag,
+  sectionDragItems,
+  slotMeta,
+  useAvatar,
+  type Bot,
+  type DragItem,
+  type EditItem,
+  type MoveAction,
+  type SectionDragEvent,
+  type Selection,
+  type SlotMeta
+} from '@/features/agents'
+import { lightTap } from '@/lib/haptics'
 import type { OrderMove } from '@/state/organization'
 import { useTheme } from '@/theme/provider'
 
 import { Avatar } from './Avatar'
 import { Icon } from './icons'
 
-const ROW_MIN_HEIGHT = 56
 const AVATAR_SIZE = 40
+const HANDLE_WIDTH = 52
+/** Holding a handle this long picks the item up; a quicker swipe on it scrolls the list. */
+const DRAG_ACTIVATION_DELAY = 150
+/** Rows have a fixed height (the section drag anchors with it), so their text grows only this far with the system text size. */
+const MAX_FONT_SCALE = 1.4
 
 export interface EditListProps {
   items: EditItem[]
   selection: Selection
   gateway: Parameters<typeof useAvatar>[0]
   connectionId: string
+  /** The owner's Haptics setting: a light tap when a drag starts and when it drops. */
+  haptics: boolean
   unread(profile: string): boolean
   onToggle(profile: string): void
-  /** Applies one step of the manual order to the device store. */
+  /** Applies one reorder (a drop, or Move up / Move down) to the device store. */
   onMove(move: OrderMove): void
   /** Opens the Section page for a section header. */
   onEditSection(sectionId: string): void
 }
 
-export function EditList({ items, selection, gateway, connectionId, unread, onToggle, onMove, onEditSection }: EditListProps) {
-  const theme = useTheme()
-  const act = (key: string) => (event: AccessibilityActionEvent) => {
-    const move = moveStep(items, key, event.nativeEvent.actionName === 'moveUp' ? 'up' : 'down')
+/**
+ * The one-column sort strategy with the drop rules applied while the finger
+ * moves: a slot the rules forbid is refused, and the item slides back to where
+ * the drag started. `meta` must keep its identity: a new strategy remounts the grid.
+ */
+function makeGuardedStrategy(meta: SharedValue<SlotMeta>): SortStrategyFactory {
+  return function useGuardedStrategy() {
+    const { indexToKey, itemHeights, activeItemKey } = useCommonValuesContext()
+    const startOrder = useSharedValue<string[] | null>(null)
+    useAnimatedReaction(
+      () => activeItemKey.value,
+      key => {
+        if (key === null) {
+          startOrder.value = null
+        }
+      }
+    )
+    return ({ activeIndex, activeKey, dimensions, position }) => {
+      'worklet'
+      const order = indexToKey.value
+      const start = startOrder.value ?? order
+      startOrder.value = start
+      return nextOrder({ order, startOrder: start, activeKey, activeIndex, activeHeight: dimensions.height, centerY: position.y, heights: itemHeights.value, meta: meta.value })
+    }
+  }
+}
+
+const keyOf = (item: DragItem) => item.key
+
+export function EditList({ items, selection, gateway, connectionId, haptics, unread, onToggle, onMove, onEditSection }: EditListProps) {
+  const scrollRef = useAnimatedRef<Animated.ScrollView>()
+  // While a section handle is touched or dragged, the list shows only the section headers.
+  const [sectionDrag, dispatch] = useReducer(nextSectionDrag, NO_SECTION_DRAG)
+  const data = useMemo<DragItem[]>(() => (sectionDrag.key ? sectionDragItems(items, sectionDrag.key) : items), [items, sectionDrag.key])
+
+  // The live rule reads the slot kinds on the UI thread; keep them in step with the list it shows.
+  const meta = useSharedValue<SlotMeta>({})
+  useEffect(() => {
+    meta.value = slotMeta(data)
+  }, [data, meta])
+  const strategy = useMemo(() => makeGuardedStrategy(meta), [meta])
+
+  const onDragStart = ({ key }: DragStartParams) => {
+    lightTap(haptics)
+    dispatch({ type: 'start', key })
+  }
+
+  const onDragEnd = ({ key, data: dropped }: SortableGridDragEndParams<DragItem>) => {
+    lightTap(haptics)
+    dispatch({ type: 'drop' })
+    const move = dropMove(items, dropped.map(keyOf), key)
     if (move) {
       onMove(move)
     }
   }
 
+  const act = (item: EditItem) => (event: AccessibilityActionEvent) => {
+    if (item.kind === 'section' && event.nativeEvent.actionName === EDIT_SECTION_ACTION.name) {
+      onEditSection(item.section.id)
+      return
+    }
+    const move = moveStep(items, item.key, event.nativeEvent.actionName === 'moveUp' ? 'up' : 'down')
+    if (move) {
+      onMove(move)
+    }
+  }
+
+  const renderItem: SortableGridRenderItem<DragItem> = ({ item }) => {
+    switch (item.kind) {
+      case 'spacer':
+        return <View style={{ height: item.height }} />
+      case 'caption':
+        return <Caption label={item.label} />
+      case 'section':
+        return (
+          <SectionLine
+            name={item.section.name}
+            actions={[...moveActions(items, item.key), EDIT_SECTION_ACTION]}
+            onAction={act(item)}
+            onEdit={() => onEditSection(item.section.id)}
+            onHandle={dispatch}
+            sectionKey={item.key}
+          />
+        )
+      default:
+        return (
+          <EditRow
+            bot={item.bot}
+            selected={selection.has(item.bot.profile)}
+            unread={unread(item.bot.profile)}
+            gateway={gateway}
+            connectionId={connectionId}
+            draggable={hasHandle(item)}
+            actions={moveActions(items, item.key)}
+            onAction={act(item)}
+            onToggle={() => onToggle(item.bot.profile)}
+          />
+        )
+    }
+  }
+
   return (
-    <ScrollView contentContainerStyle={styles.list}>
-      {items.map(item => {
-        switch (item.kind) {
-          case 'caption':
-            return (
-              <Text key={item.key} accessibilityRole="header" style={[styles.caption, { color: theme.colors.mutedForeground }]}>
-                {item.label}
-              </Text>
-            )
-          case 'section':
-            return (
-              <Pressable
-                key={item.key}
-                onLongPress={() => onEditSection(item.section.id)}
-                accessibilityRole="header"
-                accessibilityLabel={`${item.section.name} section`}
-                accessibilityActions={[...moveActions(items, item.key), EDIT_SECTION_ACTION]}
-                onAccessibilityAction={event => (event.nativeEvent.actionName === EDIT_SECTION_ACTION.name ? onEditSection(item.section.id) : act(item.key)(event))}
-                style={[styles.sectionHeader, { minHeight: theme.hit }]}
-              >
-                <Text style={[styles.sectionName, { color: theme.colors.mutedForeground }]}>{item.section.name}</Text>
-              </Pressable>
-            )
-          default:
-            return (
-              <EditRow
-                key={item.key}
-                bot={item.bot}
-                selected={selection.has(item.bot.profile)}
-                unread={unread(item.bot.profile)}
-                gateway={gateway}
-                connectionId={connectionId}
-                actions={moveActions(items, item.key)}
-                onAction={act(item.key)}
-                onToggle={() => onToggle(item.bot.profile)}
-              />
-            )
-        }
-      })}
-    </ScrollView>
+    <Animated.ScrollView
+      ref={scrollRef}
+      // A swipe that starts on a section handle and scrolls is no drag: show the whole list again.
+      onScrollBeginDrag={() => dispatch({ type: 'release' })}
+      // Keeps the list as tall as the whole list while only headers show, so the scroll position holds.
+      contentContainerStyle={{ paddingBottom: listPadding(items, data) }}
+    >
+      <Sortable.Grid
+        columns={1}
+        data={data}
+        keyExtractor={keyOf}
+        renderItem={renderItem}
+        customHandle
+        strategy={strategy}
+        scrollableRef={scrollRef}
+        overDrag="vertical"
+        dragActivationDelay={DRAG_ACTIVATION_DELAY}
+        activeItemScale={1.02}
+        inactiveItemOpacity={1}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+      />
+    </Animated.ScrollView>
+  )
+}
+
+/** The ≡ glyph inside the drag trigger. Hidden from screen readers, which use Move up and Move down. */
+function Grip() {
+  const theme = useTheme()
+  return (
+    <View style={styles.handle} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <Icon name="menu" size={22} color={theme.colors.mutedForeground} />
+    </View>
+  )
+}
+
+function Caption({ label }: { label: string }) {
+  const theme = useTheme()
+  return (
+    <View style={[styles.caption, { backgroundColor: theme.colors.background }]}>
+      <Text accessibilityRole="header" maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.captionText, { color: theme.colors.mutedForeground }]}>
+        {label}
+      </Text>
+    </View>
+  )
+}
+
+interface SectionLineProps {
+  name: string
+  sectionKey: string
+  actions: AccessibilityActionInfo[]
+  onAction(event: AccessibilityActionEvent): void
+  onEdit(): void
+  onHandle(event: SectionDragEvent): void
+}
+
+/**
+ * A section header: the name area opens the Section page on a long-press; the
+ * handle drags. They are side by side, so the two gestures never overlap.
+ * Touching the handle switches the list to headers only before the drag starts.
+ */
+function SectionLine({ name, sectionKey, actions, onAction, onEdit, onHandle }: SectionLineProps) {
+  const theme = useTheme()
+  return (
+    <View style={[styles.sectionHeader, { backgroundColor: theme.colors.background }]}>
+      <Pressable
+        onLongPress={onEdit}
+        accessibilityRole="header"
+        accessibilityLabel={`${name} section`}
+        accessibilityActions={actions}
+        onAccessibilityAction={onAction}
+        style={styles.sectionName}
+      >
+        <Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionText, { color: theme.colors.mutedForeground }]}>
+          {name}
+        </Text>
+      </Pressable>
+      <Sortable.Handle>
+        <Sortable.Touchable onTouchesDown={() => onHandle({ type: 'press', key: sectionKey })} onTouchesUp={() => onHandle({ type: 'release' })}>
+          <Grip />
+        </Sortable.Touchable>
+      </Sortable.Handle>
+    </View>
   )
 }
 
@@ -93,47 +267,61 @@ interface EditRowProps {
   unread: boolean
   gateway: EditListProps['gateway']
   connectionId: string
+  /** False for the pinned concierge: it never moves. */
+  draggable: boolean
   actions: MoveAction[]
   onAction(event: AccessibilityActionEvent): void
   onToggle(): void
 }
 
-function EditRow({ bot, selected, unread, gateway, connectionId, actions, onAction, onToggle }: EditRowProps) {
+function EditRow({ bot, selected, unread, gateway, connectionId, draggable, actions, onAction, onToggle }: EditRowProps) {
   const theme = useTheme()
   const avatar = useAvatar(gateway, connectionId, bot.profile, bot.hasAvatar)
   return (
-    <Pressable
-      onPress={onToggle}
-      accessibilityRole="button"
-      // The label ends in "selected" or "not selected"; a selected state would say it twice.
-      accessibilityLabel={editRowLabel(bot, selected, unread)}
-      accessibilityActions={actions}
-      onAccessibilityAction={onAction}
-      style={({ pressed }) => [styles.row, { backgroundColor: pressed ? theme.colors.muted : 'transparent' }]}
-    >
-      <Icon name={selected ? 'check-circle' : 'circle'} size={24} color={selected ? theme.colors.primary : theme.colors.mutedForeground} />
-      <Avatar name={bot.name} color={bot.color} imageUri={avatar.data ?? null} size={AVATAR_SIZE} />
-      <View style={styles.rowText}>
-        <Text numberOfLines={1} style={[styles.name, { color: theme.colors.foreground }]}>
-          {bot.name}
-        </Text>
-        {bot.role ? (
-          <Text numberOfLines={1} style={[styles.role, { color: theme.colors.mutedForeground }]}>
-            {bot.role}
+    <View style={[styles.row, { backgroundColor: theme.colors.background }]}>
+      <Pressable
+        onPress={onToggle}
+        accessibilityRole="button"
+        // The label ends in "selected" or "not selected"; a selected state would say it twice.
+        accessibilityLabel={editRowLabel(bot, selected, unread)}
+        accessibilityActions={actions}
+        onAccessibilityAction={onAction}
+        style={({ pressed }) => [styles.rowBody, { backgroundColor: pressed ? theme.colors.muted : 'transparent' }]}
+      >
+        <Icon name={selected ? 'check-circle' : 'circle'} size={24} color={selected ? theme.colors.primary : theme.colors.mutedForeground} />
+        <Avatar name={bot.name} color={bot.color} imageUri={avatar.data ?? null} size={AVATAR_SIZE} />
+        <View style={styles.rowText}>
+          <Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.name, { color: theme.colors.foreground }]}>
+            {bot.name}
           </Text>
-        ) : null}
-      </View>
-    </Pressable>
+          {bot.role ? (
+            <Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.role, { color: theme.colors.mutedForeground }]}>
+              {bot.role}
+            </Text>
+          ) : null}
+        </View>
+      </Pressable>
+      {draggable ? (
+        <Sortable.Handle>
+          <Grip />
+        </Sortable.Handle>
+      ) : (
+        <View style={styles.handle} />
+      )}
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
-  list: { paddingBottom: 40 },
-  caption: { fontSize: 13, paddingTop: 16, paddingBottom: 4 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center' },
-  sectionName: { fontSize: 13 },
-  row: { minHeight: ROW_MIN_HEIGHT, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
+  caption: { height: EDIT_ITEM_HEIGHT.caption, justifyContent: 'flex-end', paddingBottom: 4 },
+  captionText: { fontSize: 13 },
+  sectionHeader: { height: EDIT_ITEM_HEIGHT.section, flexDirection: 'row', alignItems: 'center' },
+  sectionName: { flex: 1, alignSelf: 'stretch', justifyContent: 'center' },
+  sectionText: { fontSize: 13 },
+  row: { height: EDIT_ITEM_HEIGHT.row, flexDirection: 'row', alignItems: 'center' },
+  rowBody: { flex: 1, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 12 },
   rowText: { flex: 1, gap: 2 },
   name: { fontSize: 17, fontWeight: '500' },
-  role: { fontSize: 13 }
+  role: { fontSize: 13 },
+  handle: { width: HANDLE_WIDTH, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' }
 })

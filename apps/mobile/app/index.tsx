@@ -243,6 +243,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
           selection={selection}
           gateway={gateway}
           connectionId={connectionId}
+          haptics={haptics}
           unread={home.unread}
           onToggle={profile => setPicked(toggleSelected(selection, profile))}
           onMove={move => applyMove(connectionId, move)}
