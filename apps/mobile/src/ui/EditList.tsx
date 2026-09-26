@@ -3,13 +3,15 @@
  * `EditItem` list from `buildEditItems` with one component: captions, section
  * headers and rows with a selection circle. A tap toggles a row's selection;
  * screen readers get Move up and Move down on each row and section header.
+ * A long-press on a section header, or its Edit section action, opens the
+ * Section page.
  * A drag list can replace this component: it takes the same items and
  * reports each drop as an `OrderMove` through `onMove`.
  */
 
 import { Pressable, ScrollView, StyleSheet, Text, View, type AccessibilityActionEvent } from 'react-native'
 
-import { editRowLabel, moveActions, moveStep, useAvatar, type Bot, type EditItem, type MoveAction, type Selection } from '@/features/agents'
+import { EDIT_SECTION_ACTION, editRowLabel, moveActions, moveStep, useAvatar, type Bot, type EditItem, type MoveAction, type Selection } from '@/features/agents'
 import type { OrderMove } from '@/state/organization'
 import { useTheme } from '@/theme/provider'
 
@@ -28,9 +30,11 @@ export interface EditListProps {
   onToggle(profile: string): void
   /** Applies one step of the manual order to the device store. */
   onMove(move: OrderMove): void
+  /** Opens the Section page for a section header. */
+  onEditSection(sectionId: string): void
 }
 
-export function EditList({ items, selection, gateway, connectionId, unread, onToggle, onMove }: EditListProps) {
+export function EditList({ items, selection, gateway, connectionId, unread, onToggle, onMove, onEditSection }: EditListProps) {
   const theme = useTheme()
   const act = (key: string) => (event: AccessibilityActionEvent) => {
     const move = moveStep(items, key, event.nativeEvent.actionName === 'moveUp' ? 'up' : 'down')
@@ -51,17 +55,17 @@ export function EditList({ items, selection, gateway, connectionId, unread, onTo
             )
           case 'section':
             return (
-              <View
+              <Pressable
                 key={item.key}
-                accessible
+                onLongPress={() => onEditSection(item.section.id)}
                 accessibilityRole="header"
                 accessibilityLabel={`${item.section.name} section`}
-                accessibilityActions={moveActions(items, item.key)}
-                onAccessibilityAction={act(item.key)}
+                accessibilityActions={[...moveActions(items, item.key), EDIT_SECTION_ACTION]}
+                onAccessibilityAction={event => (event.nativeEvent.actionName === EDIT_SECTION_ACTION.name ? onEditSection(item.section.id) : act(item.key)(event))}
                 style={[styles.sectionHeader, { minHeight: theme.hit }]}
               >
                 <Text style={[styles.sectionName, { color: theme.colors.mutedForeground }]}>{item.section.name}</Text>
-              </View>
+              </Pressable>
             )
           default:
             return (

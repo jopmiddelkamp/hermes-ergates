@@ -137,6 +137,8 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
     router.push({ pathname: '/chat/[profile]', params: { profile: bot.profile } })
   }
 
+  const editSection = (sectionId: string) => router.push({ pathname: '/section', params: { id: sectionId } })
+
   const openMenu = (bot: Bot, anchor: AnchorRect) => {
     lightTap(haptics)
     setMenu({ bot, anchor })
@@ -244,6 +246,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
           unread={home.unread}
           onToggle={profile => setPicked(toggleSelected(selection, profile))}
           onMove={move => applyMove(connectionId, move)}
+          onEditSection={editSection}
         />
         {selection.size > 0 ? <EditBar labels={labels} onMove={bar.move} onPin={bar.pin} onHide={() => void bar.hide()} onRead={bar.read} /> : null}
       </Screen>
@@ -279,7 +282,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
         {home.ungrouped.map(renderRow)}
         {home.sections.map(({ section, rows }) => (
           <View key={section.id}>
-            <SectionHeader name={section.name} expanded={!section.collapsed} onToggle={() => toggleCollapsed(connectionId, section.id)} />
+            <SectionHeader name={section.name} expanded={!section.collapsed} onToggle={() => toggleCollapsed(connectionId, section.id)} onEdit={() => editSection(section.id)} />
             {section.collapsed ? null : rows.map(renderRow)}
           </View>
         ))}

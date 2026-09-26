@@ -420,3 +420,21 @@ describe('default useDeviceStore', () => {
     setItemSpy.mockRestore()
   })
 })
+
+describe('deleting a section', () => {
+  it('moves its members to No section and removes it, for that connection only', () => {
+    const store = newStore()
+    const s = () => store.getState()
+    s().createSection('c1', { id: 'prive', name: 'Prive', collapsed: true, order: 0 })
+    s().adoptProfiles('c1', [
+      { profile: 'linh', hidden: false, lastActivityAt: 300 },
+      { profile: 'kevin', hidden: false, lastActivityAt: 200 }
+    ])
+    s().moveRowsToSection('c1', ['linh'], 'prive')
+    s().deleteSection('c1', 'prive')
+    expect(s().organization.c1.sections).toEqual([])
+    expect(s().organization.c1.membership.linh).toBeNull()
+    expect(s().organization.c1.rowOrder).toEqual(['kevin', 'linh'])
+    expect(s().organization.c2).toBeUndefined()
+  })
+})

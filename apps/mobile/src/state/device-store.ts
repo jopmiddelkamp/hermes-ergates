@@ -97,6 +97,7 @@ export interface DeviceState extends PersistedDeviceState {
   createSection(connectionId: string, section: Section): void
   renameSection(connectionId: string, sectionId: string, name: string): void
   removeSection(connectionId: string, sectionId: string): void
+  deleteSection(connectionId: string, sectionId: string): void
   toggleCollapsed(connectionId: string, sectionId: string): void
   markUnread(connectionId: string, profile: string): void
   markRead(connectionId: string, profile: string, now: number): void
@@ -229,6 +230,7 @@ export function createDeviceStore(storage: PersistStorage<PersistedDeviceState>,
           createSection: (connectionId, section) => updateOrg(connectionId, org => orgActions.createSection(org, section)),
           renameSection: (connectionId, sectionId, name) => updateOrg(connectionId, org => orgActions.renameSection(org, sectionId, name)),
           removeSection: (connectionId, sectionId) => updateOrg(connectionId, org => orgActions.removeSection(org, sectionId)),
+          deleteSection: (connectionId, sectionId) => updateOrg(connectionId, org => orgActions.deleteSection(org, sectionId)),
           toggleCollapsed: (connectionId, sectionId) => updateOrg(connectionId, org => orgActions.toggleCollapsed(org, sectionId)),
           markUnread: (connectionId, profile) => updateOrg(connectionId, org => orgActions.markUnread(org, profile)),
           markRead: (connectionId, profile, now) => updateOrg(connectionId, org => orgActions.markRead(org, profile, now)),

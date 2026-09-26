@@ -281,6 +281,18 @@ export const orgActions = {
     return { ...cleared, sections: cleared.sections.filter(s => s.id !== sectionId) }
   },
 
+  /**
+   * Deletes a section: its members move to the end of No section in their
+   * manual order, the section and its collapse state go, and pins stay.
+   */
+  deleteSection(org: Organization, sectionId: string): Organization {
+    if (!org.sections.some(s => s.id === sectionId)) {
+      return org
+    }
+    const members = Object.keys(org.membership).filter(profile => memberSection(org, profile) === sectionId)
+    return orgActions.removeSection(orgActions.moveRowsToSection(org, members, null), sectionId)
+  },
+
   toggleCollapsed(org: Organization, sectionId: string): Organization {
     return { ...org, sections: org.sections.map(s => (s.id === sectionId ? { ...s, collapsed: !s.collapsed } : s)) }
   },

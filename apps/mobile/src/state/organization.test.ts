@@ -483,3 +483,22 @@ describe('forget', () => {
     expect(deriveHome(recreated, forgotten).ungrouped).toEqual(['linh', 'noor', 'otto'])
   })
 })
+
+describe('deleteSection', () => {
+  it('moves the members to the end of No section in their order, keeps pins, and removes the section', () => {
+    // Linh is pinned and Ghost is hidden; both are Prive members, like Kevin.
+    const pinned = orgActions.pin(orderedOrg(), 'linh')
+    const org: Organization = { ...pinned, membership: { ...pinned.membership, ghost: 'prive' } }
+    const deleted = orgActions.deleteSection(org, 'prive')
+    expect(deleted.sections.map(s => s.id)).toEqual(['work'])
+    expect(deleted.membership).toEqual({ linh: null, kevin: null, mia: 'work', ghost: null })
+    expect(deleted.pins).toEqual(['linh'])
+    expect(deleted.rowOrder).toEqual(['noor', 'mia', 'otto', 'kevin', 'ghost', 'linh'])
+    expect(deriveHome(orderedRows, deleted).ungrouped).toEqual(['noor', 'otto', 'kevin'])
+  })
+
+  it('changes nothing for a section that does not exist', () => {
+    const org = orderedOrg()
+    expect(orgActions.deleteSection(org, 'gone')).toBe(org)
+  })
+})
