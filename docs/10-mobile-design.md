@@ -103,8 +103,9 @@ Long-press a conversation or pinned avatar to open a compact action menu. Provid
 | Edit Bot | Opens the editor below; also available directly from agent details | 1 |
 | Mark Unread / Mark Read | Device-local reading marker; opening the conversation clears the manual unread flag | 1 |
 | Pin / Unpin | Device-local shortcut; first two prominent, additional pins in a horizontal strip. Preserve section membership; unpin returns to the assigned section | 1 |
-| New Section / Move to Section | Device-local collapsible sections; changing membership preserves pin state. Removing a section returns unpinned members to the ordinary list and keeps pinned members pinned | 1 |
+| New Section / Move to Section | Opens the Move to Section page: No section and every section, with a check mark on a section only when every chosen agent is in it, and a soft "New section name" field with **Create section** (disabled while the name is empty). Tapping a row, or Create, moves every chosen agent to the end of that group and goes back. The same page opens from the Edit mode bottom bar for several agents. Device-local collapsible sections; changing membership preserves pin state. Removing a section returns unpinned members to the ordinary list and keeps pinned members pinned | 1 |
 | Hide / Unhide | Shared Hermes bot metadata; removes from the usual roster without pausing work or muting notifications. Settings > Hidden Bots provides recovery | 1 |
+| Select | Home only: opens Edit mode with this agent already selected | 1 |
 | Share as Template | Review a sanitized configuration snapshot before export; exclude credentials, conversation history, memory, files and active routines by default | 2 |
 | More > Copy ID | Copy the profile identifier with its gateway label; no URL credentials or access token | 1 |
 | More > Duplicate | New identity from a reviewed configuration snapshot, with fresh provisioning and separately approved tool access. Do not copy secrets, history, memory or active schedules | 2 |

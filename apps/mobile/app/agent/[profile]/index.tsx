@@ -8,7 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import React, { useRef, useState } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 
-import { deleteAgent, useAvatar, useHome, useSetHidden, type Bot } from '@/features/agents'
+import { deleteAgent, profilesParam, useAvatar, useHome, useSetHidden, type Bot } from '@/features/agents'
 import { usePrimaryConnection } from '@/features/settings'
 import { userMessage } from '@/gateway/errors'
 import { useGateway } from '@/gateway/registry'
@@ -33,10 +33,6 @@ export default function AgentDetailsScreen() {
   return <AgentDetails connectionId={connection.id} connectionLabel={connection.label} profile={profile} />
 }
 
-function newSectionId(): string {
-  return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
-}
-
 function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId: string; connectionLabel: string; profile: string }) {
   const theme = useTheme()
   const router = useRouter()
@@ -49,8 +45,6 @@ function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId
   const unpin = useDeviceStore(s => s.unpin)
   const markRead = useDeviceStore(s => s.markRead)
   const markUnread = useDeviceStore(s => s.markUnread)
-  const moveToSection = useDeviceStore(s => s.moveToSection)
-  const createSection = useDeviceStore(s => s.createSection)
   const forgetProfile = useDeviceStore(s => s.forgetProfile)
   const clearDraft = useDeviceStore(s => s.clearDraft)
   const haptics = useDeviceStore(s => s.prefs.haptics)
@@ -77,12 +71,7 @@ function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId
     edit: (b: Bot) => router.push({ pathname: '/agent/[profile]/edit', params: { profile: b.profile } }),
     toggleUnread: (b: Bot, unread: boolean) => (unread ? markUnread(connectionId, b.profile) : markRead(connectionId, b.profile, Date.now())),
     togglePin: (b: Bot, pinned: boolean) => (pinned ? pin(connectionId, b.profile) : unpin(connectionId, b.profile)),
-    moveToSection: (b: Bot, sectionId: string | null) => moveToSection(connectionId, b.profile, sectionId),
-    createSection: (b: Bot, name: string) => {
-      const id = newSectionId()
-      createSection(connectionId, { id, name, collapsed: false, order: home.organization.sections.length })
-      moveToSection(connectionId, b.profile, id)
-    },
+    moveToSection: (b: Bot) => router.push({ pathname: '/move-to-section', params: { profiles: profilesParam([b.profile]) } }),
     toggleHidden: (b: Bot, hidden: boolean) => setHidden.mutate({ bot: b, hidden }, { onError: err => Alert.alert('Could not update', userMessage(err)) }),
     remove: async (b: Bot) => {
       const result = await deleteAgent(gateway, b.profile, b.isDefault)
@@ -150,8 +139,7 @@ function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId
         anchor={menu?.anchor ?? null}
         unread={menu ? home.unread(menu.bot.profile) : false}
         pinned={menu ? home.isPinned(menu.bot.profile) : false}
-        sections={home.organization.sections}
-        currentSectionId={menu ? home.sectionOf(menu.bot.profile)?.id ?? null : null}
+        inSection={menu ? home.sectionOf(menu.bot.profile) !== null : false}
         connectionLabel={connectionLabel}
         handlers={handlers}
         onClose={() => setMenu(null)}

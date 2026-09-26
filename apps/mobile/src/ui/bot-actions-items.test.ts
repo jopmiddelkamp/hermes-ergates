@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { Bot } from '@/features/agents/roster'
-import type { Section } from '@/state/organization'
 
 import { botActionItems, type BotActionHandlers, type BotActionLevel } from './bot-actions-items'
 
@@ -19,24 +18,18 @@ const bot: Bot = {
   summary: { name: 'kevin', is_default: false }
 }
 
-const sections: Section[] = [
-  { id: 's1', name: 'Prive', collapsed: false, order: 0 },
-  { id: 's2', name: 'Work', collapsed: false, order: 1 }
-]
-
-function harness(overrides: Partial<Parameters<typeof botActionItems>[0]> = {}) {
+function harness(overrides: Partial<Parameters<typeof botActionItems>[0]> = {}, withSelect = true) {
   const handlers: BotActionHandlers = {
     edit: vi.fn(),
     toggleUnread: vi.fn(),
     togglePin: vi.fn(),
     moveToSection: vi.fn(),
-    createSection: vi.fn(),
     toggleHidden: vi.fn(),
-    remove: vi.fn()
+    remove: vi.fn(),
+    ...(withSelect ? { select: vi.fn() } : {})
   }
   const close = vi.fn()
   const copyId = vi.fn()
-  const askNewSection = vi.fn()
   const confirmDelete = vi.fn()
   let level: BotActionLevel = 'main'
   const setLevel = vi.fn((next: BotActionLevel) => {
@@ -48,13 +41,11 @@ function harness(overrides: Partial<Parameters<typeof botActionItems>[0]> = {}) 
       level,
       unread: false,
       pinned: false,
-      sections,
-      currentSectionId: null,
+      inSection: false,
       handlers,
       setLevel,
       close,
       copyId,
-      askNewSection,
       confirmDelete,
       ...overrides
     })
@@ -65,23 +56,13 @@ function harness(overrides: Partial<Parameters<typeof botActionItems>[0]> = {}) 
     }
     item.onPress()
   }
-  return { handlers, close, copyId, askNewSection, confirmDelete, setLevel, build, press, levelNow: () => level }
+  return { handlers, close, copyId, confirmDelete, setLevel, build, press, levelNow: () => level }
 }
 
 describe('bot action menu levels', () => {
-  it('opens the section submenu and comes back without dismissing the menu', () => {
-    const h = harness()
-    expect(h.build().map(i => i.key)).toEqual(['edit', 'unread', 'pin', 'section', 'hide', 'more'])
-
-    h.press('section')
-    expect(h.setLevel).toHaveBeenCalledWith('sections')
-    expect(h.levelNow()).toBe('sections')
-    expect(h.close).not.toHaveBeenCalled()
-    expect(h.build().map(i => i.key)).toEqual(['s1', 's2', 'new', 'back'])
-
-    h.press('back')
-    expect(h.levelNow()).toBe('main')
-    expect(h.close).not.toHaveBeenCalled()
+  it('shows Select only where the screen can select agents', () => {
+    expect(harness().build().map(i => i.key)).toEqual(['edit', 'unread', 'pin', 'section', 'hide', 'select', 'more'])
+    expect(harness({}, false).build().map(i => i.key)).toEqual(['edit', 'unread', 'pin', 'section', 'hide', 'more'])
   })
 
   it('opens the More submenu and comes back without dismissing the menu', () => {
@@ -116,29 +97,33 @@ describe('bot action menu levels', () => {
     expect(h.close).toHaveBeenCalledTimes(5)
   })
 
-  it('leaves the menu open for items that present a dialog; the dialog closes it', () => {
+  it('opens the Move to Section page from the section row instead of a submenu', () => {
+    const h = harness()
+    expect(h.build().find(i => i.key === 'section')?.label).toBe('New Section')
+    h.press('section')
+    expect(h.close).toHaveBeenCalledTimes(1)
+    expect(h.handlers.moveToSection).toHaveBeenCalledWith(bot)
+    expect(h.setLevel).not.toHaveBeenCalled()
+    expect(h.levelNow()).toBe('main')
+
+    expect(harness({ inSection: true }).build().find(i => i.key === 'section')?.label).toBe('Move to Section')
+  })
+
+  it('Select closes the menu and opens Edit mode with this agent selected', () => {
+    const h = harness()
+    const select = h.build().find(i => i.key === 'select')
+    expect(select?.label).toBe('Select')
+    h.press('select')
+    expect(h.close).toHaveBeenCalledTimes(1)
+    expect(h.handlers.select).toHaveBeenCalledWith(bot)
+  })
+
+  it('leaves the menu open for Delete, which presents a dialog; the dialog closes it', () => {
     // Closing first would dismiss the alert together with the menu's Modal on iOS.
     const h = harness({ level: 'more' })
     h.press('delete')
     expect(h.confirmDelete).toHaveBeenCalledWith(bot)
     expect(h.close).not.toHaveBeenCalled()
-
-    const g = harness({ level: 'sections' })
-    g.press('new')
-    expect(g.askNewSection).toHaveBeenCalledWith(bot)
-    expect(g.close).not.toHaveBeenCalled()
-  })
-
-  it('marks the current section as selected instead of decorating the label', () => {
-    const h = harness({ level: 'sections', currentSectionId: 's2' })
-    const items = h.build()
-    expect(items.map(i => i.label)).toEqual(['Prive', 'Work', 'Remove from section', 'New Section…', 'Back'])
-    expect(items.find(i => i.key === 's2')?.selected).toBe(true)
-    expect(items.find(i => i.key === 's1')?.selected).toBe(false)
-
-    h.press('none')
-    expect(h.handlers.moveToSection).toHaveBeenCalledWith(bot, null)
-    expect(h.close).toHaveBeenCalledTimes(1)
   })
 
   it('hides Delete for the default concierge', () => {

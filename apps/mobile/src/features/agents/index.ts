@@ -21,6 +21,7 @@ export {
   type MoveDirection,
   type Selection
 } from './edit-mode'
+export { canCreateSection, newSection, parseProfiles, profilesParam, sectionChoices, type SectionChoice } from './move-to-section'
 export { collectProposals, parseAgentProposal, proposalView, shouldForgetRun, PROPOSAL_KIND, PROPOSE_TOOL, type ProposalAction, type ProposalView } from './proposal'
 export { provisionAgent, provisionDeps, provisionOnce, type OpenBotChat, type ProvisionDeps, type ProvisionOptions, type ProvisionOutcome } from './provision'
 export { AVATAR_MAX_BYTES, botsMeta, type SaveOutcome, type SaveSection } from './editor'

@@ -2,7 +2,7 @@ import { useFocusEffect, useRouter, Redirect } from 'expo-router'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native'
 
-import { deleteAgent, useAvatar, useHome, useSetHidden, type Bot } from '@/features/agents'
+import { deleteAgent, profilesParam, useAvatar, useHome, useSetHidden, type Bot } from '@/features/agents'
 import { usePrimaryConnection } from '@/features/settings'
 import { userMessage } from '@/gateway/errors'
 import { useGateway } from '@/gateway/registry'
@@ -26,10 +26,6 @@ export default function HomeScreen() {
   return <Home connectionId={connection.id} connectionLabel={connection.label} />
 }
 
-function newSectionId(): string {
-  return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
-}
-
 function Home({ connectionId, connectionLabel }: { connectionId: string; connectionLabel: string }) {
   const theme = useTheme()
   const router = useRouter()
@@ -44,8 +40,6 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   const unpin = useDeviceStore(s => s.unpin)
   const markRead = useDeviceStore(s => s.markRead)
   const markUnread = useDeviceStore(s => s.markUnread)
-  const moveToSection = useDeviceStore(s => s.moveToSection)
-  const createSection = useDeviceStore(s => s.createSection)
   const toggleCollapsed = useDeviceStore(s => s.toggleCollapsed)
   const adoptProfiles = useDeviceStore(s => s.adoptProfiles)
   const forgetProfile = useDeviceStore(s => s.forgetProfile)
@@ -105,12 +99,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
     },
     toggleUnread: (bot: Bot, unread: boolean) => (unread ? markUnread(connectionId, bot.profile) : markRead(connectionId, bot.profile, Date.now())),
     togglePin: (bot: Bot, pinned: boolean) => (pinned ? pin(connectionId, bot.profile) : unpin(connectionId, bot.profile)),
-    moveToSection: (bot: Bot, sectionId: string | null) => moveToSection(connectionId, bot.profile, sectionId),
-    createSection: (bot: Bot, name: string) => {
-      const id = newSectionId()
-      createSection(connectionId, { id, name, collapsed: false, order: home.organization.sections.length })
-      moveToSection(connectionId, bot.profile, id)
-    },
+    moveToSection: (bot: Bot) => router.push({ pathname: '/move-to-section', params: { profiles: profilesParam([bot.profile]) } }),
     toggleHidden: (bot: Bot, hidden: boolean) => setHidden.mutate({ bot, hidden }, { onError: err => Alert.alert('Could not update', userMessage(err)) }),
     remove: async (bot: Bot) => {
       const result = await deleteAgent(gateway, bot.profile, bot.isDefault)
@@ -170,8 +159,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
         anchor={menu?.anchor ?? null}
         unread={menu ? home.unread(menu.bot.profile) : false}
         pinned={menu ? home.isPinned(menu.bot.profile) : false}
-        sections={home.organization.sections}
-        currentSectionId={menu ? home.sectionOf(menu.bot.profile)?.id ?? null : null}
+        inSection={menu ? home.sectionOf(menu.bot.profile) !== null : false}
         connectionLabel={connectionLabel}
         handlers={handlers}
         onClose={() => setMenu(null)}
