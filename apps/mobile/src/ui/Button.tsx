@@ -6,8 +6,11 @@
 
 import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native'
 
+import { softFill } from '@/theme/fill'
 import { useTheme } from '@/theme/provider'
 import type { MobileTheme } from '@/theme/tokens'
+
+import { useSurface } from './surface-context'
 
 const RADIUS = 16
 const MIN_HEIGHT = 50
@@ -25,12 +28,12 @@ export interface ButtonProps {
   compact?: boolean
 }
 
-function colorsFor(theme: MobileTheme, variant: ButtonVariant) {
+function colorsFor(theme: MobileTheme, variant: ButtonVariant, surface: string) {
   switch (variant) {
     case 'primary':
       return { background: theme.colors.primary, foreground: theme.colors.primaryForeground }
     case 'secondary':
-      return { background: theme.colors.muted, foreground: theme.colors.foreground }
+      return { background: softFill(theme.colors, surface), foreground: theme.colors.foreground }
     case 'destructive':
       return { background: theme.colors.destructive, foreground: theme.colors.destructiveForeground }
     case 'ghost':
@@ -40,7 +43,8 @@ function colorsFor(theme: MobileTheme, variant: ButtonVariant) {
 
 export function Button({ label, onPress, variant = 'primary', loading, disabled, accessibilityLabel, compact }: ButtonProps) {
   const theme = useTheme()
-  const { background, foreground } = colorsFor(theme, variant)
+  const surface = useSurface()
+  const { background, foreground } = colorsFor(theme, variant, surface)
   const isDisabled = disabled || loading
 
   return (

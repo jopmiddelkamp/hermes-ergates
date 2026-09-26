@@ -6,7 +6,10 @@
 import { Children, Fragment, type ReactNode } from 'react'
 import { StyleSheet, View } from 'react-native'
 
+import { softFill } from '@/theme/fill'
 import { useTheme } from '@/theme/provider'
+
+import { useSurface } from './surface-context'
 
 /** Left inset for dividers, aligned with a settings row's label text. */
 const DIVIDER_INSET = 16
@@ -21,10 +24,11 @@ export interface CardProps {
 
 export function Card({ children, divider = true, dividerInset = DIVIDER_INSET }: CardProps) {
   const theme = useTheme()
+  const surface = useSurface()
   const items = Children.toArray(children)
 
   return (
-    <View style={[styles.card, { backgroundColor: theme.colors.muted, borderRadius: theme.radius.group }]}>
+    <View style={[styles.card, { backgroundColor: softFill(theme.colors, surface), borderRadius: theme.radius.group }]}>
       {items.map((child, i) => (
         <Fragment key={i}>
           {i > 0 && divider ? (

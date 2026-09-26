@@ -13,6 +13,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { useTheme } from '@/theme/provider'
 
 import { IconButton } from './IconButton'
+import { SurfaceProvider } from './surface-context'
 
 const HEADER_MIN_HEIGHT = 48
 
@@ -46,25 +47,30 @@ export function Sheet({ title, onClose, headerLeft, headerRight, children }: She
           }
         ]}
       >
-        <View style={[styles.header, { paddingHorizontal: theme.pagePadding }]}>
-          <View style={styles.headerSide}>{headerLeft ?? <IconButton name="x" accessibilityLabel="Close" onPress={onClose} />}</View>
-          <Text numberOfLines={1} style={[styles.title, { color: theme.colors.foreground }]}>
-            {title}
-          </Text>
-          <View style={[styles.headerSide, styles.headerRight]}>{headerRight ?? null}</View>
-        </View>
-        {/* Sheets carry forms (New Agent, Edit Bot, Routine); iOS ScrollViews do
-            not move for the keyboard on their own, so the lower fields and the
-            primary button would sit under it. */}
-        <KeyboardAvoidingView style={styles.scroll} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView
-            style={styles.scroll}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingHorizontal: theme.pagePadding, paddingTop: theme.spacing[2], paddingBottom: theme.spacing[4] }}
-          >
-            {children}
-          </ScrollView>
-        </KeyboardAvoidingView>
+        {/* The sheet paints `popover`, not the page's `background`: soft fills
+            (Field, Card/Group, the secondary Button) read against this color,
+            wherever in the sheet's header or body they sit. */}
+        <SurfaceProvider color={theme.colors.popover}>
+          <View style={[styles.header, { paddingHorizontal: theme.pagePadding }]}>
+            <View style={styles.headerSide}>{headerLeft ?? <IconButton name="x" accessibilityLabel="Close" onPress={onClose} />}</View>
+            <Text numberOfLines={1} style={[styles.title, { color: theme.colors.foreground }]}>
+              {title}
+            </Text>
+            <View style={[styles.headerSide, styles.headerRight]}>{headerRight ?? null}</View>
+          </View>
+          {/* Sheets carry forms (New Agent, Edit Bot, Routine); iOS ScrollViews do
+              not move for the keyboard on their own, so the lower fields and the
+              primary button would sit under it. */}
+          <KeyboardAvoidingView style={styles.scroll} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <ScrollView
+              style={styles.scroll}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingHorizontal: theme.pagePadding, paddingTop: theme.spacing[2], paddingBottom: theme.spacing[4] }}
+            >
+              {children}
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SurfaceProvider>
       </SafeAreaView>
     </SafeAreaProvider>
   )

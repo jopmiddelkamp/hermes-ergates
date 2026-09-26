@@ -7,7 +7,10 @@
 
 import { StyleSheet, Text, TextInput, View, type KeyboardTypeOptions } from 'react-native'
 
+import { softFill } from '@/theme/fill'
 import { useTheme } from '@/theme/provider'
+
+import { useSurface } from './surface-context'
 
 const MIN_HEIGHT = 50
 const MULTILINE_MIN_HEIGHT = 128
@@ -37,6 +40,7 @@ export function Field({
   accessibilityLabel
 }: FieldProps) {
   const theme = useTheme()
+  const surface = useSurface()
 
   return (
     <View style={styles.container}>
@@ -54,7 +58,7 @@ export function Field({
         style={[
           styles.input,
           multiline ? styles.multiline : null,
-          { backgroundColor: theme.colors.muted, color: theme.colors.foreground }
+          { backgroundColor: softFill(theme.colors, surface), color: theme.colors.foreground }
         ]}
       />
       {error ? <Text style={[styles.error, { color: theme.colors.destructive }]}>{error}</Text> : null}

@@ -71,6 +71,8 @@ All dimensions below are logical points/dp, not screenshot pixels. Reference scr
 | Settings group | `muted` card, radius 20, optional small caption above; row minimum 56 with a leading line icon, title, optional subtitle and a chevron when the row opens something | Hairline dividers inset past the icon to the text; labels wrap at large text sizes |
 | Sheet | Radius 28 at top | Close button, native dismissal and Android back support |
 
+Field, Card/Group and the secondary Button fill with whichever of `muted` or `background` reads more clearly against the surface they sit on — the page normally, a Sheet's `popover` inside one — so the fill stays visible in every theme's dark mode instead of nearly matching a sheet's own color.
+
 ### Home
 
 - Top row: account avatar at left; Search and Add at right. No large marketing header, counts, charts, or permanent bottom tab bar.
