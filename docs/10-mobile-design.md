@@ -146,7 +146,7 @@ Template and duplication actions are part of the design and remain absent until 
 
 ### Edit Bot on mobile
 
-Mobile provides desktop-equivalent bot editing in a full-height sheet or pushed screen. A stable header contains Cancel, **Edit Bot**, and Save. The basic form is short; long instructions and capability lists open focused subpages that return to the same unsaved draft. Opening a picker does not save. Routines, memories and files remain separate destinations.
+Mobile provides desktop-equivalent bot editing in a full-height sheet or pushed screen. A stable header contains Cancel as a soft grey pill on the left, **Edit Bot** centered, and Save as a primary pill on the right. The avatar sits centered with full-width soft **Choose photo** and **Remove photo** buttons below it; Name, Role and Description are soft fields; Instructions, Provider / Model and Capabilities are rows inside groups, each group with a small caption. The basic form is short; long instructions and capability lists open focused subpages that return to the same unsaved draft. Opening a picker does not save. Routines, memories and files remain separate destinations.
 
 | Field | Mobile presentation / persistence |
 |---|---|

@@ -4,7 +4,7 @@ import type { ProfileDescribe, ProfileSummary } from '@/gateway/types'
 import describeFixture from '@test/fixtures/profiles-describe.json'
 import profilesList from '@test/fixtures/profiles-list.json'
 
-import { applyResults, draftFromBase, friendlyName, isDirty, keepFailedSections, planSave, validate, type EditBotBase } from './editor'
+import { applyResults, draftFromBase, friendlyName, instructionsSummary, isDirty, keepFailedSections, modelSummary, planSave, validate, type EditBotBase } from './editor'
 
 const summary = (profilesList as { profiles: ProfileSummary[] }).profiles[1]! // kevin: title Kevin, role Trainer, revisions {hermes-bots:2, ergates:1}
 const describe_ = describeFixture as unknown as ProfileDescribe
@@ -115,5 +115,20 @@ describe('applyResults', () => {
     expect(kept.name).toBe('Kevin')
     expect(kept.soul).toBe('S')
     expect(isDirty(kept)).toBe(true)
+  })
+})
+
+describe('the Edit Bot rows', () => {
+  it('sums up the instructions by their first line, cut to 60 characters', () => {
+    expect(instructionsSummary('')).toBe('Uses the Hermes default')
+    expect(instructionsSummary('\n  \n')).toBe('Uses the Hermes default')
+    expect(instructionsSummary('\n# Kevin\nTrains for the marathon.')).toBe('# Kevin')
+    expect(instructionsSummary('x'.repeat(70))).toBe(`${'x'.repeat(59)}…`)
+  })
+
+  it('names the provider and model, or the server default', () => {
+    expect(modelSummary('openrouter', 'gpt-5')).toBe('openrouter · gpt-5')
+    expect(modelSummary('', '')).toBe('Inherit from server default')
+    expect(modelSummary('openrouter', '')).toBe('Inherit from server default')
   })
 })

@@ -277,3 +277,19 @@ export function keepFailedSections(d: EditBotDraft, outcome: SaveOutcome, fresh:
     avatar: keep('avatar') ? d.avatar : { kind: 'keep' }
   }
 }
+
+const SUMMARY_MAX = 60
+
+/** The Instructions row's subtitle: the first line of SOUL.md, or that Hermes's default applies. */
+export function instructionsSummary(soul: string): string {
+  const first = soul.split('\n').map(line => line.trim()).find(Boolean)
+  if (!first) {
+    return 'Uses the Hermes default'
+  }
+  return first.length > SUMMARY_MAX ? `${first.slice(0, SUMMARY_MAX - 1)}…` : first
+}
+
+/** The Provider / Model row's subtitle. */
+export function modelSummary(provider: string, model: string): string {
+  return provider && model ? `${provider} · ${model}` : 'Inherit from server default'
+}

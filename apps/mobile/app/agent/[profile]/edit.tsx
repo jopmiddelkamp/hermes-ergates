@@ -1,22 +1,25 @@
 /**
- * Edit Bot basic form (docs/10 "Edit Bot on mobile"): name, role, description
- * and avatar inline; instructions, provider/model and capabilities are
- * focused subpages that share this same draft through `EditBotProvider`.
- * Save is not atomic — each section's outcome is reported separately.
+ * Edit Bot basic form (docs/10 "Edit Bot on mobile"): a soft Cancel pill, the
+ * centered title and a Save pill; the avatar centered with full-width photo
+ * buttons; name, role and description inline. Instructions, provider/model
+ * and capabilities are rows in captioned groups that open focused subpages
+ * sharing this same draft through `EditBotProvider`. Save is not atomic —
+ * each section's outcome is reported separately.
  */
 
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router'
 import React, { useEffect, useRef } from 'react'
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native'
 
-import { botsMeta, useEditBotContext, type SaveOutcome, type SaveSection } from '@/features/agents'
+import { botsMeta, instructionsSummary, modelSummary, useEditBotContext, type SaveOutcome, type SaveSection } from '@/features/agents'
 import { pickAvatar } from '@/features/files'
 import { userMessage } from '@/gateway/errors'
 import { useTheme } from '@/theme/provider'
 import { Avatar } from '@/ui/Avatar'
 import { Button } from '@/ui/Button'
 import { Field } from '@/ui/Field'
-import { Icon } from '@/ui/icons'
+import { Group } from '@/ui/Group'
+import { ListRow } from '@/ui/ListRow'
 import { Sheet } from '@/ui/Sheet'
 
 const SECTION_LABELS: Record<SaveSection, string> = {
@@ -179,18 +182,16 @@ function EditBotForm({
     <Sheet
       title="Edit Bot"
       onClose={closeDirty}
-      headerLeft={<Button label="Cancel" variant="ghost" compact onPress={closeDirty} accessibilityLabel="Cancel" />}
+      centerTitle
+      headerLeft={<Button label="Cancel" variant="secondary" onPress={closeDirty} accessibilityLabel="Cancel" />}
       headerRight={<Button label="Save" onPress={() => void save()} loading={phase === 'saving'} disabled={!canSave} accessibilityLabel="Save" />}
     >
-
-      <View style={styles.avatarRow}>
-        <Avatar name={draft.name || profile} color={avatarColor} imageUri={previewUri} size={84} />
-        <View style={styles.avatarButtons}>
-          <Button label="Choose photo" variant="secondary" onPress={() => void onChoosePhoto()} accessibilityLabel="Choose photo" />
-          {hasAvatar ? (
-            <Button label="Remove photo" variant="ghost" onPress={() => update({ avatar: { kind: 'clear' } })} accessibilityLabel="Remove photo" />
-          ) : null}
-        </View>
+      <View style={styles.avatar}>
+        <Avatar name={draft.name || profile} color={avatarColor} imageUri={previewUri} size={80} />
+      </View>
+      <View style={styles.photoButtons}>
+        <Button label="Choose photo" variant="secondary" onPress={() => void onChoosePhoto()} accessibilityLabel="Choose photo" />
+        {hasAvatar ? <Button label="Remove photo" variant="secondary" onPress={() => update({ avatar: { kind: 'clear' } })} accessibilityLabel="Remove photo" /> : null}
       </View>
       {errors.avatar ? <Text style={[styles.fieldError, { color: theme.colors.destructive }]}>{errors.avatar}</Text> : null}
 
@@ -198,15 +199,32 @@ function EditBotForm({
       <Field label="Role (badge, optional)" value={draft.role} onChangeText={role => update({ role })} placeholder="Trainer" accessibilityLabel="Role" />
       <Field label="Description" value={draft.description} onChangeText={description => update({ description })} placeholder="Short purpose statement." multiline accessibilityLabel="Description" />
 
-      <View style={[styles.rows, { borderColor: theme.colors.border }]}>
-        <NavRow label="Instructions" onPress={() => router.push({ pathname: '/agent/[profile]/edit-instructions', params: { profile } })} />
-        <NavRow
-          label="Provider / Model"
-          value={draft.provider && draft.model ? `${draft.provider} · ${draft.model}` : 'Inherit from server default'}
-          error={errors.model}
-          onPress={() => router.push({ pathname: '/agent/[profile]/edit-model', params: { profile } })}
-        />
-        <NavRow label="Capabilities" error={errors.toolsets} onPress={() => router.push({ pathname: '/agent/[profile]/edit-capabilities', params: { profile } })} />
+      <View style={styles.groups}>
+        <Group caption="Instructions">
+          <ListRow
+            title="Instructions"
+            subtitle={instructionsSummary(draft.soul)}
+            icon="file-text"
+            onPress={() => router.push({ pathname: '/agent/[profile]/edit-instructions', params: { profile } })}
+          />
+        </Group>
+        <Group caption="Model">
+          <ListRow
+            title="Provider / Model"
+            subtitle={modelSummary(draft.provider, draft.model)}
+            error={errors.model}
+            icon="cpu"
+            onPress={() => router.push({ pathname: '/agent/[profile]/edit-model', params: { profile } })}
+          />
+        </Group>
+        <Group caption="Capabilities">
+          <ListRow
+            title="Skills, tools & connectors"
+            error={errors.toolsets}
+            icon="tool"
+            onPress={() => router.push({ pathname: '/agent/[profile]/edit-capabilities', params: { profile } })}
+          />
+        </Group>
       </View>
 
       {outcome && shownSections.length > 0 ? (
@@ -225,41 +243,13 @@ function EditBotForm({
   )
 }
 
-function NavRow({ label, value, error, onPress }: { label: string; value?: string; error?: string; onPress: () => void }) {
-  const theme = useTheme()
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={value ? `${label}, ${value}` : label}
-      style={({ pressed }) => [styles.navRow, { backgroundColor: pressed ? theme.colors.accent : 'transparent' }]}
-    >
-      <View style={styles.navRowText}>
-        <Text style={[styles.navRowLabel, { color: theme.colors.foreground }]}>{label}</Text>
-        {value ? (
-          <Text numberOfLines={1} style={[styles.navRowValue, { color: theme.colors.mutedForeground }]}>
-            {value}
-          </Text>
-        ) : null}
-        {error ? <Text style={[styles.fieldError, { color: theme.colors.destructive }]}>{error}</Text> : null}
-      </View>
-      <Icon name="chevron-right" size={20} color={theme.colors.mutedForeground} />
-    </Pressable>
-  )
-}
-
 const styles = StyleSheet.create({
   loading: { marginVertical: 40 },
   errorText: { fontSize: 15, lineHeight: 22, marginBottom: 16 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12, marginBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
-  avatarRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 16 },
-  avatarButtons: { gap: 8, alignItems: 'flex-start' },
+  avatar: { alignItems: 'center', paddingVertical: 12 },
+  photoButtons: { gap: 12, marginBottom: 16 },
   fieldError: { fontSize: 13, marginTop: 2 },
-  rows: { marginTop: 8, marginBottom: 16, borderTopWidth: StyleSheet.hairlineWidth },
-  navRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
-  navRowText: { flex: 1, gap: 2 },
-  navRowLabel: { fontSize: 17 },
-  navRowValue: { fontSize: 14 },
+  groups: { gap: 24, marginTop: 12, marginBottom: 16 },
   outcome: { gap: 4, marginBottom: 24 },
   outcomeLine: { fontSize: 13, lineHeight: 18 }
 })

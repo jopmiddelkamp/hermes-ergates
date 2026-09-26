@@ -3,7 +3,8 @@
  * 28 at top). The route itself is presented with `presentation: 'modal'`;
  * this component supplies the rounded `popover` surface, the header
  * ([close or custom left] [title] [optional right action]) and keyboard
- * avoidance inside it.
+ * avoidance inside it. `centerTitle` centers the title on the sheet whatever
+ * the widths of the two sides (Edit Bot).
  */
 
 import type { ReactNode } from 'react'
@@ -24,10 +25,11 @@ export interface SheetProps {
   headerLeft?: ReactNode
   /** Trailing action (Edit Bot uses Save). */
   headerRight?: ReactNode
+  centerTitle?: boolean
   children: ReactNode
 }
 
-export function Sheet({ title, onClose, headerLeft, headerRight, children }: SheetProps) {
+export function Sheet({ title, onClose, headerLeft, headerRight, centerTitle, children }: SheetProps) {
   const theme = useTheme()
 
   return (
@@ -52,10 +54,21 @@ export function Sheet({ title, onClose, headerLeft, headerRight, children }: She
             wherever in the sheet's header or body they sit. */}
         <SurfaceProvider color={theme.colors.popover}>
           <View style={[styles.header, { paddingHorizontal: theme.pagePadding }]}>
+            {centerTitle ? (
+              <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.centered]}>
+                <Text numberOfLines={1} accessibilityRole="header" style={[styles.title, styles.centeredTitle, { color: theme.colors.foreground }]}>
+                  {title}
+                </Text>
+              </View>
+            ) : null}
             <View style={styles.headerSide}>{headerLeft ?? <IconButton name="x" accessibilityLabel="Close" onPress={onClose} />}</View>
-            <Text numberOfLines={1} style={[styles.title, { color: theme.colors.foreground }]}>
-              {title}
-            </Text>
+            {centerTitle ? (
+              <View style={styles.title} />
+            ) : (
+              <Text numberOfLines={1} style={[styles.title, { color: theme.colors.foreground }]}>
+                {title}
+              </Text>
+            )}
             <View style={[styles.headerSide, styles.headerRight]}>{headerRight ?? null}</View>
           </View>
           {/* Sheets carry forms (New Agent, Edit Bot, Routine); iOS ScrollViews do
@@ -100,6 +113,14 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 20,
     fontWeight: '600'
+  },
+  centered: {
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  centeredTitle: {
+    flex: 0,
+    fontSize: 17
   },
   scroll: {
     flex: 1
