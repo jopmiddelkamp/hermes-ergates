@@ -285,6 +285,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
           onToggle={profile => setPicked(toggleSelected(selection, profile))}
           onMove={move => applyMove(connectionId, move)}
           onEditSection={editSection}
+          barBelow={selection.size > 0}
         />
         {selection.size > 0 ? <EditBar labels={labels} onMove={bar.move} onPin={bar.pin} onHide={() => void bar.hide()} onRead={bar.read} /> : null}
       </Screen>

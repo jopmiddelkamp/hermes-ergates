@@ -52,7 +52,8 @@ function Routines({
   const routines = useRoutines(gateway, connection.id, profile)
   const [refreshing, setRefreshing] = useState(false)
   const tz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
-  const listBottomInset = useBottomInset(24)
+  // The list ends at the fixed footer below it, so it needs no safe-area inset.
+  const listBottomPadding = 24
   // A fixed bottom bar: it pads its own content by the inset instead of
   // relying on Screen to reserve a strip for it.
   const footerBottomInset = useBottomInset(16)
@@ -74,7 +75,7 @@ function Routines({
         </Text>
       </View>
       <ScrollView
-        contentContainerStyle={[styles.list, { paddingBottom: listBottomInset }]}
+        contentContainerStyle={[styles.list, { paddingBottom: listBottomPadding }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />}
       >
         {routines.isError ? (

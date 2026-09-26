@@ -72,6 +72,11 @@ export interface EditListProps {
   onMove(move: OrderMove): void
   /** Opens the Section page for a section header. */
   onEditSection(sectionId: string): void
+  /**
+   * A fixed bar sits below the list (the Edit mode bottom bar): the bar keeps
+   * its own buttons above the home indicator, so the list adds no inset then.
+   */
+  barBelow?: boolean
 }
 
 /**
@@ -103,11 +108,14 @@ function makeGuardedStrategy(meta: SharedValue<SlotMeta>): SortStrategyFactory {
 
 const keyOf = (item: DragItem) => item.key
 
-export function EditList({ items, selection, gateway, connectionId, haptics, unread, onToggle, onMove, onEditSection }: EditListProps) {
+export function EditList({ items, selection, gateway, connectionId, haptics, unread, onToggle, onMove, onEditSection, barBelow = false }: EditListProps) {
   const scrollRef = useAnimatedRef<Animated.ScrollView>()
   // The list scrolls to the bottom edge of the phone: its content carries the
-  // inset instead of the screen reserving a strip for it.
-  const bottomInset = useBottomInset()
+  // inset instead of the screen reserving a strip for it (added to the minimum
+  // height too, or the minimum would swallow it). With a bar below, the list
+  // ends at the bar, not at the bottom edge.
+  const edgeInset = useBottomInset()
+  const bottomInset = barBelow ? 0 : edgeInset
   // While a section handle is touched or dragged, the list shows only the section headers.
   const [sectionDrag, dispatch] = useReducer(nextSectionDrag, NO_SECTION_DRAG)
   const data = useMemo<DragItem[]>(() => (sectionDrag.key ? sectionDragItems(items, sectionDrag.key) : items), [items, sectionDrag.key])
@@ -195,7 +203,7 @@ export function EditList({ items, selection, gateway, connectionId, haptics, unr
       // A swipe that starts on a section handle and scrolls is no drag: show the whole list again.
       onScrollBeginDrag={() => dispatch({ type: 'release' })}
       // Keeps the list as tall as the whole list while only headers show and while it comes back, so the scroll position holds.
-      contentContainerStyle={{ minHeight: listMinHeight(items), paddingBottom: bottomInset }}
+      contentContainerStyle={{ minHeight: listMinHeight(items) + bottomInset, paddingBottom: bottomInset }}
     >
       <Sortable.Grid
         columns={1}
