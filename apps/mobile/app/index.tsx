@@ -12,6 +12,7 @@ import {
   liveSelection,
   membershipChanged,
   membershipSnapshot,
+  newSection,
   profilesParam,
   selectedInListOrder,
   selectionTitle,
@@ -67,6 +68,8 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   const markUnread = useDeviceStore(s => s.markUnread)
   const markManyRead = useDeviceStore(s => s.markManyRead)
   const markManyUnread = useDeviceStore(s => s.markManyUnread)
+  const moveRowsToSection = useDeviceStore(s => s.moveRowsToSection)
+  const createSection = useDeviceStore(s => s.createSection)
   const applyMove = useDeviceStore(s => s.applyMove)
   const toggleCollapsed = useDeviceStore(s => s.toggleCollapsed)
   const adoptProfiles = useDeviceStore(s => s.adoptProfiles)
@@ -179,7 +182,12 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
     },
     toggleUnread: (bot: Bot, unread: boolean) => (unread ? markUnread(connectionId, bot.profile) : markRead(connectionId, bot.profile, Date.now())),
     togglePin: (bot: Bot, pinned: boolean) => (pinned ? pin(connectionId, bot.profile) : unpin(connectionId, bot.profile)),
-    moveToSection: (bot: Bot) => router.push({ pathname: '/move-to-section', params: { profiles: profilesParam([bot.profile]) } }),
+    moveToSection: (bot: Bot, sectionId: string | null) => moveRowsToSection(connectionId, [bot.profile], sectionId),
+    createSection: (bot: Bot, name: string) => {
+      const section = newSection(home.organization.sections, name)
+      createSection(connectionId, section)
+      moveRowsToSection(connectionId, [bot.profile], section.id)
+    },
     select: (bot: Bot) => startEditing(bot.profile),
     toggleHidden: (bot: Bot, hidden: boolean) => setHidden.mutate({ bot, hidden }, { onError: err => Alert.alert('Could not update', userMessage(err)) }),
     remove: async (bot: Bot) => {
@@ -317,7 +325,8 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
         anchor={menu?.anchor ?? null}
         unread={menu ? home.unread(menu.bot.profile) : false}
         pinned={menu ? home.isPinned(menu.bot.profile) : false}
-        inSection={menu ? home.sectionOf(menu.bot.profile) !== null : false}
+        sections={home.organization.sections}
+        currentSectionId={menu ? (home.sectionOf(menu.bot.profile)?.id ?? null) : null}
         connectionLabel={connectionLabel}
         handlers={handlers}
         onClose={() => setMenu(null)}

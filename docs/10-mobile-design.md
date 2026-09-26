@@ -109,22 +109,26 @@ Edit mode lets the owner act on several agents at once and put rows in their own
 
 ### Bot actions
 
-Long-press a conversation or pinned avatar to open a compact action menu. Provide the same actions through the agent details overflow and native accessibility actions, so long-press is never the only route. Add **Edit Bot** as the first action: it is Jop's explicit requirement, even though it is not shown in the two additional menu screenshots. Keep the highlighted row visible behind the menu; use an opaque `popover` surface and neutral icons. Dismiss on outside tap or Back, and return focus to the trigger.
+Long-press a conversation or pinned avatar to open a compact action menu. Provide the same actions through the agent details overflow and native accessibility actions, so long-press is never the only route. Keep the highlighted row visible behind the menu; use an opaque `popover` surface and neutral icons. Dismiss on outside tap or Back, and return focus to the trigger.
 
-| Action | Behavior | Phase |
-|---|---|---|
-| Edit Bot | Opens the editor below; also available directly from agent details | 1 |
-| Mark Unread / Mark Read | Device-local reading marker; opening the conversation clears the manual unread flag | 1 |
-| Pin / Unpin | Device-local shortcut; first two prominent, additional pins in a horizontal strip. Preserve section membership; unpin returns to the assigned section | 1 |
-| New Section / Move to Section | Opens the Move to Section page: No section and every section, with a check mark on a section only when every chosen agent is in it, and a soft "New section name" field with **Create section** (disabled while the name is empty). Tapping a row, or Create, moves every chosen agent to the end of that group and goes back. The same page opens from the Edit mode bottom bar for several agents. Device-local collapsible sections; changing membership preserves pin state. Removing a section returns unpinned members to the ordinary list and keeps pinned members pinned | 1 |
-| Hide / Unhide | Shared Hermes bot metadata; removes from the usual roster without pausing work or muting notifications. Settings > Hidden Bots provides recovery | 1 |
-| Select | Home only: opens Edit mode with this agent already selected | 1 |
-| Share as Template | Review a sanitized configuration snapshot before export; exclude credentials, conversation history, memory, files and active routines by default | 2 |
-| More > Copy ID | Copy the profile identifier with its gateway label; no URL credentials or access token | 1 |
-| More > Duplicate | New identity from a reviewed configuration snapshot, with fresh provisioning and separately approved tool access. Do not copy secrets, history, memory or active schedules | 2 |
-| More > Delete | Confirm the named bot and data affected; stop work, settle pending approvals, clean up owned routines/subscriptions, then delete. Default concierge cannot be deleted | 1 |
+One menu, mirroring the Hermes Desktop context menu: no "More" level, groups separated by thin hairlines instead. A separator never opens or closes the list, and never appears twice in a row (e.g. when Select is absent for a given screen, its group still reads right).
 
-Template and duplication actions are part of the design and remain absent until Phase 2 is implemented. Hide is reversible and neutral; Delete uses `destructive`. Deletion cleanup and failure recovery must pass the lifecycle gate in 11. New Section is an organization feature, not a group chat. Device-local pins/sections deliberately do not claim desktop synchronization; mobile must preserve any existing desktop `pinned` and `sectionId` metadata when saving other fields.
+| Group | Action | Behavior | Phase |
+|---|---|---|---|
+| 1 | Pin / Unpin | Device-local shortcut; first two prominent, additional pins in a horizontal strip. Preserve section membership; unpin returns to the assigned section | 1 |
+| 1 | Move to › | Replaces the menu's content in place (same anchored card) with the Move level: a "‹ Move to" header back to the main level, then "No section" and every section in order, each with a check mark on the bot's current place (folder icon elsewhere). Tapping a row moves the bot there (to the end of that group) and closes the menu; tapping the current place just closes. A separator, then "Create section" opens the Create level: a "‹ Create section" header, a soft name field (placeholder "Section name", autofocused) and a primary **Create** button, disabled for a blank name; Create makes the section, moves the bot into it and closes. The keyboard never covers the field or the button | 1 |
+| 1 | Mark as Unread / Mark as Read | Device-local reading marker; opening the conversation clears the manual unread flag | 1 |
+| 2 | Edit Bot | Opens the editor below; also available directly from agent details | 1 |
+| 2 | Select | Home only: opens Edit mode with this agent already selected | 1 |
+| 3 | Copy ID | Copy the profile identifier with its gateway label; no URL credentials or access token | 1 |
+| 4 | Hide / Unhide | Shared Hermes bot metadata; removes from the usual roster without pausing work or muting notifications. Settings > Hidden Bots provides recovery | 1 |
+| 4 | Delete | Confirm the named bot and data affected; stop work, settle pending approvals, clean up owned routines/subscriptions, then delete. Not shown for the default concierge | 1 |
+| — | Share as Template | Review a sanitized configuration snapshot before export; exclude credentials, conversation history, memory, files and active routines by default | 2 |
+| — | Duplicate | New identity from a reviewed configuration snapshot, with fresh provisioning and separately approved tool access. Do not copy secrets, history, memory or active schedules | 2 |
+
+Template and duplication actions are part of the design and remain absent until Phase 2 is implemented. Hide is reversible and neutral; Delete uses `destructive`. Deletion cleanup and failure recovery must pass the lifecycle gate in 11. Moving to a section is an organization feature, not a group chat. Device-local pins/sections deliberately do not claim desktop synchronization; mobile must preserve any existing desktop `pinned` and `sectionId` metadata when saving other fields.
+
+The Edit mode bottom bar's "Move to…" still opens the separate Move to Section page for several agents at once: No section and every section, with a check mark on a section only when every chosen agent is in it, and a soft "New section name" field with **Create section** (disabled while the name is empty). Tapping a row, or Create, moves every chosen agent to the end of that group and goes back. Device-local collapsible sections; changing membership preserves pin state. Removing a section returns unpinned members to the ordinary list and keeps pinned members pinned.
 
 ### Chat
 

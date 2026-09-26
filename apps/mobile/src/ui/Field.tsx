@@ -26,6 +26,8 @@ export interface FieldProps {
   multiline?: boolean
   keyboardType?: KeyboardTypeOptions
   accessibilityLabel?: string
+  /** Focuses the input as soon as it mounts (the Create section field in the bot action menu). */
+  autoFocus?: boolean
 }
 
 export function Field({
@@ -37,14 +39,15 @@ export function Field({
   secureTextEntry,
   multiline,
   keyboardType,
-  accessibilityLabel
+  accessibilityLabel,
+  autoFocus
 }: FieldProps) {
   const theme = useTheme()
   const surface = useSurface()
 
   return (
     <View style={styles.container}>
-      <Text style={[styles.label, { color: theme.colors.mutedForeground }]}>{label}</Text>
+      {label ? <Text style={[styles.label, { color: theme.colors.mutedForeground }]}>{label}</Text> : null}
       <TextInput
         value={value}
         onChangeText={onChangeText}
@@ -54,6 +57,7 @@ export function Field({
         secureTextEntry={secureTextEntry}
         multiline={multiline}
         keyboardType={keyboardType}
+        autoFocus={autoFocus}
         accessibilityLabel={accessibilityLabel ?? label}
         style={[
           styles.input,

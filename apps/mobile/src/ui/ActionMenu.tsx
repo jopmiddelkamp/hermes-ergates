@@ -3,17 +3,28 @@
  * with an outside-tap backdrop and an opaque `popover` card positioned next
  * to a measured anchor rect, kept within the window. Android back dismisses
  * via `onRequestClose`.
+ *
+ * One menu with hairline separators between groups, a back-chevron header row
+ * for the Move and Create levels, and a trailing chevron on rows that open a
+ * level (Move to). The Create level additionally draws a name field and a
+ * primary button, and keeps both clear of the keyboard.
  */
 
-import { Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native'
+import { useEffect, useState } from 'react'
+import { Keyboard, Modal, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native'
 
 import { useTheme } from '@/theme/provider'
 
+import { Button } from './Button'
+import { Field } from './Field'
 import { Icon, type IconName } from './icons'
 
-const MENU_WIDTH = 220
+const MENU_WIDTH = 240
 const MENU_RADIUS = 16
 const MARGIN = 8
+const SEPARATOR_HEIGHT = 9
+/** Rough height of the Create level's field + button, added to the header row's height. */
+const CREATE_FORM_HEIGHT = 140
 
 export interface AnchorRect {
   x: number
@@ -23,39 +34,82 @@ export interface AnchorRect {
 }
 
 export interface ActionMenuItem {
+  kind: 'item'
   key: string
   label: string
   icon?: IconName
+  chevron?: boolean
   destructive?: boolean
   /** Announced as selected by the screen reader; never drawn into the label. */
   selected?: boolean
   onPress: () => void
 }
 
+export interface ActionMenuSeparator {
+  kind: 'separator'
+  key: string
+}
+
+export type ActionMenuRow = ActionMenuItem | ActionMenuSeparator
+
+export interface ActionMenuCreateSection {
+  value: string
+  onChangeText(text: string): void
+  disabled: boolean
+  onCreate(): void
+}
+
 export interface ActionMenuProps {
   visible: boolean
   anchor: AnchorRect | null
-  items: ActionMenuItem[]
+  items: ActionMenuRow[]
+  /** Present only on the Create level: draws the name field and the Create button below `items`. */
+  createSection?: ActionMenuCreateSection
   onClose: () => void
 }
 
-/** Keeps the menu's card within the window, preferring below the anchor. */
-function computePosition(anchor: AnchorRect, windowWidth: number, windowHeight: number, menuHeight: number) {
-  const fitsBelow = anchor.y + anchor.height + MARGIN + menuHeight <= windowHeight - MARGIN
+/** Keeps the menu's card within the given height, preferring below the anchor. */
+function computePosition(anchor: AnchorRect, windowWidth: number, availableHeight: number, menuHeight: number) {
+  const fitsBelow = anchor.y + anchor.height + MARGIN + menuHeight <= availableHeight - MARGIN
   let top = fitsBelow ? anchor.y + anchor.height + MARGIN : Math.max(MARGIN, anchor.y - MARGIN - menuHeight)
-  // A tall menu placed above a low anchor can still overshoot the bottom edge; pull it back up.
-  top = Math.min(top, windowHeight - menuHeight - MARGIN)
+  // A tall menu placed above a low anchor, or a keyboard that shrank the
+  // available height, can still overshoot the bottom edge; pull it back up.
+  top = Math.min(top, availableHeight - menuHeight - MARGIN)
+  top = Math.max(top, MARGIN)
   const maxLeft = Math.max(MARGIN, windowWidth - MENU_WIDTH - MARGIN)
   const left = Math.min(Math.max(anchor.x, MARGIN), maxLeft)
   return { top, left }
 }
 
-export function ActionMenu({ visible, anchor, items, onClose }: ActionMenuProps) {
+/** Tracks the on-screen keyboard height, only while `active` (the Create level's field can take focus). */
+function useKeyboardHeight(active: boolean): number {
+  const [height, setHeight] = useState(0)
+  useEffect(() => {
+    if (!active) {
+      setHeight(0)
+      return
+    }
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
+    const showSub = Keyboard.addListener(showEvent, e => setHeight(e.endCoordinates.height))
+    const hideSub = Keyboard.addListener(hideEvent, () => setHeight(0))
+    return () => {
+      showSub.remove()
+      hideSub.remove()
+    }
+  }, [active])
+  return height
+}
+
+export function ActionMenu({ visible, anchor, items, createSection, onClose }: ActionMenuProps) {
   const theme = useTheme()
   const { width, height } = useWindowDimensions()
+  const keyboardHeight = useKeyboardHeight(Boolean(createSection))
 
-  const menuHeight = items.length * theme.hit + MARGIN * 2
-  const position = anchor ? computePosition(anchor, width, height, menuHeight) : null
+  const rowsHeight = items.reduce((total, row) => total + (row.kind === 'separator' ? SEPARATOR_HEIGHT : theme.hit), 0)
+  const menuHeight = rowsHeight + (createSection ? CREATE_FORM_HEIGHT : 0) + MARGIN * 2
+  const availableHeight = height - keyboardHeight
+  const position = anchor ? computePosition(anchor, width, availableHeight, menuHeight) : null
 
   return (
     <Modal transparent visible={visible && !!position} animationType="fade" onRequestClose={onClose}>
@@ -73,31 +127,49 @@ export function ActionMenu({ visible, anchor, items, onClose }: ActionMenuProps)
           ]}
         >
           <View style={[styles.surface, { backgroundColor: theme.colors.popover }]}>
-            {items.map(item => (
-              <Pressable
-                key={item.key}
-                // The item decides whether the menu closes: submenu items only
-                // change level, and terminal items close themselves.
-                onPress={item.onPress}
-                accessibilityRole="button"
-                accessibilityLabel={item.label}
-                accessibilityState={{ selected: item.selected }}
-                style={({ pressed }) => [
-                  styles.row,
-                  { minHeight: theme.hit, backgroundColor: pressed ? theme.colors.muted : 'transparent' }
-                ]}
-              >
-                {item.icon ? (
-                  <Icon name={item.icon} size={18} color={item.destructive ? theme.colors.destructive : theme.colors.foreground} />
-                ) : null}
-                <Text
-                  numberOfLines={1}
-                  style={[styles.label, { color: item.destructive ? theme.colors.destructive : theme.colors.foreground }]}
+            {items.map(row =>
+              row.kind === 'separator' ? (
+                <View key={row.key} style={[styles.separator, { backgroundColor: theme.colors.border }]} />
+              ) : (
+                <Pressable
+                  key={row.key}
+                  // The row decides whether the menu closes: submenu rows only
+                  // change level, and terminal rows close themselves.
+                  onPress={row.onPress}
+                  accessibilityRole="button"
+                  accessibilityLabel={row.label}
+                  accessibilityState={{ selected: row.selected }}
+                  style={({ pressed }) => [
+                    styles.row,
+                    { minHeight: theme.hit, backgroundColor: pressed ? theme.colors.muted : 'transparent' }
+                  ]}
                 >
-                  {item.label}
-                </Text>
-              </Pressable>
-            ))}
+                  {row.icon ? (
+                    <Icon name={row.icon} size={18} color={row.destructive ? theme.colors.destructive : theme.colors.foreground} />
+                  ) : null}
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.label, { color: row.destructive ? theme.colors.destructive : theme.colors.foreground }]}
+                  >
+                    {row.label}
+                  </Text>
+                  {row.chevron ? <Icon name="chevron-right" size={18} color={theme.colors.mutedForeground} /> : null}
+                </Pressable>
+              )
+            )}
+            {createSection ? (
+              <View style={styles.createForm}>
+                <Field
+                  label=""
+                  value={createSection.value}
+                  onChangeText={createSection.onChangeText}
+                  placeholder="Section name"
+                  accessibilityLabel="Section name"
+                  autoFocus
+                />
+                <Button label="Create" onPress={createSection.onCreate} disabled={createSection.disabled} />
+              </View>
+            ) : null}
           </View>
         </View>
       ) : null}
@@ -130,6 +202,16 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 15,
-    flexShrink: 1
+    flexShrink: 1,
+    flexGrow: 1
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: 14,
+    marginVertical: 4
+  },
+  createForm: {
+    paddingHorizontal: 14,
+    paddingTop: 4
   }
 })

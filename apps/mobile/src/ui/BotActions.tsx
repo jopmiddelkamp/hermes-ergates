@@ -1,9 +1,9 @@
 /**
  * The compact bot action menu (docs/10 "Bot actions") shared by Home rows,
- * pinned avatars and the agent details overflow. Owns the level state and the
- * Delete dialog; the item lists themselves are built by the pure
- * `botActionItems` (tested in Node), and the caller owns the anchor and the
- * effects.
+ * pinned avatars and the agent details overflow. Owns the level state, the
+ * Create level's name field state and the Delete dialog; the item lists
+ * themselves are built by the pure `botActionItems` (tested in Node), and the
+ * caller owns the anchor and the effects.
  */
 
 import * as Clipboard from 'expo-clipboard'
@@ -11,9 +11,10 @@ import React, { useState } from 'react'
 import { Alert } from 'react-native'
 
 import type { Bot } from '@/features/agents'
+import type { Section } from '@/state/organization'
 
 import { ActionMenu, type AnchorRect } from './ActionMenu'
-import { botActionItems, type BotActionHandlers, type BotActionLevel } from './bot-actions-items'
+import { botActionItems, createSectionAction, type BotActionHandlers, type BotActionLevel } from './bot-actions-items'
 
 export type { BotActionHandlers }
 
@@ -22,16 +23,21 @@ export interface BotActionsProps {
   anchor: AnchorRect | null
   unread: boolean
   pinned: boolean
-  inSection: boolean
+  /** Every section, for the Move level's list. */
+  sections: Section[]
+  /** Where the bot sits now; null is "No section". */
+  currentSectionId: string | null
   connectionLabel: string
   handlers: BotActionHandlers
   onClose(): void
 }
 
-export function BotActions({ bot, anchor, unread, pinned, inSection, connectionLabel, handlers, onClose }: BotActionsProps) {
+export function BotActions({ bot, anchor, unread, pinned, sections, currentSectionId, connectionLabel, handlers, onClose }: BotActionsProps) {
   const [level, setLevel] = useState<BotActionLevel>('main')
+  const [createName, setCreateName] = useState('')
   const close = () => {
     setLevel('main')
+    setCreateName('')
     onClose()
   }
   if (!bot) {
@@ -64,7 +70,8 @@ export function BotActions({ bot, anchor, unread, pinned, inSection, connectionL
     level,
     unread,
     pinned,
-    inSection,
+    sections,
+    currentSectionId,
     handlers,
     setLevel,
     close,
@@ -72,5 +79,15 @@ export function BotActions({ bot, anchor, unread, pinned, inSection, connectionL
     confirmDelete
   })
 
-  return <ActionMenu visible={Boolean(bot)} anchor={anchor} items={items} onClose={close} />
+  const create = level === 'create' ? createSectionAction({ bot, name: createName, close, handlers }) : null
+
+  return (
+    <ActionMenu
+      visible={Boolean(bot)}
+      anchor={anchor}
+      items={items}
+      onClose={close}
+      createSection={create ? { value: createName, onChangeText: setCreateName, disabled: create.disabled, onCreate: create.onCreate } : undefined}
+    />
+  )
 }
