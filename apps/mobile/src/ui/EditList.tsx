@@ -54,8 +54,14 @@ import { useBottomInset } from './use-bottom-inset'
 
 const AVATAR_SIZE = 40
 const HANDLE_WIDTH = 52
-/** Holding a handle this long picks the item up; a quicker swipe on it scrolls the list. */
-const DRAG_ACTIVATION_DELAY = 150
+/**
+ * A touch on a handle picks the item up at once, like the reorder control on
+ * iOS: with a hold, a grab that moved straight away was cancelled and the list
+ * scrolled instead. The library's 5 px margin before the pick-up lands stays:
+ * a wider one let a fast flick scroll the list under the finger first, and the
+ * pick-up then landed on another row. A flick on a handle still scrolls.
+ */
+const DRAG_ACTIVATION_DELAY = 0
 /** Rows have a fixed height (the section drag anchors with it), so their text grows only this far with the system text size. */
 const MAX_FONT_SCALE = 1.4
 

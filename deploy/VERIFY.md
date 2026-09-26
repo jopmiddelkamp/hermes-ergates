@@ -524,9 +524,10 @@ empty section, one section with a few agents, and enough agents to scroll:
 1. Build the dev client from `apps/mobile` with `npx expo run:android`. The
    build passes; before the cookies patch it stopped at
    `Could not find method jcenter()`.
-2. Handle and scroll: open Home, tap the edit icon. Holding a ≡ handle
-   briefly lifts its row; a swipe on a row body, or a quick swipe that starts
-   on a handle, scrolls the list; a tap on a row toggles its circle.
+2. Handle and scroll: open Home, tap the edit icon. Touching a ≡ handle and
+   moving at once lifts its row (no hold needed), also in a list long enough
+   to scroll; a swipe on a row body, or a very fast flick that starts on a
+   handle, scrolls the list and moves no row; a tap on a row toggles its circle.
 3. Cross-group drops: drag a No section row into a section, in front of a
    row there; drag it back into No section; drag one right under the empty
    section's header. Each stays where it was dropped after tapping ✕.
