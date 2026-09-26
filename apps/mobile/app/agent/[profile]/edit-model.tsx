@@ -38,9 +38,9 @@ function EditModel({ connection, profile }: { connection: NonNullable<ReturnType
 
   const header = (
     <View style={styles.header}>
-      <IconButton name="chevron-left" accessibilityLabel="Back" outlined onPress={() => router.back()} />
+      <IconButton name="chevron-left" accessibilityLabel="Back" onPress={() => router.back()} />
       <Text style={[styles.title, { color: theme.colors.foreground }]}>Provider / Model</Text>
-      <IconButton name="refresh-cw" outlined accessibilityLabel="Refresh providers" onPress={() => void options.refetch()} />
+      <IconButton name="refresh-cw" accessibilityLabel="Refresh providers" onPress={() => void options.refetch()} />
     </View>
   )
 

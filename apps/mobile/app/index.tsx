@@ -138,10 +138,10 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   return (
     <Screen>
       <View style={styles.topBar}>
-        <IconButton name="user" accessibilityLabel="Settings" outlined onPress={() => router.push('/settings')} />
+        <IconButton name="user" accessibilityLabel="Settings" onPress={() => router.push('/settings')} />
         <View style={styles.spacer} />
-        <IconButton name="search" accessibilityLabel="Search" outlined onPress={() => router.push('/search')} />
-        <IconButton name="plus" accessibilityLabel="Add" outlined onPress={() => router.push('/new-agent')} />
+        <IconButton name="search" accessibilityLabel="Search" onPress={() => router.push('/search')} />
+        <IconButton name="plus" accessibilityLabel="Add" onPress={() => router.push('/new-agent')} />
       </View>
       <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={styles.list}>
         {home.error ? (

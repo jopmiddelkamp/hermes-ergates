@@ -21,7 +21,7 @@ export default function EditInstructionsScreen() {
   return (
     <Screen edges={['bottom']}>
       <View style={styles.header}>
-        <IconButton name="chevron-left" accessibilityLabel="Back" outlined onPress={() => router.back()} />
+        <IconButton name="chevron-left" accessibilityLabel="Back" onPress={() => router.back()} />
         <Text style={[styles.title, { color: theme.colors.foreground }]}>Instructions</Text>
         <View style={styles.spacer} />
       </View>
@@ -36,7 +36,8 @@ export default function EditInstructionsScreen() {
             placeholderTextColor={theme.colors.mutedForeground}
             textAlignVertical="top"
             accessibilityLabel="Instructions"
-            style={[styles.editor, { color: theme.colors.foreground, backgroundColor: theme.colors.input, borderColor: theme.colors.border }]}
+            selectionColor={theme.colors.primary}
+            style={[styles.editor, { color: theme.colors.foreground, backgroundColor: theme.colors.muted }]}
           />
           <Text style={[styles.note, { color: theme.colors.mutedForeground }]}>
             The Bot Chat messaging protocol is added by Hermes at run time; do not paste it here.
@@ -54,6 +55,6 @@ const styles = StyleSheet.create({
   title: { flex: 1, fontSize: 17, fontWeight: '600', textAlign: 'center' },
   spacer: { width: 44 },
   loading: { marginTop: 40 },
-  editor: { flex: 1, marginTop: 8, borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 16, lineHeight: 22 },
+  editor: { flex: 1, marginTop: 8, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13, fontSize: 17, lineHeight: 24 },
   note: { fontSize: 13, lineHeight: 18, marginTop: 12, marginBottom: 12 }
 })

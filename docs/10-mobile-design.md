@@ -60,12 +60,15 @@ All dimensions below are logical points/dp, not screenshot pixels. Reference scr
 | Row name | 17, medium | One line normally; permit wrapping with larger text |
 | Metadata | 13–15 | Legible contrast; accessible full value for truncation |
 | Controls | At least 44 × 44 hit area | Simple outline icons; screen-reader labels |
+| Icon button | 44 × 44 hit area; no border and no outline circle | Icon in `foreground`; dims while pressed or disabled |
+| Field | Label above, 13, `mutedForeground`; input on `muted`, no border, radius 14, padding 14 × 13, minimum 50 high (128 when multiline), 17 text | `primary` selection color; an error shows as red text below, the input keeps its color |
+| Button | Minimum 50 high; radius 16; 600-weight label | Primary on `primary`; secondary on `muted` with `foreground` text |
 | List avatar | 48 | Circular image or initials fallback |
 | Pinned avatar | 80–88 | Up to two prominent shortcuts; empty section hidden |
 | Chat avatar | 28–32 | Part of the agent details button |
 | Bubble | Radius 22; padding 12 × 16; max width 88% | Natural content width; assistant left, user right |
 | Composer | Minimum 48 high; radius 24 | Grows up to five lines, then scrolls within the input |
-| Settings group | Radius 20; row minimum 52 | Dividers inset to text; labels wrap at large text sizes |
+| Settings group | `muted` card, radius 20, optional small caption above; row minimum 56 with a leading line icon, title, optional subtitle and a chevron when the row opens something | Hairline dividers inset past the icon to the text; labels wrap at large text sizes |
 | Sheet | Radius 28 at top | Close button, native dismissal and Android back support |
 
 ### Home

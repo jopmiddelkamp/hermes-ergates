@@ -1,6 +1,7 @@
 /**
- * Primary control button (docs/10 section 4: min 44 high, radius 12).
- * Variants map to the paired surface/foreground tokens in docs/10 section 3.
+ * Control button (docs/10 section 4: minimum height 50, radius 16, 600-weight
+ * label). Primary sits on `primary`; secondary is the soft `muted` button with
+ * `foreground` text. Variants map to the paired tokens in docs/10 section 3.
  */
 
 import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native'
@@ -8,7 +9,8 @@ import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native'
 import { useTheme } from '@/theme/provider'
 import type { MobileTheme } from '@/theme/tokens'
 
-const RADIUS = 12
+const RADIUS = 16
+const MIN_HEIGHT = 50
 
 export type ButtonVariant = 'primary' | 'secondary' | 'destructive' | 'ghost'
 
@@ -50,7 +52,7 @@ export function Button({ label, onPress, variant = 'primary', loading, disabled,
       accessibilityState={{ disabled: isDisabled, busy: loading }}
       style={({ pressed }) => [
         styles.button,
-        { minHeight: theme.hit, minWidth: theme.hit, backgroundColor: background, opacity: isDisabled ? 0.5 : pressed ? 0.85 : 1 },
+        { minHeight: MIN_HEIGHT, minWidth: theme.hit, backgroundColor: background, opacity: isDisabled ? 0.45 : pressed ? 0.7 : 1 },
         compact ? styles.compact : null
       ]}
     >

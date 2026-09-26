@@ -15,9 +15,11 @@ export interface CardProps {
   children: ReactNode
   /** Draw an inset divider between each child. Default true. */
   divider?: boolean
+  /** Left inset of each divider. Default 16, the text edge of a row without an icon. */
+  dividerInset?: number
 }
 
-export function Card({ children, divider = true }: CardProps) {
+export function Card({ children, divider = true, dividerInset = DIVIDER_INSET }: CardProps) {
   const theme = useTheme()
   const items = Children.toArray(children)
 
@@ -26,7 +28,7 @@ export function Card({ children, divider = true }: CardProps) {
       {items.map((child, i) => (
         <Fragment key={i}>
           {i > 0 && divider ? (
-            <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+            <View style={[styles.divider, { marginLeft: dividerInset, backgroundColor: theme.colors.border }]} />
           ) : null}
           {child}
         </Fragment>
@@ -40,7 +42,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden'
   },
   divider: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: DIVIDER_INSET
+    height: StyleSheet.hairlineWidth
   }
 })

@@ -47,7 +47,7 @@ export function Sheet({ title, onClose, headerLeft, headerRight, children }: She
         ]}
       >
         <View style={[styles.header, { paddingHorizontal: theme.pagePadding }]}>
-          <View style={styles.headerSide}>{headerLeft ?? <IconButton name="x" accessibilityLabel="Close" outlined onPress={onClose} />}</View>
+          <View style={styles.headerSide}>{headerLeft ?? <IconButton name="x" accessibilityLabel="Close" onPress={onClose} />}</View>
           <Text numberOfLines={1} style={[styles.title, { color: theme.colors.foreground }]}>
             {title}
           </Text>

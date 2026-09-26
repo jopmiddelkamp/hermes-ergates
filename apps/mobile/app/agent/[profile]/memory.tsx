@@ -39,7 +39,7 @@ function Memory({ connection, profile, onBack }: { connection: NonNullable<Retur
   return (
     <Screen>
       <View style={styles.header}>
-        <IconButton name="chevron-left" accessibilityLabel="Back" outlined onPress={onBack} />
+        <IconButton name="chevron-left" accessibilityLabel="Back" onPress={onBack} />
         <Text style={[styles.headerTitle, { color: theme.colors.foreground }]} numberOfLines={1}>
           Memory
         </Text>

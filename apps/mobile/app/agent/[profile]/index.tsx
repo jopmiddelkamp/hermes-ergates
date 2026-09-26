@@ -99,7 +99,7 @@ function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId
     return (
       <Screen>
         <View style={styles.header}>
-          <IconButton name="chevron-left" accessibilityLabel="Back" outlined onPress={() => router.back()} />
+          <IconButton name="chevron-left" accessibilityLabel="Back" onPress={() => router.back()} />
         </View>
         {home.loading ? (
           <Text style={{ color: theme.colors.mutedForeground }}>Loading…</Text>
@@ -120,10 +120,10 @@ function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId
   return (
     <Screen edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <IconButton name="chevron-left" accessibilityLabel="Back" outlined onPress={() => router.back()} />
+        <IconButton name="chevron-left" accessibilityLabel="Back" onPress={() => router.back()} />
         <View style={styles.headerSpacer} />
         <View ref={menuAnchorRef} collapsable={false}>
-          <IconButton name="more-horizontal" accessibilityLabel="More actions" outlined onPress={openMenu} />
+          <IconButton name="more-horizontal" accessibilityLabel="More actions" onPress={openMenu} />
         </View>
       </View>
       <ScrollView contentContainerStyle={styles.content}>

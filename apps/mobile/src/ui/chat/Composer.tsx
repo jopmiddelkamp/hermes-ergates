@@ -66,7 +66,7 @@ export function Composer(p: ComposerProps) {
         </View>
       ) : (
         <View style={styles.row}>
-          <IconButton name="plus" accessibilityLabel="Attach" outlined onPress={p.onAttach} disabled={p.disabled} />
+          <IconButton name="plus" accessibilityLabel="Attach" onPress={p.onAttach} disabled={p.disabled} />
           <View style={[styles.inputWrap, { backgroundColor: theme.colors.input, borderColor: focused ? theme.colors.midground : theme.colors.border, borderRadius: theme.radius.composer }]}>
             <TextInput
               value={p.value}

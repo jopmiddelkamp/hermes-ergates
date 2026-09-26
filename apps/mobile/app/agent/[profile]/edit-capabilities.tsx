@@ -23,7 +23,7 @@ export default function EditCapabilitiesScreen() {
 
   const header = (
     <View style={styles.header}>
-      <IconButton name="chevron-left" accessibilityLabel="Back" outlined onPress={() => router.back()} />
+      <IconButton name="chevron-left" accessibilityLabel="Back" onPress={() => router.back()} />
       <Text style={[styles.title, { color: theme.colors.foreground }]}>Capabilities</Text>
       <View style={styles.spacer} />
     </View>

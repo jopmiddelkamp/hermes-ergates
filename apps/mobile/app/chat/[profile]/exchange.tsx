@@ -109,7 +109,7 @@ function ExchangeTranscript({ peer, anchorRowId, anchorToolCallId }: { peer: str
   return (
     <View style={[styles.screen, { backgroundColor: theme.colors.background, paddingTop: insets.top }]}>
       <View style={[styles.header, { paddingHorizontal: theme.pagePadding, borderBottomColor: theme.colors.border, backgroundColor: theme.colors.background }]}>
-        <IconButton name="chevron-left" accessibilityLabel="Back" outlined onPress={() => router.back()} />
+        <IconButton name="chevron-left" accessibilityLabel="Back" onPress={() => router.back()} />
         <View style={styles.titleBlock}>
           <Text style={[styles.title, { color: theme.colors.foreground }]} numberOfLines={1}>
             {`Messages with ${peerName}`}

@@ -40,7 +40,7 @@ function SearchBody({ connectionId, query, setQuery, onClose }: { connectionId: 
   return (
     <Screen>
       <View style={styles.bar}>
-        <IconButton name="x" accessibilityLabel="Close search" outlined onPress={onClose} />
+        <IconButton name="x" accessibilityLabel="Close search" onPress={onClose} />
         <View style={[styles.field, { backgroundColor: theme.colors.input, borderColor: theme.colors.border }]}>
           <Icon name="search" size={18} color={theme.colors.mutedForeground} />
           <TextInput

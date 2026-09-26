@@ -1,15 +1,17 @@
 /**
- * Labelled text input for forms (docs/10 "Edit Bot on mobile" and settings
- * forms): `input` background, `border` outline, radius 12, min height 48.
+ * Labelled text input for forms (docs/10 section 4): the label above in
+ * `mutedForeground`, a soft `muted` input without a border, radius 14,
+ * minimum height 50 (128 when multiline). An error shows as red text below;
+ * the input itself does not change color.
  */
 
 import { StyleSheet, Text, TextInput, View, type KeyboardTypeOptions } from 'react-native'
 
 import { useTheme } from '@/theme/provider'
 
-/** Design floor for the input; never allowed below the shared min hit area. */
-const MIN_HEIGHT = 48
-const RADIUS = 12
+const MIN_HEIGHT = 50
+const MULTILINE_MIN_HEIGHT = 128
+const RADIUS = 14
 
 export interface FieldProps {
   label: string
@@ -35,16 +37,16 @@ export function Field({
   accessibilityLabel
 }: FieldProps) {
   const theme = useTheme()
-  const borderColor = error ? theme.colors.destructive : theme.colors.border
 
   return (
     <View style={styles.container}>
-      <Text style={[styles.label, { color: theme.colors.foreground }]}>{label}</Text>
+      <Text style={[styles.label, { color: theme.colors.mutedForeground }]}>{label}</Text>
       <TextInput
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor={theme.colors.mutedForeground}
+        selectionColor={theme.colors.primary}
         secureTextEntry={secureTextEntry}
         multiline={multiline}
         keyboardType={keyboardType}
@@ -52,12 +54,7 @@ export function Field({
         style={[
           styles.input,
           multiline ? styles.multiline : null,
-          {
-            minHeight: Math.max(theme.hit, MIN_HEIGHT),
-            backgroundColor: theme.colors.input,
-            borderColor,
-            color: theme.colors.foreground
-          }
+          { backgroundColor: theme.colors.muted, color: theme.colors.foreground }
         ]}
       />
       {error ? <Text style={[styles.error, { color: theme.colors.destructive }]}>{error}</Text> : null}
@@ -67,21 +64,22 @@ export function Field({
 
 const styles = StyleSheet.create({
   container: {
-    gap: 6,
+    gap: 7,
     marginBottom: 12
   },
   label: {
-    fontSize: 13,
-    fontWeight: '500'
+    fontSize: 13
   },
   input: {
+    minHeight: MIN_HEIGHT,
     borderRadius: RADIUS,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 17
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 17,
+    lineHeight: 24
   },
   multiline: {
+    minHeight: MULTILINE_MIN_HEIGHT,
     textAlignVertical: 'top'
   },
   error: {
