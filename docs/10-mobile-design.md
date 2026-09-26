@@ -75,7 +75,7 @@ Field, Card/Group and the secondary Button fill with whichever of `muted` or `ba
 
 ### Home
 
-- Top row: account avatar at left; Search and Add at right. No large marketing header, counts, charts, or permanent bottom tab bar.
+- Top row: account avatar at left; Edit (a borderless text button on iOS, an icon on Android), Search and Add at right. No large marketing header, counts, charts, or permanent bottom tab bar.
 - Optional pinned agents below; pins and order are device preferences. New installs pin the concierge only; while it is pinned it is always the first pin.
 - Rows keep the owner's order. A new message shows the unread dot and never moves the row; a new agent starts at the top of its group.
 - Recent conversations: avatar, name, compact role badge when it fits, timestamp, one-line message or event preview. An unread dot includes an accessible unread label. Avoid cards or separators around each row.

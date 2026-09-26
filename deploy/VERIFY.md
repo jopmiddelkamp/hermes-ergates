@@ -567,5 +567,12 @@ empty section, one section with a few agents, and enough agents to scroll:
 16. TalkBack: turn TalkBack on, focus a No section row and use the actions
     menu: Move up and Move down move it one place, and the list shows it
     there; on a section header, Move up, Move down and Edit section work.
+17. Scroll starting on a header handle: start a scroll gesture with your
+    finger landing on a section header's ≡, instead of a row. Expected: the
+    list may briefly show only the section headers before the scroll
+    continues and the full list returns; the scroll position holds either
+    way. This is a known, accepted side effect of switching to headers-only
+    on touch-down, not a defect by itself -- judge on this device whether the
+    flash (if any) is short enough to leave alone.
 
 Result:
