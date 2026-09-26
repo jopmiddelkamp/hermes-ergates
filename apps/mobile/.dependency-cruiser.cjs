@@ -129,9 +129,9 @@ module.exports = {
     },
     {
       name: 'adr029-4-gesture-handler-at-the-root',
-      comment: 'react-native-gesture-handler must be set up once, at the app root; only app/_layout.tsx may import it.',
+      comment: 'react-native-gesture-handler must be set up once, at the app root; only app/_layout.tsx may import it, and the Home edit-mode list (src/ui/EditList.tsx) for its swipe-to-select gesture, which must win over the scroll view.',
       severity: 'error',
-      from: { pathNot: `(^app/_layout\\.tsx$|${TEST})` },
+      from: { pathNot: `(^app/_layout\\.tsx$|^src/ui/EditList\\.tsx$|${TEST})` },
       to: { path: '^node_modules/react-native-gesture-handler/' }
     }
   ],

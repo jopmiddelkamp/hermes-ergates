@@ -296,6 +296,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
           haptics={haptics}
           unread={home.unread}
           onToggle={profile => setPicked(toggleSelected(selection, profile))}
+          onSelectionChange={setPicked}
           onMove={move => applyMove(connectionId, move)}
           onEditSection={editSection}
           barBelow={selection.size > 0}

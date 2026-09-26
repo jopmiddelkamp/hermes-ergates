@@ -9,15 +9,31 @@
  * header is dragged. Screen readers get Move up and Move down instead, and
  * Edit section on a section header.
  *
+ * Swipe to select, iOS Mail style: a touch that starts on a row's selection
+ * circle and moves up or down selects (or deselects) the rows it passes, and
+ * the list scrolls by itself near its top and bottom edges; the rules are the
+ * agents feature's `swipe-select.ts`.
+ *
  * The list runs edge to edge, like the normal Home list: a lifted row is not
  * clipped, the scroll bar sits at the screen edge and a row's tap highlight
  * spans the whole width, the ≡ column too. Every row, caption and header pads
  * its own content by the page padding instead (`page-padding.ts`).
  */
 
-import React, { useEffect, useMemo, useReducer, useState } from 'react'
-import { AppState, Pressable, StyleSheet, Text, View, type AccessibilityActionEvent, type AccessibilityActionInfo } from 'react-native'
-import Animated, { useAnimatedReaction, useAnimatedRef, useSharedValue, type SharedValue } from 'react-native-reanimated'
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { AppState, Pressable, StyleSheet, Text, View, type AccessibilityActionEvent, type AccessibilityActionInfo, type LayoutChangeEvent } from 'react-native'
+import { Gesture, GestureDetector, type PanGesture } from 'react-native-gesture-handler'
+import Animated, {
+  scrollTo,
+  useAnimatedReaction,
+  useAnimatedRef,
+  useFrameCallback,
+  useScrollOffset,
+  useSharedValue,
+  type AnimatedRef,
+  type FrameInfo,
+  type SharedValue
+} from 'react-native-reanimated'
 import Sortable, {
   useCommonValuesContext,
   type DragStartParams,
@@ -25,14 +41,19 @@ import Sortable, {
   type SortableGridRenderItem,
   type SortStrategyFactory
 } from 'react-native-sortables'
+import { scheduleOnRN } from 'react-native-worklets'
 
 import {
   EDIT_ITEM_HEIGHT,
   EDIT_SECTION_ACTION,
   NO_SECTION_DRAG,
+  autoScrollOffset,
+  autoScrollSpeed,
   dropMove,
   editRowLabel,
   hasHandle,
+  lineAt,
+  lineTop,
   listMinHeight,
   moveActions,
   moveStep,
@@ -40,6 +61,9 @@ import {
   nextSectionDrag,
   sectionDragItems,
   slotMeta,
+  swipeLines,
+  swipeMode,
+  swipeSelection,
   useAvatar,
   type Bot,
   type DragItem,
@@ -47,7 +71,9 @@ import {
   type MoveAction,
   type SectionDragEvent,
   type Selection,
-  type SlotMeta
+  type SlotMeta,
+  type SwipeLine,
+  type SwipeMode
 } from '@/features/agents'
 import { lightTap } from '@/lib/haptics'
 import type { OrderMove } from '@/state/organization'
@@ -88,6 +114,8 @@ export interface EditListProps {
   haptics: boolean
   unread(profile: string): boolean
   onToggle(profile: string): void
+  /** Sets the whole selection: a swipe across the selection circles selects or deselects several rows at once. */
+  onSelectionChange(selection: Selection): void
   /** Applies one reorder (a drop, or Move up / Move down) to the device store. */
   onMove(move: OrderMove): void
   /** Opens the Section page for a section header. */
@@ -128,9 +156,183 @@ function makeGuardedStrategy(meta: SharedValue<SlotMeta>): SortStrategyFactory {
 
 const keyOf = (item: DragItem) => item.key
 
-export function EditList({ items, selection, gateway, connectionId, haptics, unread, onToggle, onMove, onEditSection, barBelow = false }: EditListProps) {
+/** What a row's selection circle needs from swipe to select. */
+interface SwipeSelect {
+  /** Builds the swipe gesture for the row with this key. */
+  gestureFor(key: string): PanGesture
+  /** The row with this key left the list; a swipe that started on it ends. */
+  forget(key: string): void
+}
+
+/** The swipe in progress, on the JS thread: where it started, the selection before it, and whether it selects or deselects. */
+interface SwipeStart {
+  startKey: string
+  base: Selection
+  mode: SwipeMode
+}
+
+/**
+ * Swipe to select (the rules are in `swipe-select.ts`). Each row's circle
+ * column carries a pan with no minimum distance: it takes the touch at its
+ * first move, so the scroll view never gets it, and it applies the range at
+ * once, the start row included, so a slight move on a tap still toggles the
+ * row exactly once. A touch that does not move stays the row's own tap. On
+ * the UI thread the pan follows the line under the finger and tells the JS
+ * thread only when that line changes; a frame callback scrolls the list while
+ * the finger is near its top or bottom edge, and the range grows with the
+ * rows that scroll under the finger.
+ */
+function useSwipeSelect(scrollRef: AnimatedRef<Animated.ScrollView>, items: EditItem[], selection: Selection, onSelectionChange: (selection: Selection) => void) {
+  const lines = useSharedValue<SwipeLine[]>([])
+  useEffect(() => {
+    lines.set(swipeLines(items))
+  }, [items, lines])
+  const scrollOffset = useScrollOffset(scrollRef)
+  const viewportHeight = useSharedValue(0)
+  const contentHeight = useSharedValue(0)
+  const active = useSharedValue(false)
+  // The line under the finger, the finger's distance from the list's visible
+  // top edge, and the scroll offset the swipe keeps itself while it scrolls
+  // (the scroll events report a new offset only a frame later).
+  const currentKey = useSharedValue<string | null>(null)
+  const fingerY = useSharedValue(0)
+  const offset = useSharedValue(0)
+
+  // The gestures are built once per row, so the JS side reads the latest props from here.
+  const latest = useRef({ items, selection, onSelectionChange })
+  latest.current = { items, selection, onSelectionChange }
+  const swipe = useRef<SwipeStart | null>(null)
+
+  const showLine = useCallback((key: string) => {
+    const start = swipe.current
+    if (start) {
+      latest.current.onSelectionChange(swipeSelection(latest.current.items, start.base, start.startKey, key, start.mode))
+    }
+  }, [])
+
+  const track = useCallback(
+    (contentY: number) => {
+      'worklet'
+      const key = lineAt(lines.get(), contentY)
+      if (key !== null && key !== currentKey.get()) {
+        currentKey.set(key)
+        scheduleOnRN(showLine, key)
+      }
+    },
+    [lines, currentKey, showLine]
+  )
+
+  const autoScroll = useFrameCallback(
+    useCallback(
+      (frame: FrameInfo) => {
+        'worklet'
+        if (!active.get()) {
+          return
+        }
+        const speed = autoScrollSpeed(fingerY.get(), viewportHeight.get())
+        if (speed === 0) {
+          return
+        }
+        const next = autoScrollOffset(offset.get(), speed, frame.timeSincePreviousFrame ?? 0, contentHeight.get() - viewportHeight.get())
+        if (next === offset.get()) {
+          return
+        }
+        offset.set(next)
+        scrollTo(scrollRef, 0, next, false)
+        track(fingerY.get() + next)
+      },
+      [active, fingerY, viewportHeight, offset, contentHeight, scrollRef, track]
+    ),
+    false
+  )
+
+  const begin = useCallback(
+    (key: string) => {
+      const { items: now, selection: base, onSelectionChange: change } = latest.current
+      const mode = swipeMode(now, base, key)
+      swipe.current = { startKey: key, base, mode }
+      autoScroll.setActive(true)
+      change(swipeSelection(now, base, key, key, mode))
+    },
+    [autoScroll]
+  )
+
+  const finish = useCallback(() => {
+    swipe.current = null
+    autoScroll.setActive(false)
+  }, [autoScroll])
+
+  // A row that leaves the list mid-swipe (a roster refresh) takes its gesture
+  // with it, and that gesture never reports its end: end the swipe here, or
+  // the auto-scroll would keep running on a finger that is gone.
+  const forget = useCallback(
+    (key: string) => {
+      if (swipe.current?.startKey === key) {
+        active.set(false)
+        currentKey.set(null)
+        finish()
+      }
+    },
+    [active, currentKey, finish]
+  )
+
+  const gestureFor = useCallback(
+    (key: string) =>
+      Gesture.Pan()
+        .minDistance(0)
+        .maxPointers(1)
+        .onStart(event => {
+          'worklet'
+          const top = lineTop(lines.get(), key)
+          if (top < 0) {
+            return
+          }
+          // `event.y` is measured from the top of this row's circle column, which scrolls with the content.
+          const now = scrollOffset.get()
+          offset.set(now)
+          fingerY.set(top + event.y - now)
+          currentKey.set(key)
+          active.set(true)
+          scheduleOnRN(begin, key)
+        })
+        .onUpdate(event => {
+          'worklet'
+          if (!active.get()) {
+            return
+          }
+          const contentY = lineTop(lines.get(), key) + event.y
+          fingerY.set(contentY - offset.get())
+          track(contentY)
+        })
+        .onFinalize(() => {
+          'worklet'
+          if (!active.get()) {
+            return
+          }
+          active.set(false)
+          currentKey.set(null)
+          scheduleOnRN(finish)
+        }),
+    [lines, scrollOffset, offset, fingerY, currentKey, active, begin, track, finish]
+  )
+
+  const select = useMemo<SwipeSelect>(() => ({ gestureFor, forget }), [gestureFor, forget])
+
+  return {
+    select,
+    onLayout: (event: LayoutChangeEvent) => {
+      viewportHeight.set(event.nativeEvent.layout.height)
+    },
+    onContentSizeChange: (_width: number, height: number) => {
+      contentHeight.set(height)
+    }
+  }
+}
+
+export function EditList({ items, selection, gateway, connectionId, haptics, unread, onToggle, onSelectionChange, onMove, onEditSection, barBelow = false }: EditListProps) {
   const scrollRef = useAnimatedRef<Animated.ScrollView>()
   const gutter = usePagePadding()
+  const swipe = useSwipeSelect(scrollRef, items, selection, onSelectionChange)
   // The list scrolls to the bottom edge of the phone: its content carries the
   // inset instead of the screen reserving a strip for it (added to the minimum
   // height too, or the minimum would swallow it). With a bar below, the list
@@ -214,6 +416,8 @@ export function EditList({ items, selection, gateway, connectionId, haptics, unr
             actions={moveActions(items, item.key)}
             onAction={act(item)}
             onToggle={() => onToggle(item.bot.profile)}
+            rowKey={item.key}
+            swipe={swipe.select}
             gutter={gutter}
           />
         )
@@ -224,6 +428,8 @@ export function EditList({ items, selection, gateway, connectionId, haptics, unr
     <Animated.ScrollView
       ref={scrollRef}
       style={bleed(gutter)}
+      onLayout={swipe.onLayout}
+      onContentSizeChange={swipe.onContentSizeChange}
       // A swipe that starts on a section handle and scrolls is no drag: show the whole list again.
       onScrollBeginDrag={() => dispatch({ type: 'release' })}
       // Keeps the list as tall as the whole list while only headers show and while it comes back, so the scroll position holds.
@@ -328,12 +534,16 @@ interface EditRowProps {
   actions: MoveAction[]
   onAction(event: AccessibilityActionEvent): void
   onToggle(): void
+  rowKey: string
+  swipe: SwipeSelect
   gutter: number
 }
 
-function EditRow({ bot, selected, unread, gateway, connectionId, draggable, actions, onAction, onToggle, gutter }: EditRowProps) {
+function EditRow({ bot, selected, unread, gateway, connectionId, draggable, actions, onAction, onToggle, rowKey, swipe, gutter }: EditRowProps) {
   const theme = useTheme()
   const avatar = useAvatar(gateway, connectionId, bot.profile, bot.hasAvatar)
+  const swipeGesture = useMemo(() => swipe.gestureFor(rowKey), [swipe, rowKey])
+  useEffect(() => () => swipe.forget(rowKey), [swipe, rowKey])
   // The tap highlight covers the whole row, the ≡ column too, but only the
   // part left of it toggles: the ≡ column only drags.
   const [pressed, setPressed] = useState(false)
@@ -350,9 +560,12 @@ function EditRow({ bot, selected, unread, gateway, connectionId, draggable, acti
         onAccessibilityAction={onAction}
         style={styles.rowBody}
       >
-        <View style={[styles.circleColumn, { width: gutter + CIRCLE_COLUMN, paddingLeft: gutter }]}>
-          <SelectionCircle selected={selected} />
-        </View>
+        {/* A touch that starts here and moves belongs to swipe to select, not to scrolling. */}
+        <GestureDetector gesture={swipeGesture}>
+          <View style={[styles.circleColumn, { width: gutter + CIRCLE_COLUMN, paddingLeft: gutter }]}>
+            <SelectionCircle selected={selected} />
+          </View>
+        </GestureDetector>
         <Avatar name={bot.name} color={bot.color} imageUri={avatar.data ?? null} size={AVATAR_SIZE} />
         <View style={styles.rowText}>
           <Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.name, { color: theme.colors.foreground }]}>

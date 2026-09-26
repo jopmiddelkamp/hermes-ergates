@@ -575,5 +575,19 @@ empty section, one section with a few agents, and enough agents to scroll:
     way. This is a known, accepted side effect of switching to headers-only
     on touch-down, not a defect by itself -- judge on this device whether the
     flash (if any) is short enough to leave alone.
+18. Swipe to select with auto-scroll: with nothing selected, put a finger on
+    the circle of the first No section row and move it straight down over
+    the circles. Expected: the list does not scroll under the finger; each
+    row the finger passes gets a filled circle, section headers and captions
+    get none, and the count in the title follows. Move back up two rows:
+    those two rows are empty again. Keep going down to the bottom edge of
+    the list (above the bottom bar) and hold still: the list scrolls down by
+    itself, faster the closer the finger is to the edge, the rows that pass
+    under the finger are selected, and the scrolling stops at the end of the
+    list. Then move up to the top edge and hold: the list scrolls back up and
+    stops at the top. Lift, then start a new swipe on a selected row's circle
+    and move down: the swipe deselects instead. A plain tap on a circle still
+    toggles only that row, a swipe on a row body still scrolls the list, and
+    the ≡ handles still drag.
 
 Result:

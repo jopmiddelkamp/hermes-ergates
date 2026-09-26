@@ -37,6 +37,7 @@ export {
   type SectionDragEvent,
   type SlotMeta
 } from './drop-rules'
+export { autoScrollOffset, autoScrollSpeed, lineAt, lineTop, swipeLines, swipeMode, swipeSelection, type SwipeLine, type SwipeMode } from './swipe-select'
 export {
   canCreateSection,
   membershipChanged,
