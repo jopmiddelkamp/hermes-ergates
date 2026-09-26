@@ -39,7 +39,8 @@ import { Button } from '@/ui/Button'
 import { EditBar } from '@/ui/EditBar'
 import { EditList } from '@/ui/EditList'
 import { IconButton } from '@/ui/IconButton'
-import { Screen } from '@/ui/Screen'
+import { bleed } from '@/ui/page-padding'
+import { Screen, usePagePadding } from '@/ui/Screen'
 import { SectionHeader } from '@/ui/SectionHeader'
 import { useBottomInset } from '@/ui/use-bottom-inset'
 
@@ -59,6 +60,9 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   // The roster list scrolls to the bottom edge of the phone; its content
   // carries the inset instead of Screen reserving a strip for it.
   const listBottomInset = useBottomInset(LIST_BOTTOM_PADDING)
+  // The roster list runs edge to edge (a row's tap highlight and the scroll
+  // bar reach the screen edges); each row pads its content by the page padding.
+  const gutter = usePagePadding()
   // Guarded by `HomeScreen`, which redirects to /connect without a connection.
   const connection = useDeviceStore(s => s.connections.find(c => c.id === connectionId))!
   const gateway = useGateway(connection)
@@ -248,7 +252,16 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   }
 
   const renderRow = (bot: Bot) => (
-    <BotRow key={bot.profile} bot={bot} gateway={gateway} connectionId={connectionId} unread={home.unread(bot.profile)} onPress={() => openChat(bot)} onLongPress={anchor => openMenu(bot, anchor)} />
+    <BotRow
+      key={bot.profile}
+      bot={bot}
+      gateway={gateway}
+      connectionId={connectionId}
+      unread={home.unread(bot.profile)}
+      onPress={() => openChat(bot)}
+      onLongPress={anchor => openMenu(bot, anchor)}
+      gutter={gutter}
+    />
   )
 
   const empty = !home.loading && home.bots.length === 0
@@ -305,14 +318,14 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
         <IconButton name="search" accessibilityLabel="Search" onPress={() => router.push('/search')} />
         <IconButton name="plus" accessibilityLabel="Add" onPress={() => router.push('/new-agent')} />
       </View>
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={{ paddingBottom: listBottomInset }}>
+      <ScrollView style={bleed(gutter)} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={{ paddingBottom: listBottomInset }}>
         {home.error ? (
-          <Text style={[styles.line, { color: theme.colors.destructive }]} accessibilityRole="alert">
+          <Text style={[styles.line, { color: theme.colors.destructive, paddingHorizontal: gutter }]} accessibilityRole="alert">
             Could not load your assistants. Pull to retry.
           </Text>
         ) : null}
         {home.pinned.length > 0 ? (
-          <View style={styles.pins}>
+          <View style={[styles.pins, { paddingHorizontal: gutter }]}>
             {home.pinned.map(bot => (
               <PinnedAvatar key={bot.profile} bot={bot} gateway={gateway} connectionId={connectionId} unread={home.unread(bot.profile)} onPress={() => openChat(bot)} onLongPress={anchor => openMenu(bot, anchor)} />
             ))}
@@ -321,11 +334,11 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
         {home.ungrouped.map(renderRow)}
         {home.sections.map(({ section, rows }) => (
           <View key={section.id}>
-            <SectionHeader name={section.name} expanded={!section.collapsed} onToggle={() => toggleCollapsed(connectionId, section.id)} onEdit={() => editSection(section.id)} />
+            <SectionHeader name={section.name} expanded={!section.collapsed} onToggle={() => toggleCollapsed(connectionId, section.id)} onEdit={() => editSection(section.id)} gutter={gutter} />
             {section.collapsed ? null : rows.map(renderRow)}
           </View>
         ))}
-        {empty ? <Text style={[styles.line, { color: theme.colors.mutedForeground }]}>No assistants yet. Tap + to create one.</Text> : null}
+        {empty ? <Text style={[styles.line, { color: theme.colors.mutedForeground, paddingHorizontal: gutter }]}>No assistants yet. Tap + to create one.</Text> : null}
       </ScrollView>
       <BotActions
         bot={menu?.bot ?? null}

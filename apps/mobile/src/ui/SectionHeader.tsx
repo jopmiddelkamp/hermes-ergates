@@ -18,9 +18,11 @@ export interface SectionHeaderProps {
   onToggle: () => void
   /** Opens the Section page (rename or delete). */
   onEdit: () => void
+  /** Horizontal padding inside the heading, for a full-bleed list (Home). Default 0. */
+  gutter?: number
 }
 
-export function SectionHeader({ name, expanded, onToggle, onEdit }: SectionHeaderProps) {
+export function SectionHeader({ name, expanded, onToggle, onEdit, gutter = 0 }: SectionHeaderProps) {
   const theme = useTheme()
 
   return (
@@ -36,8 +38,9 @@ export function SectionHeader({ name, expanded, onToggle, onEdit }: SectionHeade
           onEdit()
         }
       }}
-      // No horizontal padding: `Screen`/`Sheet` own the page gutter.
-      style={[styles.header, { minHeight: theme.hit }]}
+      // No horizontal padding of its own: `Screen`/`Sheet` own the page
+      // gutter, or a full-bleed list passes it as `gutter`.
+      style={[styles.header, { minHeight: theme.hit, paddingHorizontal: gutter }]}
     >
       <Text style={[styles.name, { color: theme.colors.mutedForeground }]}>{name}</Text>
       <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={16} color={theme.colors.mutedForeground} />

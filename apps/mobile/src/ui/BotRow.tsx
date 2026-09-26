@@ -24,9 +24,11 @@ export interface BotRowProps {
   preview?: 'activity' | 'description'
   onPress: () => void
   onLongPress?: (anchor: AnchorRect) => void
+  /** Horizontal padding inside the row, for a full-bleed list (Home). */
+  gutter?: number
 }
 
-export function BotRow({ bot, gateway, connectionId, unread = false, showTime = true, preview = 'activity', onPress, onLongPress }: BotRowProps) {
+export function BotRow({ bot, gateway, connectionId, unread = false, showTime = true, preview = 'activity', onPress, onLongPress, gutter }: BotRowProps) {
   const avatar = useAvatar(gateway, connectionId, bot.profile, bot.hasAvatar)
   const ref = useRef<View>(null)
   const measure = () => ref.current?.measureInWindow((x, y, width, height) => onLongPress?.({ x, y, width, height }))
@@ -42,6 +44,7 @@ export function BotRow({ bot, gateway, connectionId, unread = false, showTime = 
         unread={unread}
         onPress={onPress}
         onLongPress={onLongPress ? measure : undefined}
+        gutter={gutter}
       />
     </View>
   )

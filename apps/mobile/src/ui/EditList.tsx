@@ -8,9 +8,14 @@
  * one `OrderMove` through `onMove`, and the headers-only list while a section
  * header is dragged. Screen readers get Move up and Move down instead, and
  * Edit section on a section header.
+ *
+ * The list runs edge to edge, like the normal Home list: a lifted row is not
+ * clipped, the scroll bar sits at the screen edge and a row's tap highlight
+ * spans the whole width, the ≡ column too. Every row, caption and header pads
+ * its own content by the page padding instead (`page-padding.ts`).
  */
 
-import React, { useEffect, useMemo, useReducer } from 'react'
+import React, { useEffect, useMemo, useReducer, useState } from 'react'
 import { AppState, Pressable, StyleSheet, Text, View, type AccessibilityActionEvent, type AccessibilityActionInfo } from 'react-native'
 import Animated, { useAnimatedReaction, useAnimatedRef, useSharedValue, type SharedValue } from 'react-native-reanimated'
 import Sortable, {
@@ -50,6 +55,8 @@ import { useTheme } from '@/theme/provider'
 
 import { Avatar } from './Avatar'
 import { Icon } from './icons'
+import { bleed } from './page-padding'
+import { usePagePadding } from './Screen'
 import { useBottomInset } from './use-bottom-inset'
 
 const AVATAR_SIZE = 40
@@ -116,6 +123,7 @@ const keyOf = (item: DragItem) => item.key
 
 export function EditList({ items, selection, gateway, connectionId, haptics, unread, onToggle, onMove, onEditSection, barBelow = false }: EditListProps) {
   const scrollRef = useAnimatedRef<Animated.ScrollView>()
+  const gutter = usePagePadding()
   // The list scrolls to the bottom edge of the phone: its content carries the
   // inset instead of the screen reserving a strip for it (added to the minimum
   // height too, or the minimum would swallow it). With a bar below, the list
@@ -174,7 +182,7 @@ export function EditList({ items, selection, gateway, connectionId, haptics, unr
       case 'spacer':
         return <View style={{ height: item.height }} />
       case 'caption':
-        return <Caption label={item.label} />
+        return <Caption label={item.label} gutter={gutter} />
       case 'section':
         return (
           <SectionLine
@@ -184,6 +192,7 @@ export function EditList({ items, selection, gateway, connectionId, haptics, unr
             onEdit={() => onEditSection(item.section.id)}
             onHandle={dispatch}
             sectionKey={item.key}
+            gutter={gutter}
           />
         )
       default:
@@ -198,6 +207,7 @@ export function EditList({ items, selection, gateway, connectionId, haptics, unr
             actions={moveActions(items, item.key)}
             onAction={act(item)}
             onToggle={() => onToggle(item.bot.profile)}
+            gutter={gutter}
           />
         )
     }
@@ -206,6 +216,7 @@ export function EditList({ items, selection, gateway, connectionId, haptics, unr
   return (
     <Animated.ScrollView
       ref={scrollRef}
+      style={bleed(gutter)}
       // A swipe that starts on a section handle and scrolls is no drag: show the whole list again.
       onScrollBeginDrag={() => dispatch({ type: 'release' })}
       // Keeps the list as tall as the whole list while only headers show and while it comes back, so the scroll position holds.
@@ -240,10 +251,13 @@ function Grip() {
   )
 }
 
-function Caption({ label }: { label: string }) {
+/** The ≡ column's width: the handle plus the page padding it runs through to the screen edge. */
+const handleWidth = (gutter: number) => ({ width: HANDLE_WIDTH + gutter })
+
+function Caption({ label, gutter }: { label: string; gutter: number }) {
   const theme = useTheme()
   return (
-    <View style={[styles.caption, { backgroundColor: theme.colors.background }]}>
+    <View style={[styles.caption, { backgroundColor: theme.colors.background, paddingHorizontal: gutter }]}>
       <Text accessibilityRole="header" maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.captionText, { color: theme.colors.mutedForeground }]}>
         {label}
       </Text>
@@ -258,6 +272,7 @@ interface SectionLineProps {
   onAction(event: AccessibilityActionEvent): void
   onEdit(): void
   onHandle(event: SectionDragEvent): void
+  gutter: number
 }
 
 /**
@@ -265,7 +280,7 @@ interface SectionLineProps {
  * handle drags. They are side by side, so the two gestures never overlap.
  * Touching the handle switches the list to headers only before the drag starts.
  */
-function SectionLine({ name, sectionKey, actions, onAction, onEdit, onHandle }: SectionLineProps) {
+function SectionLine({ name, sectionKey, actions, onAction, onEdit, onHandle, gutter }: SectionLineProps) {
   const theme = useTheme()
   return (
     <View style={[styles.sectionHeader, { backgroundColor: theme.colors.background }]}>
@@ -275,14 +290,19 @@ function SectionLine({ name, sectionKey, actions, onAction, onEdit, onHandle }: 
         accessibilityLabel={`${name} section`}
         accessibilityActions={actions}
         onAccessibilityAction={onAction}
-        style={styles.sectionName}
+        style={[styles.sectionName, { paddingLeft: gutter }]}
       >
         <Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionText, { color: theme.colors.mutedForeground }]}>
           {name}
         </Text>
       </Pressable>
-      <Sortable.Handle style={styles.handle}>
-        <Sortable.Touchable style={styles.handleFill} onTouchesDown={() => onHandle({ type: 'press', key: sectionKey })} onTouchesUp={() => onHandle({ type: 'release' })}>
+      <Sortable.Handle style={[styles.handle, handleWidth(gutter)]}>
+        {/* The touch area runs to the screen edge; the glyph stays in line with the rows' ≡. */}
+        <Sortable.Touchable
+          style={[styles.handleFill, { paddingRight: gutter }]}
+          onTouchesDown={() => onHandle({ type: 'press', key: sectionKey })}
+          onTouchesUp={() => onHandle({ type: 'release' })}
+        >
           <Grip />
         </Sortable.Touchable>
       </Sortable.Handle>
@@ -301,21 +321,27 @@ interface EditRowProps {
   actions: MoveAction[]
   onAction(event: AccessibilityActionEvent): void
   onToggle(): void
+  gutter: number
 }
 
-function EditRow({ bot, selected, unread, gateway, connectionId, draggable, actions, onAction, onToggle }: EditRowProps) {
+function EditRow({ bot, selected, unread, gateway, connectionId, draggable, actions, onAction, onToggle, gutter }: EditRowProps) {
   const theme = useTheme()
   const avatar = useAvatar(gateway, connectionId, bot.profile, bot.hasAvatar)
+  // The tap highlight covers the whole row, the ≡ column too, but only the
+  // part left of it toggles: the ≡ column only drags.
+  const [pressed, setPressed] = useState(false)
   return (
-    <View style={[styles.row, { backgroundColor: theme.colors.background }]}>
+    <View style={[styles.row, { backgroundColor: pressed ? theme.colors.muted : theme.colors.background }]}>
       <Pressable
         onPress={onToggle}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
         accessibilityRole="button"
         // The label ends in "selected" or "not selected"; a selected state would say it twice.
         accessibilityLabel={editRowLabel(bot, selected, unread)}
         accessibilityActions={actions}
         onAccessibilityAction={onAction}
-        style={({ pressed }) => [styles.rowBody, { backgroundColor: pressed ? theme.colors.muted : 'transparent' }]}
+        style={[styles.rowBody, { paddingLeft: gutter }]}
       >
         <Icon name={selected ? 'check-circle' : 'circle'} size={24} color={selected ? theme.colors.primary : theme.colors.mutedForeground} />
         <Avatar name={bot.name} color={bot.color} imageUri={avatar.data ?? null} size={AVATAR_SIZE} />
@@ -331,11 +357,11 @@ function EditRow({ bot, selected, unread, gateway, connectionId, draggable, acti
         </View>
       </Pressable>
       {draggable ? (
-        <Sortable.Handle style={styles.handle}>
+        <Sortable.Handle style={[styles.handle, handleWidth(gutter), { paddingRight: gutter }]}>
           <Grip />
         </Sortable.Handle>
       ) : (
-        <View style={styles.handle} />
+        <View style={[styles.handle, handleWidth(gutter)]} />
       )}
     </View>
   )
@@ -356,6 +382,7 @@ const styles = StyleSheet.create({
   // children, so that view gets this style: it fills the whole height of the
   // row or header, and a touch anywhere on the ≡ column picks the item up, not
   // only a touch on the 22 pt glyph (a touch beside it scrolled the list).
-  handle: { width: HANDLE_WIDTH, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
+  // Its width (`handleWidth`) runs through the page padding to the screen edge.
+  handle: { alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
   handleFill: { flex: 1, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' }
 })
