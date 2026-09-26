@@ -16,6 +16,7 @@ import { BotRow } from '@/ui/BotRow'
 import { Icon } from '@/ui/icons'
 import { IconButton } from '@/ui/IconButton'
 import { Screen } from '@/ui/Screen'
+import { useBottomInset } from '@/ui/use-bottom-inset'
 
 export default function SearchScreen() {
   const router = useRouter()
@@ -27,9 +28,12 @@ export default function SearchScreen() {
   return <SearchBody connectionId={connection.id} query={query} setQuery={setQuery} onClose={() => router.back()} />
 }
 
+const LIST_BOTTOM_PADDING = 40
+
 function SearchBody({ connectionId, query, setQuery, onClose }: { connectionId: string; query: string; setQuery: (q: string) => void; onClose: () => void }) {
   const theme = useTheme()
   const router = useRouter()
+  const bottomInset = useBottomInset(LIST_BOTTOM_PADDING)
   // The parent guards on the connection existing, so this is always found; the
   // `!` keeps the hook order stable without a fabricated `baseUrl: ''` record.
   const saved = useDeviceStore(s => s.connections.find(c => c.id === connectionId))!
@@ -56,7 +60,7 @@ function SearchBody({ connectionId, query, setQuery, onClose }: { connectionId: 
           />
         </View>
       </View>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.list}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: bottomInset }}>
         {results.map(bot => (
           <BotRow key={bot.profile} bot={bot} gateway={gateway} connectionId={connectionId} showTime={false} preview="description" onPress={() => router.replace({ pathname: '/chat/[profile]', params: { profile: bot.profile } })} />
         ))}
@@ -70,6 +74,5 @@ const styles = StyleSheet.create({
   bar: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   field: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, borderRadius: 24, borderWidth: 1, paddingHorizontal: 16 },
   input: { flex: 1, fontSize: 17, paddingVertical: 10 },
-  list: { paddingBottom: 40 },
   empty: { fontSize: 15, lineHeight: 22, paddingVertical: 24, textAlign: 'center' }
 })

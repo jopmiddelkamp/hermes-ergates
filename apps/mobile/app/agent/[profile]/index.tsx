@@ -23,6 +23,7 @@ import { Card } from '@/ui/Card'
 import { Icon } from '@/ui/icons'
 import { IconButton } from '@/ui/IconButton'
 import { Screen } from '@/ui/Screen'
+import { useBottomInset } from '@/ui/use-bottom-inset'
 
 export default function AgentDetailsScreen() {
   const { profile } = useLocalSearchParams<{ profile: string }>()
@@ -33,9 +34,12 @@ export default function AgentDetailsScreen() {
   return <AgentDetails connectionId={connection.id} connectionLabel={connection.label} profile={profile} />
 }
 
+const CONTENT_BOTTOM_PADDING = 40
+
 function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId: string; connectionLabel: string; profile: string }) {
   const theme = useTheme()
   const router = useRouter()
+  const contentBottomInset = useBottomInset(CONTENT_BOTTOM_PADDING)
   const connection = useDeviceStore(s => s.connections.find(c => c.id === connectionId))!
   const gateway = useGateway(connection)
   const home = useHome(gateway, connectionId)
@@ -114,7 +118,7 @@ function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId
   }
 
   return (
-    <Screen edges={['top', 'bottom']}>
+    <Screen edges={['top']}>
       <View style={styles.header}>
         <IconButton name="chevron-left" accessibilityLabel="Back" onPress={() => router.back()} />
         <View style={styles.headerSpacer} />
@@ -122,7 +126,7 @@ function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId
           <IconButton name="more-horizontal" accessibilityLabel="More actions" onPress={openMenu} />
         </View>
       </View>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: contentBottomInset }]}>
         <Identity bot={bot} gateway={gateway} connectionId={connectionId} />
         <Card>
           <MenuRow label="Edit Bot" onPress={() => router.push({ pathname: '/agent/[profile]/edit', params: { profile } })} />
@@ -205,7 +209,7 @@ const styles = StyleSheet.create({
   identityName: { fontSize: 22, fontWeight: '600' },
   identityRole: { fontSize: 15 },
   errorBlock: { gap: 12, alignItems: 'flex-start', marginTop: 24 },
-  content: { paddingTop: 8, paddingBottom: 40, gap: 24 },
+  content: { paddingTop: 8, gap: 24 },
   menuRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, gap: 12 },
   menuRowLabel: { fontSize: 17, flex: 1 },
   info: { gap: 14, paddingHorizontal: 16, paddingVertical: 14 },

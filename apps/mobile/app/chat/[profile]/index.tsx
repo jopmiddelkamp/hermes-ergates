@@ -22,6 +22,7 @@ import { PeerAvatar } from '@/ui/chat/PeerAvatar'
 import { CommentaryRow, ConnectionLine, DateSeparator, EventRow, ToolRow, WorkingLine } from '@/ui/chat/Rows'
 import { Icon } from '@/ui/icons'
 import { IconButton } from '@/ui/IconButton'
+import { useBottomInset } from '@/ui/use-bottom-inset'
 
 export default function ChatScreen() {
   const { profile, devSend, devFocus, devInject } = useLocalSearchParams<{ profile: string; devSend?: string; devFocus?: string; devInject?: string }>()
@@ -37,6 +38,12 @@ function Chat({ devSend, devInject, devFocus }: { devSend?: string; devInject?: 
   const theme = useTheme()
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  // The composer is a fixed bottom bar: it pads its own content by the
+  // inset, dropped while the keyboard is open (the KeyboardAvoidingView
+  // below already pushes it up by the full keyboard height, measured down
+  // to the physical bottom of the screen, so counting the inset again would
+  // leave a gap above the keyboard).
+  const composerBottomInset = useBottomInset()
   // The layout owns the session: the chat, Activity and the transcript all read this one.
   const { connectionId, profile, port: gateway, bot, name, avatarUri, session, timeline } = useChatSession()
 
@@ -350,7 +357,7 @@ function Chat({ devSend, devInject, devFocus }: { devSend?: string; devInject?: 
             <Icon name="arrow-down" size={18} color={theme.colors.foreground} />
           </Pressable>
         ) : null}
-        <View style={[styles.composer, { paddingHorizontal: theme.pagePadding, paddingBottom: Math.max(insets.bottom, 8) }]}>
+        <View style={[styles.composer, { paddingHorizontal: theme.pagePadding, paddingBottom: Math.max(composerBottomInset, 8) }]}>
           <Composer
             name={name}
             value={draft}

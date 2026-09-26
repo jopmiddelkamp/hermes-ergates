@@ -17,6 +17,7 @@ import { useTheme } from '@/theme/provider'
 import { Button } from '@/ui/Button'
 import { IconButton } from '@/ui/IconButton'
 import { Screen } from '@/ui/Screen'
+import { useBottomInset } from '@/ui/use-bottom-inset'
 
 export default function RoutinesScreen() {
   const { profile } = useLocalSearchParams<{ profile: string }>()
@@ -51,6 +52,10 @@ function Routines({
   const routines = useRoutines(gateway, connection.id, profile)
   const [refreshing, setRefreshing] = useState(false)
   const tz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
+  const listBottomInset = useBottomInset(24)
+  // A fixed bottom bar: it pads its own content by the inset instead of
+  // relying on Screen to reserve a strip for it.
+  const footerBottomInset = useBottomInset(16)
 
   const jobs = (routines.data ?? []).filter(job => !isFinishedOneShot(job))
 
@@ -69,7 +74,7 @@ function Routines({
         </Text>
       </View>
       <ScrollView
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, { paddingBottom: listBottomInset }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />}
       >
         {routines.isError ? (
@@ -84,7 +89,7 @@ function Routines({
           <Text style={[styles.line, { color: theme.colors.mutedForeground }]}>No routines yet. Add one to have this assistant check in on a schedule.</Text>
         ) : null}
       </ScrollView>
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: footerBottomInset }]}>
         <Button label="New routine" accessibilityLabel="New routine" onPress={() => onOpen('new')} />
       </View>
     </Screen>
@@ -133,8 +138,8 @@ function RoutineRow({ job, profile, tz, onPress }: { job: CronJob; profile: stri
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, marginBottom: 8 },
   headerTitle: { flex: 1, fontSize: 20, fontWeight: '700' },
-  list: { paddingBottom: 24, gap: 4 },
-  footer: { paddingTop: 8, paddingBottom: 16 },
+  list: { gap: 4 },
+  footer: { paddingTop: 8 },
   row: { paddingVertical: 12, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth },
   rowBody: { gap: 2 },
   rowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },

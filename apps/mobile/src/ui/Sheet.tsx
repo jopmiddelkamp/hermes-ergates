@@ -15,6 +15,7 @@ import { useTheme } from '@/theme/provider'
 
 import { IconButton } from './IconButton'
 import { SurfaceProvider } from './surface-context'
+import { useBottomInset } from './use-bottom-inset'
 
 const HEADER_MIN_HEIGHT = 48
 
@@ -71,21 +72,35 @@ export function Sheet({ title, onClose, headerLeft, headerRight, centerTitle, ch
             )}
             <View style={[styles.headerSide, styles.headerRight]}>{headerRight ?? null}</View>
           </View>
-          {/* Sheets carry forms (New Agent, Edit Bot, Routine); iOS ScrollViews do
-              not move for the keyboard on their own, so the lower fields and the
-              primary button would sit under it. */}
-          <KeyboardAvoidingView style={styles.scroll} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <ScrollView
-              style={styles.scroll}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingHorizontal: theme.pagePadding, paddingTop: theme.spacing[2], paddingBottom: theme.spacing[4] }}
-            >
-              {children}
-            </ScrollView>
-          </KeyboardAvoidingView>
+          <SheetBody>{children}</SheetBody>
         </SurfaceProvider>
       </SafeAreaView>
     </SafeAreaProvider>
+  )
+}
+
+/**
+ * The scrolling body, as its own component so `useBottomInset` reads the
+ * `SafeAreaProvider` nested above (the sheet's own, not the app root's): a
+ * hook called directly in `Sheet` would see the root provider instead, since
+ * that provider is a child of `Sheet`, not an ancestor of it.
+ */
+function SheetBody({ children }: { children: ReactNode }) {
+  const theme = useTheme()
+  const bottomInset = useBottomInset(theme.spacing[4])
+  return (
+    // Sheets carry forms (New Agent, Edit Bot, Routine); iOS ScrollViews do
+    // not move for the keyboard on their own, so the lower fields and the
+    // primary button would sit under it.
+    <KeyboardAvoidingView style={styles.scroll} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView
+        style={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: theme.pagePadding, paddingTop: theme.spacing[2], paddingBottom: bottomInset }}
+      >
+        {children}
+      </ScrollView>
+    </KeyboardAvoidingView>
   )
 }
 

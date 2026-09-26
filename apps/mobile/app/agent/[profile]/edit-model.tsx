@@ -17,6 +17,7 @@ import { Field } from '@/ui/Field'
 import { Icon } from '@/ui/icons'
 import { IconButton } from '@/ui/IconButton'
 import { Screen } from '@/ui/Screen'
+import { useBottomInset } from '@/ui/use-bottom-inset'
 
 export default function EditModelScreen() {
   const { profile } = useLocalSearchParams<{ profile: string }>()
@@ -35,6 +36,7 @@ function EditModel({ connection, profile }: { connection: NonNullable<ReturnType
   const options = useModelOptions(gateway, connection.id, profile)
   const [expandedSlug, setExpandedSlug] = useState<string | null>(draft?.provider || null)
   const [customFor, setCustomFor] = useState<string | null>(null)
+  const bottomInset = useBottomInset(40)
 
   const header = (
     <View style={styles.header}>
@@ -45,8 +47,10 @@ function EditModel({ connection, profile }: { connection: NonNullable<ReturnType
   )
 
   if (!draft) {
+    // This screen never had a top inset (its header sits flush with the
+    // status bar, unchanged); only the old bottom-edge reservation goes.
     return (
-      <Screen edges={['bottom']}>
+      <Screen edges={[]}>
         {header}
         <ActivityIndicator style={styles.loading} color={theme.colors.foreground} />
       </Screen>
@@ -61,9 +65,9 @@ function EditModel({ connection, profile }: { connection: NonNullable<ReturnType
     customFor === p.slug || (draft.provider === p.slug && draft.model !== '' && !p.models.includes(draft.model))
 
   return (
-    <Screen edges={['bottom']}>
+    <Screen edges={[]}>
       {header}
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={{ paddingBottom: bottomInset }}>
         {options.isLoading ? <ActivityIndicator style={styles.loading} color={theme.colors.foreground} /> : null}
         {options.isError ? <Text style={[styles.note, { color: theme.colors.destructive }]}>Could not load providers. Tap Refresh to try again.</Text> : null}
 
@@ -153,7 +157,6 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48, marginBottom: 8, gap: 8 },
   title: { flex: 1, fontSize: 17, fontWeight: '600', textAlign: 'center' },
   loading: { marginTop: 40 },
-  content: { paddingBottom: 40 },
   row: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 0, gap: 12 },
   rowLabel: { fontSize: 17, flex: 1 },
   indent: { paddingLeft: 16 },

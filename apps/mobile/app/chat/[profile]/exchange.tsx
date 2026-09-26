@@ -11,6 +11,7 @@ import { PeerAvatar } from '@/ui/chat/PeerAvatar'
 import { DateSeparator } from '@/ui/chat/Rows'
 import { IconButton } from '@/ui/IconButton'
 import { MarkdownText } from '@/ui/MarkdownText'
+import { useBottomInset } from '@/ui/use-bottom-inset'
 
 const AVATAR_SIZE = 28
 
@@ -32,6 +33,9 @@ function ExchangeTranscript({ peer, anchorRowId, anchorToolCallId }: { peer: str
   const theme = useTheme()
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  // The transcript list scrolls to the bottom edge of the phone; its content
+  // carries the inset instead of the screen reserving a strip for it.
+  const listBottomInset = useBottomInset(20)
   const { connectionId, profile, bot, name, avatarUri, timeline, transcript } = useChatSession()
 
   const anchor = useMemo(() => {
@@ -127,7 +131,7 @@ function ExchangeTranscript({ peer, anchorRowId, anchorToolCallId }: { peer: str
         keyExtractor={entry => entry.key}
         renderItem={renderEntry}
         ListHeaderComponent={header}
-        contentContainerStyle={{ paddingHorizontal: theme.pagePadding, paddingVertical: 20 }}
+        contentContainerStyle={{ paddingHorizontal: theme.pagePadding, paddingTop: 20, paddingBottom: listBottomInset }}
         maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
       />
     </View>

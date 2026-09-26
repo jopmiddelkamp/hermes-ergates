@@ -14,12 +14,14 @@ import { Card } from '@/ui/Card'
 import { IconButton } from '@/ui/IconButton'
 import { Screen } from '@/ui/Screen'
 import { SwitchRow } from '@/ui/SwitchRow'
+import { useBottomInset } from '@/ui/use-bottom-inset'
 
 export default function EditCapabilitiesScreen() {
   const theme = useTheme()
   const router = useRouter()
   const { draft, errors, update } = useEditBotContext()
   const [query, setQuery] = useState('')
+  const bottomInset = useBottomInset(40)
 
   const header = (
     <View style={styles.header}>
@@ -30,8 +32,10 @@ export default function EditCapabilitiesScreen() {
   )
 
   if (!draft) {
+    // This screen never had a top inset (its header sits flush with the
+    // status bar, unchanged); only the old bottom-edge reservation goes.
     return (
-      <Screen edges={['bottom']}>
+      <Screen edges={[]}>
         {header}
         <ActivityIndicator style={styles.loading} color={theme.colors.foreground} />
       </Screen>
@@ -80,7 +84,7 @@ export default function EditCapabilitiesScreen() {
   }
 
   return (
-    <Screen edges={['bottom']}>
+    <Screen edges={[]}>
       {header}
       <TextInput
         value={query}
@@ -90,7 +94,7 @@ export default function EditCapabilitiesScreen() {
         accessibilityLabel="Search capabilities"
         style={[styles.search, { backgroundColor: theme.colors.input, borderColor: theme.colors.border, color: theme.colors.foreground }]}
       />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomInset }]}>
         <Text style={[styles.sectionTitle, { color: theme.colors.foreground }]}>Skills</Text>
         {skills.length > 0 ? (
           <Card>
@@ -144,7 +148,7 @@ const styles = StyleSheet.create({
   spacer: { width: 44 },
   loading: { marginTop: 40 },
   search: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, fontSize: 16, marginBottom: 8 },
-  content: { paddingBottom: 40, gap: 8 },
+  content: { gap: 8 },
   sectionTitle: { fontSize: 15, fontWeight: '600', marginTop: 16, marginBottom: 8 },
   empty: { fontSize: 14, lineHeight: 20, marginBottom: 8 },
   error: { fontSize: 13, marginTop: 4 },

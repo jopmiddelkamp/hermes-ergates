@@ -11,6 +11,7 @@ import { useTheme } from '@/theme/provider'
 
 import { IconButton } from './IconButton'
 import { Screen } from './Screen'
+import { useBottomInset } from './use-bottom-inset'
 
 export interface PageProps {
   title: string
@@ -19,10 +20,13 @@ export interface PageProps {
   children: ReactNode
 }
 
+const BODY_BOTTOM_PADDING = 24
+
 export function Page({ title, onBack, right, children }: PageProps) {
   const theme = useTheme()
+  const bottomInset = useBottomInset(BODY_BOTTOM_PADDING)
   return (
-    <Screen edges={['top', 'bottom']}>
+    <Screen edges={['top']}>
       <View style={styles.header}>
         <View style={styles.side}>
           <IconButton name="chevron-left" accessibilityLabel="Back" onPress={onBack} />
@@ -33,7 +37,7 @@ export function Page({ title, onBack, right, children }: PageProps) {
         <View style={[styles.side, styles.right]}>{right ?? null}</View>
       </View>
       <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView style={styles.fill} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>
+        <ScrollView style={styles.fill} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.body, { paddingBottom: bottomInset }]}>
           {children}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -65,7 +69,6 @@ const styles = StyleSheet.create({
   },
   body: {
     paddingTop: 12,
-    paddingBottom: 24,
     gap: 24
   }
 })

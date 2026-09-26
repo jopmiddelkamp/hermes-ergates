@@ -50,6 +50,7 @@ import { useTheme } from '@/theme/provider'
 
 import { Avatar } from './Avatar'
 import { Icon } from './icons'
+import { useBottomInset } from './use-bottom-inset'
 
 const AVATAR_SIZE = 40
 const HANDLE_WIDTH = 52
@@ -104,6 +105,9 @@ const keyOf = (item: DragItem) => item.key
 
 export function EditList({ items, selection, gateway, connectionId, haptics, unread, onToggle, onMove, onEditSection }: EditListProps) {
   const scrollRef = useAnimatedRef<Animated.ScrollView>()
+  // The list scrolls to the bottom edge of the phone: its content carries the
+  // inset instead of the screen reserving a strip for it.
+  const bottomInset = useBottomInset()
   // While a section handle is touched or dragged, the list shows only the section headers.
   const [sectionDrag, dispatch] = useReducer(nextSectionDrag, NO_SECTION_DRAG)
   const data = useMemo<DragItem[]>(() => (sectionDrag.key ? sectionDragItems(items, sectionDrag.key) : items), [items, sectionDrag.key])
@@ -191,7 +195,7 @@ export function EditList({ items, selection, gateway, connectionId, haptics, unr
       // A swipe that starts on a section handle and scrolls is no drag: show the whole list again.
       onScrollBeginDrag={() => dispatch({ type: 'release' })}
       // Keeps the list as tall as the whole list while only headers show and while it comes back, so the scroll position holds.
-      contentContainerStyle={{ minHeight: listMinHeight(items) }}
+      contentContainerStyle={{ minHeight: listMinHeight(items), paddingBottom: bottomInset }}
     >
       <Sortable.Grid
         columns={1}

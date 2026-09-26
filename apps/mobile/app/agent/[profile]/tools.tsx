@@ -20,6 +20,7 @@ import { Button } from '@/ui/Button'
 import { Card } from '@/ui/Card'
 import { IconButton } from '@/ui/IconButton'
 import { Screen } from '@/ui/Screen'
+import { useBottomInset } from '@/ui/use-bottom-inset'
 
 type TestState = 'testing' | 'ok' | 'failed'
 
@@ -56,6 +57,7 @@ function Tools({
 }) {
   const theme = useTheme()
   const gateway = useGateway(connection)
+  const bottomInset = useBottomInset(40)
   const describe = useDescribe(gateway, connection.id, profile)
   const toolsetsQuery = useQuery({
     queryKey: ['tool-catalog', connection.id, profile],
@@ -92,7 +94,7 @@ function Tools({
           Tools & connectors
         </Text>
       </View>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={{ paddingBottom: bottomInset }}>
         <Text style={[styles.hint, { color: theme.colors.mutedForeground }]}>
           Changes take effect on the assistant&apos;s next session; a saved change is not an immediate revocation.
         </Text>
@@ -213,7 +215,6 @@ function SkillRow({ skill }: { skill: DescribeSkill }) {
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, marginBottom: 8 },
   headerTitle: { flex: 1, fontSize: 20, fontWeight: '700' },
-  scroll: { paddingBottom: 40 },
   hint: { fontSize: 13, lineHeight: 18, marginBottom: 4 },
   spinner: { marginVertical: 12 },
   groupHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44, marginTop: 8, paddingLeft: 16 },

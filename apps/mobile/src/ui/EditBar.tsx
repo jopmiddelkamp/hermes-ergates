@@ -9,6 +9,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native'
 import type { EditBarLabels } from '@/features/agents'
 import { useTheme } from '@/theme/provider'
 
+import { useBottomInset } from './use-bottom-inset'
+
 export interface EditBarProps {
   labels: EditBarLabels
   onMove(): void
@@ -19,6 +21,9 @@ export interface EditBarProps {
 
 export function EditBar({ labels, onMove, onPin, onHide, onRead }: EditBarProps) {
   const theme = useTheme()
+  // A fixed bottom bar: it draws its background to the screen edge and pads
+  // its own content by the inset, so the buttons sit above the home indicator.
+  const bottomInset = useBottomInset()
   const actions = [
     { key: 'move', label: 'Move to…', onPress: onMove },
     { key: 'pin', label: labels.pin, onPress: onPin },
@@ -26,7 +31,7 @@ export function EditBar({ labels, onMove, onPin, onHide, onRead }: EditBarProps)
     { key: 'read', label: labels.read, onPress: onRead }
   ]
   return (
-    <View style={[styles.bar, { borderTopColor: theme.colors.border, backgroundColor: theme.colors.background }]}>
+    <View style={[styles.bar, { paddingBottom: bottomInset, borderTopColor: theme.colors.border, backgroundColor: theme.colors.background }]}>
       {actions.map(action => (
         <Pressable
           key={action.key}

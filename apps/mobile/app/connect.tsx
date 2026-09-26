@@ -9,11 +9,15 @@ import { useTheme } from '@/theme/provider'
 import { Button } from '@/ui/Button'
 import { Field } from '@/ui/Field'
 import { Screen } from '@/ui/Screen'
+import { useBottomInset } from '@/ui/use-bottom-inset'
+
+const CONTENT_BOTTOM_PADDING = 40
 
 export default function ConnectScreen() {
   const theme = useTheme()
   const router = useRouter()
   const registry = useGatewayRegistry()
+  const bottomInset = useBottomInset(CONTENT_BOTTOM_PADDING)
   const [label, setLabel] = useState('Local Hermes')
   const [baseUrl, setBaseUrl] = useState('http://127.0.0.1:9119')
   const [status, setStatus] = useState<BackendStatus | null>(null)
@@ -97,7 +101,7 @@ export default function ConnectScreen() {
   return (
     <Screen>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
           <Text style={[styles.title, { color: theme.colors.foreground }]}>Connect a gateway</Text>
           <Text style={[styles.subtitle, { color: theme.colors.mutedForeground }]}>Your assistants run on your own Hermes server. Enter its address to begin.</Text>
           <Field label="Name" value={label} onChangeText={setLabel} placeholder="Home server" />
@@ -133,7 +137,7 @@ export default function ConnectScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  content: { gap: 4, paddingBottom: 40, paddingTop: 24 },
+  content: { gap: 4, paddingTop: 24 },
   title: { fontSize: 28, fontWeight: '600' },
   subtitle: { fontSize: 17, lineHeight: 24, marginBottom: 16 },
   section: { gap: 4, marginTop: 8 },

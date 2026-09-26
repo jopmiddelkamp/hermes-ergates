@@ -17,6 +17,7 @@ import { Card } from '@/ui/Card'
 import { IconButton } from '@/ui/IconButton'
 import { MarkdownText } from '@/ui/MarkdownText'
 import { Screen } from '@/ui/Screen'
+import { useBottomInset } from '@/ui/use-bottom-inset'
 
 export default function MemoryScreen() {
   const { profile } = useLocalSearchParams<{ profile: string }>()
@@ -31,6 +32,7 @@ export default function MemoryScreen() {
 function Memory({ connection, profile, onBack }: { connection: NonNullable<ReturnType<typeof usePrimaryConnection>>; profile: string; onBack: () => void }) {
   const theme = useTheme()
   const gateway = useGateway(connection)
+  const bottomInset = useBottomInset(40)
   const query = useQuery({
     queryKey: ['memory-files', connection.id, profile],
     queryFn: () => gateway.profiles.memory(profile)
@@ -44,7 +46,7 @@ function Memory({ connection, profile, onBack }: { connection: NonNullable<Retur
           Memory
         </Text>
       </View>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={{ paddingBottom: bottomInset }}>
         {query.isLoading ? <ActivityIndicator style={styles.spinner} /> : null}
         {query.isError ? (
           <Text style={[styles.line, { color: theme.colors.destructive }]} accessibilityRole="alert">
@@ -81,7 +83,6 @@ function Memory({ connection, profile, onBack }: { connection: NonNullable<Retur
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, marginBottom: 8 },
   headerTitle: { flex: 1, fontSize: 20, fontWeight: '700' },
-  scroll: { paddingBottom: 40 },
   spinner: { marginVertical: 12 },
   sectionTitle: { fontSize: 17, fontWeight: '600', marginTop: 16, marginBottom: 8 },
   doc: { paddingHorizontal: 16, paddingVertical: 12 },

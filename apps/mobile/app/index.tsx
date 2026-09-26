@@ -41,6 +41,7 @@ import { EditList } from '@/ui/EditList'
 import { IconButton } from '@/ui/IconButton'
 import { Screen } from '@/ui/Screen'
 import { SectionHeader } from '@/ui/SectionHeader'
+import { useBottomInset } from '@/ui/use-bottom-inset'
 
 export default function HomeScreen() {
   const connection = usePrimaryConnection()
@@ -50,9 +51,14 @@ export default function HomeScreen() {
   return <Home connectionId={connection.id} connectionLabel={connection.label} />
 }
 
+const LIST_BOTTOM_PADDING = 40
+
 function Home({ connectionId, connectionLabel }: { connectionId: string; connectionLabel: string }) {
   const theme = useTheme()
   const router = useRouter()
+  // The roster list scrolls to the bottom edge of the phone; its content
+  // carries the inset instead of Screen reserving a strip for it.
+  const listBottomInset = useBottomInset(LIST_BOTTOM_PADDING)
   // Guarded by `HomeScreen`, which redirects to /connect without a connection.
   const connection = useDeviceStore(s => s.connections.find(c => c.id === connectionId))!
   const gateway = useGateway(connection)
@@ -298,7 +304,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
         <IconButton name="search" accessibilityLabel="Search" onPress={() => router.push('/search')} />
         <IconButton name="plus" accessibilityLabel="Add" onPress={() => router.push('/new-agent')} />
       </View>
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={styles.list}>
+      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={{ paddingBottom: listBottomInset }}>
         {home.error ? (
           <Text style={[styles.line, { color: theme.colors.destructive }]} accessibilityRole="alert">
             Could not load your assistants. Pull to retry.
@@ -365,7 +371,6 @@ const styles = StyleSheet.create({
   spacer: { flex: 1 },
   centered: { alignItems: 'center', justifyContent: 'center' },
   editTitle: { fontSize: 17, fontWeight: '600' },
-  list: { paddingBottom: 40 },
   pins: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 24, marginVertical: 20 },
   pin: { alignItems: 'center', gap: 8, width: 96 },
   pinLabel: { fontSize: 15 },
