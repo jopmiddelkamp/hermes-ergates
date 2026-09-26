@@ -27,7 +27,7 @@ export {
   NO_SECTION_DRAG,
   dropMove,
   hasHandle,
-  listPadding,
+  listMinHeight,
   nextOrder,
   nextSectionDrag,
   sectionDragItems,

@@ -11,7 +11,7 @@
  */
 
 import React, { useEffect, useMemo, useReducer } from 'react'
-import { Pressable, StyleSheet, Text, View, type AccessibilityActionEvent, type AccessibilityActionInfo } from 'react-native'
+import { AppState, Pressable, StyleSheet, Text, View, type AccessibilityActionEvent, type AccessibilityActionInfo } from 'react-native'
 import Animated, { useAnimatedReaction, useAnimatedRef, useSharedValue, type SharedValue } from 'react-native-reanimated'
 import Sortable, {
   useCommonValuesContext,
@@ -28,7 +28,7 @@ import {
   dropMove,
   editRowLabel,
   hasHandle,
-  listPadding,
+  listMinHeight,
   moveActions,
   moveStep,
   nextOrder,
@@ -107,6 +107,17 @@ export function EditList({ items, selection, gateway, connectionId, haptics, unr
   // While a section handle is touched or dragged, the list shows only the section headers.
   const [sectionDrag, dispatch] = useReducer(nextSectionDrag, NO_SECTION_DRAG)
   const data = useMemo<DragItem[]>(() => (sectionDrag.key ? sectionDragItems(items, sectionDrag.key) : items), [items, sectionDrag.key])
+  // A touch the system cancels (the app goes to the background, an alert
+  // shows) never reaches the handle's touch-up, so show the whole list again
+  // when the app is back: a list switched while the app is away draws blank.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        dispatch({ type: 'release' })
+      }
+    })
+    return () => subscription.remove()
+  }, [])
 
   // The live rule reads the slot kinds on the UI thread; keep them in step with the list it shows.
   const meta = useSharedValue<SlotMeta>({})
@@ -179,8 +190,8 @@ export function EditList({ items, selection, gateway, connectionId, haptics, unr
       ref={scrollRef}
       // A swipe that starts on a section handle and scrolls is no drag: show the whole list again.
       onScrollBeginDrag={() => dispatch({ type: 'release' })}
-      // Keeps the list as tall as the whole list while only headers show, so the scroll position holds.
-      contentContainerStyle={{ paddingBottom: listPadding(items, data) }}
+      // Keeps the list as tall as the whole list while only headers show and while it comes back, so the scroll position holds.
+      contentContainerStyle={{ minHeight: listMinHeight(items) }}
     >
       <Sortable.Grid
         columns={1}
@@ -205,7 +216,7 @@ export function EditList({ items, selection, gateway, connectionId, haptics, unr
 function Grip() {
   const theme = useTheme()
   return (
-    <View style={styles.handle} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       <Icon name="menu" size={22} color={theme.colors.mutedForeground} />
     </View>
   )
@@ -252,8 +263,8 @@ function SectionLine({ name, sectionKey, actions, onAction, onEdit, onHandle }: 
           {name}
         </Text>
       </Pressable>
-      <Sortable.Handle>
-        <Sortable.Touchable onTouchesDown={() => onHandle({ type: 'press', key: sectionKey })} onTouchesUp={() => onHandle({ type: 'release' })}>
+      <Sortable.Handle style={styles.handle}>
+        <Sortable.Touchable style={styles.handleFill} onTouchesDown={() => onHandle({ type: 'press', key: sectionKey })} onTouchesUp={() => onHandle({ type: 'release' })}>
           <Grip />
         </Sortable.Touchable>
       </Sortable.Handle>
@@ -302,7 +313,7 @@ function EditRow({ bot, selected, unread, gateway, connectionId, draggable, acti
         </View>
       </Pressable>
       {draggable ? (
-        <Sortable.Handle>
+        <Sortable.Handle style={styles.handle}>
           <Grip />
         </Sortable.Handle>
       ) : (
@@ -323,5 +334,10 @@ const styles = StyleSheet.create({
   rowText: { flex: 1, gap: 2 },
   name: { fontSize: 17, fontWeight: '500' },
   role: { fontSize: 13 },
-  handle: { width: HANDLE_WIDTH, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' }
+  // The drag gesture sits on the view that `Sortable.Handle` wraps around its
+  // children, so that view gets this style: it fills the whole height of the
+  // row or header, and a touch anywhere on the ≡ column picks the item up, not
+  // only a touch on the 22 pt glyph (a touch beside it scrolled the list).
+  handle: { width: HANDLE_WIDTH, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
+  handleFill: { flex: 1, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' }
 })

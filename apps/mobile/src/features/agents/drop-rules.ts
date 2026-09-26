@@ -251,9 +251,15 @@ export function sectionDragItems(items: readonly EditItem[], sectionKey: string)
   return [{ kind: 'spacer', key: SPACER_KEY, height: Math.max(0, y - above * EDIT_ITEM_HEIGHT.section) }, ...headers]
 }
 
-/** Bottom padding that keeps the list as tall as the whole list, so a shorter headers-only list does not move the scroll position. */
-export function listPadding(items: readonly EditItem[], shown: readonly DragItem[]): number {
-  return LIST_PADDING + Math.max(0, listHeight(items) - listHeight(shown))
+/**
+ * The least height of the scroll content: the whole list plus its bottom
+ * padding. It stays the same while only the headers show and while the whole
+ * list comes back (the drag list draws its new height a few frames after the
+ * data changes), so the list never gets shorter than the scroll position needs
+ * and the scroll position does not move.
+ */
+export function listMinHeight(items: readonly EditItem[]): number {
+  return listHeight(items) + LIST_PADDING
 }
 
 /** The section header whose handle is touched or dragged; while `key` is set, the list shows only the headers. */

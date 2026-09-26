@@ -8,7 +8,7 @@ import {
   SPACER_KEY,
   dropMove,
   hasHandle,
-  listPadding,
+  listMinHeight,
   nextOrder,
   nextSectionDrag,
   orderIsLegal,
@@ -267,10 +267,10 @@ describe('the headers-only list for a section drag', () => {
     expect(sectionDragItems(items(), 'section:gone')).toEqual(items())
   })
 
-  it('pads the bottom so the list keeps its height and the scroll position does not jump', () => {
-    expect(listPadding(items(), items())).toBe(40)
-    expect(listPadding(items(), sectionDragItems(items(), 'section:prive'))).toBe(40 + 128)
-    expect(listPadding(items(), sectionDragItems(items(), 'section:work'))).toBe(40)
+  it('keeps the list at least as tall as the whole list, so switching to the headers and back does not move the scroll position', () => {
+    // Captions 2 × 36, pins 3 × 64, rows 4 × 64, headers 2 × 48, plus 40 pt at the bottom.
+    expect(listMinHeight(items())).toBe(72 + 192 + 256 + 96 + 40)
+    expect(listMinHeight([])).toBe(40)
   })
 })
 

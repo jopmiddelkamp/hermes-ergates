@@ -547,5 +547,25 @@ empty section, one section with a few agents, and enough agents to scroll:
 9. Section page: long-press a section name, on Home and in Edit mode: the
    Section page opens. Rename a section; delete another and confirm: its
    agents appear at the end of No section, pins unchanged.
+10. Handle area: hold a row's ≡ column near the row's top edge, then near its
+    bottom edge (not on the glyph), and drag: the row lifts and moves each
+    time; the list does not scroll instead. The same on a section header's ≡.
+11. Reorder inside a group: drag a No section row two places down, and a row
+    inside a section above the row before it. Each stays in its group, in
+    the new place, after tapping ✕.
+12. Several at once: select three agents from different groups, tap Move
+    to…, pick a section: all three land in that section and the list keeps
+    its other rows in order.
+13. New message: note the order, send a message to an agent in the middle of
+    No section from another device or chat, and come back to Home: the row
+    shows the new message and does not move, in Home and in Edit mode.
+14. Scroll position: scroll to the end of the list; tap a section's ≡
+    without dragging, then drag a section header one place and drop: the
+    list does not jump; the same rows stay on screen.
+15. Leaving the app: touch a section's ≡ and, still holding it, leave the
+    app (Home gesture); come back: the whole list shows and nothing moved.
+16. TalkBack: turn TalkBack on, focus a No section row and use the actions
+    menu: Move up and Move down move it one place, and the list shows it
+    there; on a section header, Move up, Move down and Edit section work.
 
 Result:
