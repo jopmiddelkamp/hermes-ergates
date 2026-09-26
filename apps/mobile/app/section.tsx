@@ -46,7 +46,7 @@ function SectionEditor({ connectionId, section, onDone }: { connectionId: string
   const [name, setName] = useState(section.name)
   // A ref, not state: a second tap landing before the pop transition unmounts
   // this screen would still read stale state and run again, renaming or
-  // deleting twice (device-store.test.ts style guard, as in move-to-section.tsx).
+  // deleting twice (as in move-to-section.tsx).
   const done = useRef(false)
 
   const runOnce = (fn: () => void) => {
@@ -80,7 +80,7 @@ function SectionEditor({ connectionId, section, onDone }: { connectionId: string
   }
 
   return (
-    <Page title="Section" onBack={onDone}>
+    <Page title="Section" onBack={() => runOnce(onDone)}>
       <View>
         <Field label="Name" value={name} onChangeText={setName} placeholder="Prive" />
         <Button label="Save" onPress={save} disabled={!canSaveSectionName(name, section.name)} />

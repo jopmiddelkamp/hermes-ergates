@@ -10,6 +10,8 @@ import {
   hideEach,
   hideFailureMessage,
   liveSelection,
+  membershipChanged,
+  membershipSnapshot,
   profilesParam,
   selectedInListOrder,
   selectionTitle,
@@ -18,6 +20,7 @@ import {
   useHome,
   useSetHidden,
   type Bot,
+  type MembershipSnapshot,
   type Selection
 } from '@/features/agents'
 import { usePrimaryConnection } from '@/features/settings'
@@ -91,6 +94,24 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
     setEditing(false)
     setPicked(NO_SELECTION)
   }
+
+  // Move to Section (bottom bar "Move to…"): the selection survives the trip.
+  // Backing out without picking anything is not an action, so it stays; once
+  // Home regains focus, it clears only if one of the selected agents actually
+  // moved (docs/10 "Home edit mode": the selection clears after an action).
+  const pendingMove = useRef<MembershipSnapshot | null>(null)
+  useFocusEffect(
+    useCallback(() => {
+      const pending = pendingMove.current
+      if (!pending) {
+        return
+      }
+      pendingMove.current = null
+      if (membershipChanged(pending, home.organization)) {
+        setPicked(NO_SELECTION)
+      }
+    }, [home.organization])
+  )
 
   // Android Back leaves Edit mode instead of leaving Home.
   useFocusEffect(
@@ -173,10 +194,12 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   }
 
   // After each bottom bar action the selection clears and Edit mode stays open.
+  // Move to… is the exception: it clears only once it actually moves someone
+  // (see the pendingMove focus effect above), so backing out keeps the pick.
   const bar = {
     move: () => {
+      pendingMove.current = membershipSnapshot(home.organization, selected)
       router.push({ pathname: '/move-to-section', params: { profiles: profilesParam(selected) } })
-      setPicked(NO_SELECTION)
     },
     pin: () => {
       if (labels.pin === 'Unpin') {
