@@ -12,7 +12,7 @@
 const TEST = '(^test/|\\.test\\.ts$)'
 
 /** Modules that must run unchanged in Node (ADR-029 rule 1, Global Constraints). */
-const PURE_CORE = '^(src/gateway/port\\.ts|src/features/chat/session-reducer\\.ts|src/features/chat/session-controller\\.ts|vendor/hermes/)'
+const PURE_CORE = '^(src/gateway/port\\.ts|src/features/chat/session-reducer\\.ts|src/features/chat/session-controller\\.ts|src/state/organization\\.ts|vendor/hermes/)'
 
 /** React, React Native and Expo packages, resolved into node_modules. */
 const REACT_NATIVE_OR_EXPO = '^node_modules/(react|react-native|expo|expo-[^/]+|@expo/[^/]+|react-native-[^/]+|@react-native[^/]*/[^/]+)/'
@@ -119,6 +119,20 @@ module.exports = {
       severity: 'error',
       from: { pathNot: `(^src/gateway/real/|^src/state/persistence\\.ts$|^src/features/files/attach\\.ts$|^src/features/voice/speech-port\\.ts$|${TEST})` },
       to: { path: '^node_modules/(@react-native-cookies/cookies|expo-secure-store|expo-crypto|@react-native-async-storage/async-storage|expo-file-system|expo-document-picker|expo-image-picker|expo-image-manipulator|expo-speech-recognition)/' }
+    },
+    {
+      name: 'adr029-4-drag-libraries-in-edit-list',
+      comment: 'react-native-sortables and react-native-reanimated back the Home edit-mode drag list; only src/ui/EditList.tsx may import them.',
+      severity: 'error',
+      from: { pathNot: `(^src/ui/EditList\\.tsx$|${TEST})` },
+      to: { path: '^node_modules/(react-native-sortables|react-native-reanimated)/' }
+    },
+    {
+      name: 'adr029-4-gesture-handler-at-the-root',
+      comment: 'react-native-gesture-handler must be set up once, at the app root; only app/_layout.tsx may import it.',
+      severity: 'error',
+      from: { pathNot: `(^app/_layout\\.tsx$|${TEST})` },
+      to: { path: '^node_modules/react-native-gesture-handler/' }
     }
   ],
   required: [
