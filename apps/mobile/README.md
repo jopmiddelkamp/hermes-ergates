@@ -59,6 +59,8 @@ test/fixtures/  sanitized recorded backend shapes
 test/fake-gateway/  FakeGateway (same GatewayPort), in-memory outbox, transcript window helper
 test/scenarios/     behavior tests: the real session controller against the FakeGateway
 vendor/hermes/  pinned upstream client and theme sources (MIT), see PIN.md
+patches/        patch-package fixes that `npm install` and `npm ci` apply (postinstall): @react-native-cookies/cookies
+                asks for mavenCentral() instead of jcenter(), which Gradle 9 removed
 ```
 
 Rules (ADR-029), enforced by `npm run depcruise`:

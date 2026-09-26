@@ -3,6 +3,7 @@ import { Stack, useRootNavigationState, useRouter } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import React, { useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, AppState, View, type AppStateStatus } from 'react-native'
+import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 
 import { GatewayRegistryProvider } from '@/gateway/registry'
@@ -150,17 +151,20 @@ export default function RootLayout() {
     )
   }
 
+  // Outermost, so every gesture in the app (the Home edit list's drag handles) has its root.
   return (
-    <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <GatewayRegistryProvider secrets={secureSecretStore}>
-          <ThemeProvider appearance={appearance} themeName={themeName} backendThemes={backendThemes}>
-            <SkinApplier />
-            <DevInitialRoute />
-            <ThemedStack />
-          </ThemeProvider>
-        </GatewayRegistryProvider>
-      </QueryClientProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <GatewayRegistryProvider secrets={secureSecretStore}>
+            <ThemeProvider appearance={appearance} themeName={themeName} backendThemes={backendThemes}>
+              <SkinApplier />
+              <DevInitialRoute />
+              <ThemedStack />
+            </ThemeProvider>
+          </GatewayRegistryProvider>
+        </QueryClientProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   )
 }
