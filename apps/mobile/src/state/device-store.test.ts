@@ -68,7 +68,7 @@ describe('organization actions', () => {
     store.getState().renameSection('c1', 'prive', 'Private')
     expect(store.getState().organization.c1.sections[0].name).toBe('Private')
 
-    store.getState().removeSection('c1', 'prive')
+    store.getState().deleteSection('c1', 'prive')
     expect(store.getState().organization.c1.sections).toEqual([])
     expect(store.getState().organization.c1.membership.linh).toBeNull()
   })

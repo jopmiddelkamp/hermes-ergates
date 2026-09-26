@@ -102,7 +102,7 @@ describe('deriveHome', () => {
     org = orgActions.pin(org, 'linh')
     org = orgActions.createSection(org, { id: 'work', name: 'Work', collapsed: false, order: 1 })
 
-    const moved = orgActions.moveToSection(org, 'linh', 'work')
+    const moved = orgActions.moveRowsToSection(org, ['linh'], 'work')
 
     expect(moved.pins).toContain('linh')
     expect(moved.membership.linh).toBe('work')

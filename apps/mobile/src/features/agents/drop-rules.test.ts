@@ -164,7 +164,7 @@ describe('nextOrder, the live rule while the finger moves', () => {
     expect(nextOrder(query(296))).toBeNull()
   })
 
-  it('moves the row to the nearest legal slot', () => {
+  it('takes the row to its nearest slot, legal or not: it never searches for a legal one', () => {
     // Slot centers after the other items: ... Kevin's slot is centered at 472.
     expect(nextOrder(query(472))).toEqual(moved(start, 'row:otto', 8))
   })
@@ -175,9 +175,12 @@ describe('nextOrder, the live rule while the finger moves', () => {
     expect(nextOrder(query(132, { order: away, activeIndex: 8 }))).toEqual(start)
   })
 
-  it('refuses a slot above the pinned concierge for a pin', () => {
+  it('refuses a slot above the pinned concierge for a pin, whether that slot is above every caption or only above the concierge', () => {
     const mia = { activeKey: 'pinned:mia', activeIndex: 3 }
+    // Slot 0 (center 32): above the Pinned caption itself.
     expect(nextOrder(query(32, mia))).toBeNull()
+    // Slot 1 (center 68): below the caption but still above the locked concierge.
+    expect(nextOrder(query(68, mia))).toBeNull()
     expect(nextOrder(query(132, mia))).toEqual(moved(start, 'pinned:mia', 2))
   })
 
@@ -205,6 +208,18 @@ describe('dropMove', () => {
     expect(drop('row:otto', 7)).toEqual({ kind: 'row', profile: 'otto', sectionId: 'prive', before: 'kevin' })
     expect(drop('row:kevin', 5)).toEqual({ kind: 'row', profile: 'kevin', sectionId: null, before: 'otto' })
     expect(drop('row:otto', 10)).toEqual({ kind: 'row', profile: 'otto', sectionId: 'work', before: null })
+  })
+
+  it('moves a row to the end of a different, non-empty section', () => {
+    // Otto dropped after Linh (Prive's last row) and before the Work header.
+    expect(drop('row:otto', 9)).toEqual({ kind: 'row', profile: 'otto', sectionId: 'prive', before: null })
+  })
+
+  it('moves a row above the first section header while No section is empty', () => {
+    const empty = items({ ...layout(), ungrouped: [] })
+    const startEmpty = keysOf(empty)
+    // Kevin dropped right after the No section caption, before the Prive header.
+    expect(dropMove(empty, moved(startEmpty, 'row:kevin', 5), 'row:kevin')).toEqual({ kind: 'row', profile: 'kevin', sectionId: null, before: null })
   })
 
   it('returns null for a drop in the same place', () => {
@@ -290,9 +305,20 @@ describe('nextSectionDrag', () => {
     expect(nextSectionDrag(dragging, { type: 'drop' })).toBe(NO_SECTION_DRAG)
   })
 
-  it('switches at the drag start when the touch arrived late, and ignores a row drag', () => {
+  it('switches at the drag start when the touch arrived late, and marks a row start as dragging without switching to headers only', () => {
     expect(nextSectionDrag(NO_SECTION_DRAG, { type: 'start', key: 'section:prive' })).toEqual({ key: 'section:prive', dragging: true })
-    expect(nextSectionDrag(NO_SECTION_DRAG, { type: 'start', key: 'row:otto' })).toBe(NO_SECTION_DRAG)
-    expect(nextSectionDrag(NO_SECTION_DRAG, { type: 'release' })).toBe(NO_SECTION_DRAG)
+    expect(nextSectionDrag(NO_SECTION_DRAG, { type: 'start', key: 'row:otto' })).toEqual({ key: null, dragging: true })
+  })
+
+  it('marks a row or pin start as a drag in progress, so a second finger on a section handle does not switch to headers only', () => {
+    const rowDragging = nextSectionDrag(NO_SECTION_DRAG, { type: 'start', key: 'row:otto' })
+    expect(rowDragging).toEqual({ key: null, dragging: true })
+    // A second finger pressing or releasing on a section handle is ignored while the row drag is in progress.
+    expect(nextSectionDrag(rowDragging, { type: 'press', key: 'section:work' })).toBe(rowDragging)
+    expect(nextSectionDrag(rowDragging, { type: 'release' })).toBe(rowDragging)
+    // Only the drop resets it, back to the whole list.
+    expect(nextSectionDrag(rowDragging, { type: 'drop' })).toBe(NO_SECTION_DRAG)
+    // A start while already marked dragging changes nothing.
+    expect(nextSectionDrag(rowDragging, { type: 'start', key: 'pinned:linh' })).toBe(rowDragging)
   })
 })

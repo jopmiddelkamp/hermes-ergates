@@ -55,6 +55,13 @@ export function slotMeta(items: readonly DragItem[]): SlotMeta {
   return meta
 }
 
+// Declaration order matters here: the worklets Babel plugin turns a 'worklet'
+// function into a factory evaluated at module load, and `nextOrder` below
+// closes over `orderIsLegal` and `sameKeys`. Moving either of them below
+// `nextOrder` compiles fine and passes the Node tests, but crashes on device
+// with a temporal-dead-zone error the first time the drag list calls it.
+// Keep `orderIsLegal` and `sameKeys` declared above `nextOrder`.
+
 /**
  * Whether an order (keys, top to bottom) keeps the drag rules: pins stay in the
  * Pinned group with a pinned concierge first, unpinned rows stay out of it,
@@ -288,7 +295,14 @@ export function nextSectionDrag(state: SectionDrag, event: SectionDragEvent): Se
     case 'press':
       return state.dragging ? state : { key: event.key, dragging: false }
     case 'start':
-      return event.key.startsWith('section:') ? { key: event.key, dragging: true } : state
+      if (event.key.startsWith('section:')) {
+        return { key: event.key, dragging: true }
+      }
+      // A row or pin drag starting counts as a drag in progress too: without this, a
+      // second finger pressing a section handle mid-drag (Sortable.Touchable's touch
+      // tracker fires onTouchesDown regardless of what else is active) would switch the
+      // list to headers only and drop the actively dragged item out of `data`.
+      return state.dragging ? state : { key: null, dragging: true }
     case 'release':
       return state.dragging || state.key === null ? state : NO_SECTION_DRAG
     case 'drop':

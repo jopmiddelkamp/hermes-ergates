@@ -34,6 +34,29 @@ export function sectionChoices(org: Organization, profiles: string[]): SectionCh
   ]
 }
 
+/** Where each profile sits, keyed by profile: `null` is "No section". */
+export type MembershipSnapshot = Record<string, string | null>
+
+/**
+ * Captures where the given profiles sit, so a later call to `membershipChanged`
+ * can tell whether Move to Section actually moved one of them. Backing out of
+ * the page without picking anything is not a move, so the Home selection this
+ * pairs with should survive that (docs/10 "Home edit mode": the selection
+ * clears only after an action).
+ */
+export function membershipSnapshot(org: Organization, profiles: string[]): MembershipSnapshot {
+  const snapshot: MembershipSnapshot = {}
+  for (const profile of profiles) {
+    snapshot[profile] = memberSection(org, profile)
+  }
+  return snapshot
+}
+
+/** Whether any profile in `before` now sits in a different section (or no section) than it did. */
+export function membershipChanged(before: MembershipSnapshot, org: Organization): boolean {
+  return Object.entries(before).some(([profile, sectionId]) => memberSection(org, profile) !== sectionId)
+}
+
 export function canCreateSection(name: string): boolean {
   return name.trim().length > 0
 }

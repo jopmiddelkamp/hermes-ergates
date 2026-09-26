@@ -174,10 +174,6 @@ export const orgActions = {
     return org.pins.some(p => removed.has(p)) ? { ...org, pins: org.pins.filter(p => !removed.has(p)) } : org
   },
 
-  moveToSection(org: Organization, profile: string, sectionId: string | null): Organization {
-    return { ...org, membership: { ...org.membership, [profile]: sectionId } }
-  },
-
   /**
    * Moves the profiles into a section (or no section, `null`) at the end of that
    * group, keeping their relative order. Profiles already there keep their place.

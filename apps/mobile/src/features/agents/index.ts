@@ -37,7 +37,17 @@ export {
   type SectionDragEvent,
   type SlotMeta
 } from './drop-rules'
-export { canCreateSection, newSection, parseProfiles, profilesParam, sectionChoices, type SectionChoice } from './move-to-section'
+export {
+  canCreateSection,
+  membershipChanged,
+  membershipSnapshot,
+  newSection,
+  parseProfiles,
+  profilesParam,
+  sectionChoices,
+  type MembershipSnapshot,
+  type SectionChoice
+} from './move-to-section'
 export { collectProposals, parseAgentProposal, proposalView, shouldForgetRun, PROPOSAL_KIND, PROPOSE_TOOL, type ProposalAction, type ProposalView } from './proposal'
 export { provisionAgent, provisionDeps, provisionOnce, type OpenBotChat, type ProvisionDeps, type ProvisionOptions, type ProvisionOutcome } from './provision'
 export { AVATAR_MAX_BYTES, botsMeta, instructionsSummary, modelSummary, type SaveOutcome, type SaveSection } from './editor'
