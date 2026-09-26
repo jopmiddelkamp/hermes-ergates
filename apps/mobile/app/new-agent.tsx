@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'expo-router'
 import React, { useState } from 'react'
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Alert, StyleSheet, Text, View } from 'react-native'
 
 import { createAgent, rosterKey, slugFromTitle, useModelOptions, validateCreate } from '@/features/agents'
 import { usePrimaryConnection } from '@/features/settings'
@@ -9,6 +9,9 @@ import { useGateway } from '@/gateway/registry'
 import { useTheme } from '@/theme/provider'
 import { Button } from '@/ui/Button'
 import { Field } from '@/ui/Field'
+import { Group } from '@/ui/Group'
+import { Icon } from '@/ui/icons'
+import { ListRow } from '@/ui/ListRow'
 import { Sheet } from '@/ui/Sheet'
 
 export default function NewAgentScreen() {
@@ -39,6 +42,7 @@ function NewAgent({ connection, onClose }: { connection: NonNullable<ReturnType<
   const effectiveName = nameTouched ? name : slugFromTitle(title)
   const errors = validateCreate({ name: effectiveName, title, provider, model })
   const providers = (options.data?.providers ?? []).filter(p => p.authenticated)
+  const check = (on: boolean) => (on ? <Icon name="check" size={22} color={theme.colors.primary} /> : <View style={styles.noCheck} />)
 
   const submit = async () => {
     setBusy(true)
@@ -60,25 +64,42 @@ function NewAgent({ connection, onClose }: { connection: NonNullable<ReturnType<
       <Field label="Description" value={description} onChangeText={setDescription} placeholder="Reads invoices and prepares reconciliation notes." multiline />
       <Field label="Instructions (optional)" value={soul} onChangeText={setSoul} placeholder="Leave empty to use the Hermes default." multiline />
       <Text style={[styles.label, { color: theme.colors.mutedForeground }]}>Provider and model (optional; empty inherits the server default)</Text>
-      <View style={styles.chips}>
-        <Pressable onPress={() => { setProvider(''); setModel('') }} accessibilityRole="button" accessibilityState={{ selected: !provider }} accessibilityLabel="Inherit provider" style={[styles.chip, { borderColor: !provider ? theme.colors.primary : theme.colors.border, backgroundColor: !provider ? theme.colors.accent : theme.colors.background }]}>
-          <Text style={{ color: theme.colors.foreground }}>Inherit</Text>
-        </Pressable>
-        {providers.map(p => (
-          <Pressable key={p.slug} onPress={() => { setProvider(p.slug); setModel(p.models[0] ?? '') }} accessibilityRole="button" accessibilityState={{ selected: provider === p.slug }} accessibilityLabel={`Provider ${p.name}`} style={[styles.chip, { borderColor: provider === p.slug ? theme.colors.primary : theme.colors.border, backgroundColor: provider === p.slug ? theme.colors.accent : theme.colors.background }]}>
-            <Text style={{ color: theme.colors.foreground }}>{p.name}</Text>
-          </Pressable>
-        ))}
-      </View>
-      {provider ? (
-        <View style={styles.chips}>
-          {(providers.find(p => p.slug === provider)?.models ?? []).map(m => (
-            <Pressable key={m} onPress={() => setModel(m)} accessibilityRole="button" accessibilityState={{ selected: model === m }} accessibilityLabel={`Model ${m}`} style={[styles.chip, { borderColor: model === m ? theme.colors.primary : theme.colors.border, backgroundColor: model === m ? theme.colors.accent : theme.colors.background }]}>
-              <Text style={{ color: theme.colors.foreground }}>{m}</Text>
-            </Pressable>
+      <View style={styles.groups}>
+        <Group caption="Provider">
+          <ListRow
+            title="Inherit"
+            subtitle="Use the server default"
+            selected={!provider}
+            right={check(!provider)}
+            accessibilityLabel="Inherit provider"
+            onPress={() => { setProvider(''); setModel('') }}
+          />
+          {providers.map(p => (
+            <ListRow
+              key={p.slug}
+              title={p.name}
+              selected={provider === p.slug}
+              right={check(provider === p.slug)}
+              accessibilityLabel={`Provider ${p.name}`}
+              onPress={() => { setProvider(p.slug); setModel(p.models[0] ?? '') }}
+            />
           ))}
-        </View>
-      ) : null}
+        </Group>
+        {provider ? (
+          <Group caption="Model">
+            {(providers.find(p => p.slug === provider)?.models ?? []).map(m => (
+              <ListRow
+                key={m}
+                title={m}
+                selected={model === m}
+                right={check(model === m)}
+                accessibilityLabel={`Model ${m}`}
+                onPress={() => setModel(m)}
+              />
+            ))}
+          </Group>
+        ) : null}
+      </View>
       {provider ? <Field label="Custom model id" value={model} onChangeText={setModel} error={errors.model} /> : null}
       <Text style={[styles.hint, { color: theme.colors.mutedForeground }]}>The new agent starts without copied credentials and with the default tool policy. Narrow its tools in Edit Bot › Capabilities before giving it work.</Text>
       <View style={styles.actions}>
@@ -90,8 +111,8 @@ function NewAgent({ connection, onClose }: { connection: NonNullable<ReturnType<
 
 const styles = StyleSheet.create({
   label: { fontSize: 13, marginTop: 12, marginBottom: 6 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  chip: { minHeight: 44, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, justifyContent: 'center' },
+  groups: { gap: 24, marginBottom: 16 },
+  noCheck: { width: 22 },
   hint: { fontSize: 13, lineHeight: 18, marginTop: 12 },
   actions: { marginTop: 16, marginBottom: 40 }
 })
