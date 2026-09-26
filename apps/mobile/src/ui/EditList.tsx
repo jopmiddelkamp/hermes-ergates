@@ -61,6 +61,13 @@ import { useBottomInset } from './use-bottom-inset'
 
 const AVATAR_SIZE = 40
 const HANDLE_WIDTH = 52
+/** The selection circle, iOS Mail style: 22 pt across, a 1.5 pt ring when not selected. */
+const CIRCLE_SIZE = 22
+const CIRCLE_RING = 1.5
+/** The unselected ring is `mutedForeground` at this strength, so it stays quieter than the row text. */
+const CIRCLE_RING_OPACITY = 0.55
+/** The circle column: the circle and the space up to the avatar. With the page padding it is over 44 pt wide and the full row high. */
+const CIRCLE_COLUMN = CIRCLE_SIZE + 12
 /**
  * A touch on a handle picks the item up at once, like the reorder control on
  * iOS: with a hold, a grab that moved straight away was cancelled and the list
@@ -341,9 +348,11 @@ function EditRow({ bot, selected, unread, gateway, connectionId, draggable, acti
         accessibilityLabel={editRowLabel(bot, selected, unread)}
         accessibilityActions={actions}
         onAccessibilityAction={onAction}
-        style={[styles.rowBody, { paddingLeft: gutter }]}
+        style={styles.rowBody}
       >
-        <Icon name={selected ? 'check-circle' : 'circle'} size={24} color={selected ? theme.colors.primary : theme.colors.mutedForeground} />
+        <View style={[styles.circleColumn, { width: gutter + CIRCLE_COLUMN, paddingLeft: gutter }]}>
+          <SelectionCircle selected={selected} />
+        </View>
         <Avatar name={bot.name} color={bot.color} imageUri={avatar.data ?? null} size={AVATAR_SIZE} />
         <View style={styles.rowText}>
           <Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.name, { color: theme.colors.foreground }]}>
@@ -367,6 +376,29 @@ function EditRow({ bot, selected, unread, gateway, connectionId, draggable, acti
   )
 }
 
+/**
+ * iOS Mail style: an empty ring when not selected; a filled `primary` circle
+ * with a `primaryForeground` check when selected. Decorative: the row's label
+ * already ends in "selected" or "not selected".
+ */
+function SelectionCircle({ selected }: { selected: boolean }) {
+  const theme = useTheme()
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[
+        styles.circle,
+        selected
+          ? { backgroundColor: theme.colors.primary }
+          : { borderWidth: CIRCLE_RING, borderColor: theme.colors.mutedForeground, opacity: CIRCLE_RING_OPACITY }
+      ]}
+    >
+      {selected ? <Icon name="check" size={15} color={theme.colors.primaryForeground} /> : null}
+    </View>
+  )
+}
+
 const styles = StyleSheet.create({
   caption: { height: EDIT_ITEM_HEIGHT.caption, justifyContent: 'flex-end', paddingBottom: 4 },
   captionText: { fontSize: 13 },
@@ -374,8 +406,10 @@ const styles = StyleSheet.create({
   sectionName: { flex: 1, alignSelf: 'stretch', justifyContent: 'center' },
   sectionText: { fontSize: 13 },
   row: { height: EDIT_ITEM_HEIGHT.row, flexDirection: 'row', alignItems: 'center' },
-  rowBody: { flex: 1, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 12 },
-  rowText: { flex: 1, gap: 2 },
+  rowBody: { flex: 1, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center' },
+  circleColumn: { alignSelf: 'stretch', justifyContent: 'center' },
+  circle: { width: CIRCLE_SIZE, height: CIRCLE_SIZE, borderRadius: CIRCLE_SIZE / 2, alignItems: 'center', justifyContent: 'center' },
+  rowText: { flex: 1, gap: 2, marginLeft: 12 },
   name: { fontSize: 17, fontWeight: '500' },
   role: { fontSize: 13 },
   // The drag gesture sits on the view that `Sortable.Handle` wraps around its
