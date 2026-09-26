@@ -126,6 +126,8 @@ function ThemedStack() {
         {/* A push deep link lands here first (app/+native-intent.tsx), then replaces itself with the chat. */}
         <Stack.Screen name="open" options={{ animation: 'none' }} />
         <Stack.Screen name="search" options={{ presentation: 'modal' }} />
+        {/* `app/settings/_layout.tsx` owns the nested stack so Gateway and Appearance push inside this one modal. */}
+        <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
         <Stack.Screen name="new-agent" options={{ presentation: 'modal' }} />
         <Stack.Screen name="hidden-bots" options={{ presentation: 'modal' }} />
         <Stack.Screen name="notifications" options={{ presentation: 'modal' }} />

@@ -1,7 +1,9 @@
 /**
- * Settings (docs/10 "Settings and agent details"): a pushed page with the
+ * Settings (docs/10 "Settings and agent details"): a modal sheet with the
  * connection's header, Gateway, "Make it yours", About and Sign out. Every
- * row has a line icon; Gateway and Appearance open their own sub-pages.
+ * row has a line icon; Gateway and Appearance open their own sub-pages,
+ * pushed inside the same modal (`app/settings/_layout.tsx`), so this root
+ * page gets a close ✕ instead of a back chevron (`Page`'s `variant="modal"`).
  */
 
 import Constants from 'expo-constants'
@@ -58,7 +60,7 @@ function SettingsBody({ connection, onBack }: { connection: NonNullable<ReturnTy
   }
 
   return (
-    <Page title="Settings" onBack={onBack}>
+    <Page title="Settings" onBack={onBack} variant="modal">
       <View style={styles.identity} accessible accessibilityLabel={`${connection.label}, ${address}`}>
         <Avatar name={connection.label} size={60} />
         <View style={styles.identityText}>

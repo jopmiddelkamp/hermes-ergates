@@ -1,7 +1,11 @@
 /**
  * A pushed page (docs/10 section 4): a back chevron on the left, the title
  * centered, an optional action on the right, and a scrolling body that moves
- * clear of the keyboard. Settings, its sub-pages and Move to Section use it.
+ * clear of the keyboard. Settings' sub-pages and Move to Section use it.
+ *
+ * `variant: 'modal'` is for a page that is the root of a modal sheet
+ * (Settings): the same header and body, but a close ✕ instead of the back
+ * chevron, matching the other sheets' close control.
  */
 
 import type { ReactNode } from 'react'
@@ -16,20 +20,21 @@ import { useBottomInset } from './use-bottom-inset'
 export interface PageProps {
   title: string
   onBack: () => void
+  variant?: 'push' | 'modal'
   right?: ReactNode
   children: ReactNode
 }
 
 const BODY_BOTTOM_PADDING = 24
 
-export function Page({ title, onBack, right, children }: PageProps) {
+export function Page({ title, onBack, variant = 'push', right, children }: PageProps) {
   const theme = useTheme()
   const bottomInset = useBottomInset(BODY_BOTTOM_PADDING)
   return (
     <Screen edges={['top']}>
       <View style={styles.header}>
         <View style={styles.side}>
-          <IconButton name="chevron-left" accessibilityLabel="Back" onPress={onBack} />
+          <IconButton name={variant === 'modal' ? 'x' : 'chevron-left'} accessibilityLabel={variant === 'modal' ? 'Close' : 'Back'} onPress={onBack} />
         </View>
         <Text numberOfLines={1} accessibilityRole="header" style={[styles.title, { color: theme.colors.foreground }]}>
           {title}
