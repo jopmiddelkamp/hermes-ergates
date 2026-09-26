@@ -386,6 +386,7 @@ VERIFY_CHECKS = {
     "V21": "a real Git remote",
     "V22": "stay tappable",
     "V23": "queued_unsent",
+    "V24": "jcenter()",
 }
 
 
