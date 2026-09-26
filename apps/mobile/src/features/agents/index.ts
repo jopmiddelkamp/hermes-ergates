@@ -22,6 +22,21 @@ export {
   type Selection
 } from './edit-mode'
 export { EDIT_SECTION_ACTION, canSaveSectionName, deleteSectionPrompt, type DeletePrompt } from './section-page'
+export {
+  EDIT_ITEM_HEIGHT,
+  NO_SECTION_DRAG,
+  dropMove,
+  hasHandle,
+  listPadding,
+  nextOrder,
+  nextSectionDrag,
+  sectionDragItems,
+  slotMeta,
+  type DragItem,
+  type SectionDrag,
+  type SectionDragEvent,
+  type SlotMeta
+} from './drop-rules'
 export { canCreateSection, newSection, parseProfiles, profilesParam, sectionChoices, type SectionChoice } from './move-to-section'
 export { collectProposals, parseAgentProposal, proposalView, shouldForgetRun, PROPOSAL_KIND, PROPOSE_TOOL, type ProposalAction, type ProposalView } from './proposal'
 export { provisionAgent, provisionDeps, provisionOnce, type OpenBotChat, type ProvisionDeps, type ProvisionOptions, type ProvisionOutcome } from './provision'
