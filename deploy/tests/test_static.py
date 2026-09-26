@@ -120,8 +120,60 @@ def test_every_service_behind_the_proxy_is_told_to_use_it(service: str) -> None:
         assert "ntfy" in environment[key].split(","), key
 
 
-def test_the_proxy_allows_only_https_tunnels_to_listed_hosts() -> None:
-    conf = config_lines("proxy/squid.conf")
+# The private, internal and special-use ranges standard mode must deny before
+# any allow (brief: "At minimum" this list; a `dst` ACL, checked on the IP
+# Squid actually connects to, so a name that resolves to one is caught too).
+STANDARD_DENIED_RANGES = [
+    "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16",
+    "172.16.0.0/12", "192.168.0.0/16", "192.0.0.0/24", "198.18.0.0/15",
+    "224.0.0.0/4", "240.0.0.0/4",
+    "::1/128", "::/128", "::ffff:0:0/96", "64:ff9b::/96", "fc00::/7", "fe80::/10", "ff00::/8",
+]
+
+
+def test_both_egress_mode_files_exist() -> None:
+    assert (DEPLOY / "proxy" / "mode-standard.conf").is_file()
+    assert (DEPLOY / "proxy" / "mode-strict.conf").is_file()
+
+
+def test_standard_mode_denies_every_private_and_special_range_before_any_allow() -> None:
+    conf = config_lines("proxy/mode-standard.conf")
+    dst_acl_lines = [line for line in conf if line.startswith("acl") and " dst " in line]
+    dst_acl_names = {line.split()[1] for line in dst_acl_lines}
+    dst_acl_text = "\n".join(dst_acl_lines)
+    for cidr in STANDARD_DENIED_RANGES:
+        assert cidr in dst_acl_text, cidr
+
+    rules = [line for line in conf if line.startswith("http_access")]
+    allow_indexes = [i for i, line in enumerate(rules) if line.startswith("http_access allow")]
+    assert allow_indexes, "standard mode has no allow rule"
+    deny_private_indexes = [
+        i for i, line in enumerate(rules)
+        if line.startswith("http_access deny") and any(name in line.split() for name in dst_acl_names)
+    ]
+    assert deny_private_indexes, "no http_access deny rule references the private-range acl"
+    assert all(i < allow_indexes[0] for i in deny_private_indexes)
+
+
+def test_standard_mode_allows_only_ports_80_and_443() -> None:
+    conf = config_lines("proxy/mode-standard.conf")
+    port_acl_lines = [line for line in conf if line.startswith("acl") and " port " in line]
+    ports: set[str] = set()
+    names = []
+    for line in port_acl_lines:
+        names.append(line.split()[1])
+        ports.update(line.split(" port ", 1)[1].split())
+    assert ports == {"80", "443"}
+    rules = [line for line in conf if line.startswith("http_access")]
+    assert any(
+        line.startswith("http_access deny !") and line.split("!", 1)[1] in names
+        for line in rules
+    ), "no rule restricts standard mode to the allowed ports"
+    assert "http_access allow all" in rules
+
+
+def test_strict_mode_has_no_allow_all_and_still_allows_only_connect_to_listed_hosts() -> None:
+    conf = config_lines("proxy/mode-strict.conf")
     rules = [line for line in conf if line.startswith("http_access")]
     assert rules == [
         "http_access deny !CONNECT",
@@ -129,17 +181,35 @@ def test_the_proxy_allows_only_https_tunnels_to_listed_hosts() -> None:
         "http_access allow allowed_hosts",
         "http_access deny all",
     ]
+    assert "http_access allow all" not in rules
     assert 'acl allowed_hosts dstdomain -n "/etc/squid/allowed-domains.txt"' in conf
     assert "acl https_port port 443" in conf
-    assert SERVICES["egress-proxy"]["volumes"] == [
-        "./proxy/squid.conf:/etc/squid/squid.conf:ro",
-        "./proxy/allowed-domains.txt:/etc/squid/allowed-domains.txt:ro",
+    assert "acl CONNECT method CONNECT" in conf
+
+
+def test_the_egress_proxy_mounts_both_static_files_and_the_chosen_mode_file() -> None:
+    volumes = SERVICES["egress-proxy"]["volumes"]
+    assert volumes[0] == "./proxy/squid.conf:/etc/squid/squid.conf:ro"
+    assert volumes[1] == "./proxy/allowed-domains.txt:/etc/squid/allowed-domains.txt:ro"
+    mode_mount = volumes[2]
+    assert mode_mount["source"] == "./proxy/mode-${EGRESS_MODE:-standard}.conf"
+    assert mode_mount["target"] == "/etc/squid/mode.conf"
+    assert mode_mount["read_only"] is True
+    assert mode_mount["bind"]["create_host_path"] is False
+
+
+def test_the_default_egress_mode_is_standard() -> None:
+    """Unset EGRESS_MODE must mean standard, both in Compose's own default and in the example env."""
+    assert "${EGRESS_MODE:-standard}" in COMPOSE_TEXT
+    assert "EGRESS_MODE" not in set(re.findall(r"\$\{([A-Z0-9_]+):\?", COMPOSE_TEXT))
+    assert env_example().get("EGRESS_MODE") == "standard"
+
+
+def test_the_proxy_config_includes_only_its_own_mode_file() -> None:
+    """The image's conf.d/debian.conf allows every local network; only the mode split may be included."""
+    assert [line for line in config_lines("proxy/squid.conf") if line.startswith("include")] == [
+        "include /etc/squid/mode.conf"
     ]
-
-
-def test_the_proxy_config_includes_none_of_the_image_defaults() -> None:
-    """The image's conf.d/debian.conf allows every local network; an include would bring it back."""
-    assert [line for line in config_lines("proxy/squid.conf") if line.startswith("include")] == []
 
 
 def test_the_proxy_keeps_the_file_descriptor_cap_the_image_sets() -> None:
@@ -155,7 +225,9 @@ def test_the_proxy_logs_to_the_file_the_image_follows() -> None:
 
 
 def test_the_allowlist_is_bare_host_names_and_reaches_the_ntfy_upstream() -> None:
-    hosts = (DEPLOY / "proxy" / "allowed-domains.txt").read_text(encoding="utf-8").split()
+    """Only the active (uncommented) lines count: strict mode ships one commented provider
+    block per row of the README's table, for the owner to uncomment as needed."""
+    hosts = config_lines("proxy/allowed-domains.txt")
     assert hosts
     assert [host for host in hosts if not HOSTNAME.match(host)] == []
     assert len(hosts) == len(set(hosts))

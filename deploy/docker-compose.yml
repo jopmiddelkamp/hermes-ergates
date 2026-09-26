@@ -170,6 +170,18 @@ services:
     volumes:
       - ./proxy/squid.conf:/etc/squid/squid.conf:ro
       - ./proxy/allowed-domains.txt:/etc/squid/allowed-domains.txt:ro
+      # EGRESS_MODE (.env) picks the file: unset or "standard" mounts
+      # mode-standard.conf, "strict" mounts mode-strict.conf. The long
+      # syntax with create_host_path: false means a mistyped mode is a
+      # missing host file Docker refuses to start from, not an empty
+      # directory it creates and silently mounts (deploy/README.md
+      # "Egress and ingress").
+      - type: bind
+        source: ./proxy/mode-${EGRESS_MODE:-standard}.conf
+        target: /etc/squid/mode.conf
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       - internal
       - edge

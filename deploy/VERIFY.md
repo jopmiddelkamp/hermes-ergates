@@ -55,6 +55,36 @@ Result:
 
 ### V3 Egress goes through the proxy and nowhere else
 
+`EGRESS_MODE` in `.env` picks which mode the stack is running; run the
+part below that matches it. `docker compose up -d egress-proxy` switches
+modes without restarting anything else, so both parts can be run in one
+session.
+
+#### Standard mode (default; unset `EGRESS_MODE` also means this one)
+
+```bash
+docker compose exec -u hermes hermes-serve curl -sS -o /dev/null -w '%{http_code}\n' https://example.com
+docker compose exec -u hermes hermes-serve curl -sS -o /dev/null -w '%{http_code}\n' http://example.com
+docker compose exec -u hermes hermes-serve curl -sS -o /dev/null -w '%{http_code}\n' https://169.254.169.254
+docker compose exec -u hermes hermes-serve curl -sS -o /dev/null -w '%{http_code}\n' "https://$(docker network inspect deploy_edge --format '{{(index .IPAM.Config 0).Gateway}}')"
+docker compose exec -u hermes hermes-serve curl -sS -o /dev/null -w '%{http_code}\n' https://<another device's Tailscale IP, 100.64.0.0/10 or its IPv6 ULA>
+docker compose exec -u hermes hermes-serve curl -sS --noproxy '*' --max-time 10 -o /dev/null https://example.com
+docker compose logs --tail 20 egress-proxy
+```
+
+Expected: `example.com` answers with a real HTTP status over both `https://`
+and `http://` (a public host, either port); `169.254.169.254` (the
+link-local range cloud metadata lives at), the `deploy_edge` gateway (the
+Docker host, reachable from `egress-proxy` on its non-internal network) and
+the other Tailscale IP (the carrier-grade NAT range Tailscale addresses
+also live in) each fail with `CONNECT tunnel failed, response 403`; the
+`--noproxy` call fails (no route out). The proxy log shows `TCP_DENIED`
+lines for every refused one.
+
+Result:
+
+#### Strict mode (`EGRESS_MODE=strict`)
+
 ```bash
 docker compose exec -u hermes hermes-serve curl -sS -o /dev/null -w '%{http_code}\n' https://ntfy.sh
 docker compose exec -u hermes hermes-serve curl -sS -o /dev/null -w '%{http_code}\n' https://example.com
@@ -64,13 +94,18 @@ docker compose exec -u hermes hermes-serve curl -sS -o /dev/null -w '%{http_code
 docker compose logs --tail 20 egress-proxy
 ```
 
-Expected: the first prints `200`; `example.com` and `1.1.1.1` fail with
+Expected: the first prints `200` (a listed host); `example.com` (unlisted)
+and `1.1.1.1` (an IP literal never matches a listed name) fail with
 `CONNECT tunnel failed, response 403`; the `--noproxy` call fails (no
 route out, or the name does not resolve); plain `http://` is refused with
 `403`. The proxy log shows `TCP_DENIED` lines for the refused ones. Repeat
 the second and fourth line from `hermes-gateway`, and from `ntfy` with its
 busybox `wget` (the image is Alpine without `curl`):
 `docker compose exec ntfy wget -q -O /dev/null https://example.com` fails.
+
+Result:
+
+#### Network isolation (either mode)
 
 The `internal` network's isolated gateway (Docker Engine 28.0 or later,
 `driver_opts: com.docker.network.bridge.gateway_mode_ipv4: isolated`, IPv6

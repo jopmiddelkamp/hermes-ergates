@@ -18,8 +18,10 @@ deploy/
   docker-compose.yml               # hermes-serve, hermes-gateway, ntfy, egress-proxy, ingress
                                    #  + read-only mount of ../integrations/ergates
                                    #    at /opt/data/plugins/ergates in both controllers
-  proxy/squid.conf                 # egress: HTTPS to listed hosts only
-  proxy/allowed-domains.txt        # the hosts, one per line
+  proxy/squid.conf                 # egress: settings shared by both modes, includes the mode file
+  proxy/mode-standard.conf         # egress mode "standard" (default): any public host, no private ranges
+  proxy/mode-strict.conf           # egress mode "strict": HTTPS to listed hosts only (today's original)
+  proxy/allowed-domains.txt        # strict-mode hosts; ntfy.sh active, one commented block per provider
   ingress/haproxy.cfg              # the two published ports, forwarded as TCP
   .env.example                     # copy to .env, fill in real values, never commit .env
   profiles/
@@ -84,8 +86,8 @@ printf '%s\n' 'scrypt$16384$8$1$...' | sed 's/\$/$$/g'
 # 5. Also set in .env: HERMES_DASHBOARD_BASIC_AUTH_USERNAME, TAILSCALE_IP,
 #    DOCKER_SOCK_GID (stat -c '%g' /var/run/docker.sock).
 #    Leave HERMES_DASHBOARD_BASIC_AUTH_PASSWORD empty.
-#    Add your model provider's hosts to proxy/allowed-domains.txt
-#    (see "Egress and ingress" below); `hermes setup` needs them.
+#    Standard egress mode (the default) needs nothing further here. To
+#    switch to strict mode instead, see "Egress and ingress" below.
 
 # 6. Then validate and start.
 docker compose -f docker-compose.yml config   # validate before starting anything
@@ -121,45 +123,82 @@ below enables it in every profile and installs the proposal templates.
 The controllers and ntfy sit only on the Compose network `internal`, which
 has no route out and, in the isolated gateway mode, no address on the host,
 so they cannot reach a service listening on the host either. Their one
-network path out is `egress-proxy` (Squid), and only as HTTPS to a host
-listed in `proxy/allowed-domains.txt`; plain HTTP, other ports, IP addresses
-and unlisted hosts are denied. Every service behind the proxy gets
-`HTTP_PROXY`/`HTTPS_PROXY` pointing at it, but that is only the address: a
-client that ignores the variables has no network path out at all (04
-section 7). This constrains network clients, not a compromised controller:
-both controllers hold the Docker socket, so code running in one can start a
-container outside `internal` and past the proxy.
+network path out is `egress-proxy` (Squid). Every service behind the proxy
+gets `HTTP_PROXY`/`HTTPS_PROXY` pointing at it, but that is only the
+address: a client that ignores the variables has no network path out at all
+(04 section 7). This constrains network clients, not a compromised
+controller: both controllers hold the Docker socket, so code running in one
+can start a container outside `internal` and past the proxy.
 
-`proxy/allowed-domains.txt` ships with `ntfy.sh`, the iOS wake-up upstream,
-and nothing else: no model provider is reachable until you add its hosts.
-Add, one per line, every host your model provider and connectors use, then
-`docker compose restart egress-proxy`. The hosts of the common built-in
-providers, the same in the Hermes image (v2026.9.11) and at the contract pin:
+The proxy has two modes, picked by `EGRESS_MODE` in `.env`
+(`proxy/squid.conf` includes `proxy/mode-${EGRESS_MODE:-standard}.conf`):
 
-| Provider | Hosts |
-|---|---|
-| Anthropic | `api.anthropic.com`; a Claude sign-in token also refreshes at `platform.claude.com` (Hermes falls back to `console.anthropic.com`, which its own source says returns 404, so that one is optional) |
-| OpenAI API | `api.openai.com` |
-| OpenAI Codex (ChatGPT sign-in) | `chatgpt.com`, `auth.openai.com` |
-| GitHub Copilot | `api.githubcopilot.com`, `api.github.com` (token exchange), `github.com` (device sign-in) |
-| xAI | `api.x.ai`; xAI sign-in also `auth.x.ai` |
-| OpenRouter | `openrouter.ai` |
-| Nous Portal | `inference-api.nousresearch.com`, `portal.nousresearch.com` |
+### Standard mode (default, no setup)
 
-For any other provider, list the host of its base URL in Hermes's provider
-registry (`hermes_cli/auth.py`). The allowlist is per host: a listed host
-allows every path on it, so `api.github.com` opens all of GitHub's API.
-Denied requests show in `docker compose logs egress-proxy` with
-`TCP_DENIED`; add a host only when you know why the stack needs it.
+HTTPS (a CONNECT tunnel to 443) and plain HTTP (port 80) to any public
+host; every other port is denied. Every private, internal or special-use
+address range is denied first -- loopback, the carrier-grade NAT range
+Tailscale addresses also live in, link-local addresses (cloud metadata
+lives at `169.254.169.254`), Docker's own default networks, multicast and
+the rest -- checked on the IP Squid actually connects to, so a hostname
+that resolves to one of them is denied exactly like a literal IP. This is
+what lets a fresh install, and Hermes's `browser` toolset (any website),
+work with no file to edit first.
+
+The honest risk: standard mode cannot tell a legitimate request to a public
+host apart from one a hostile web page talked an agent into making -- both
+look like "a public host on port 443" to the proxy. What it does block is
+that request reaching somewhere more damaging: the VPS's own services, the
+Docker host, cloud metadata, or another device on your tailnet. Every
+request the proxy handles is one line in `docker compose logs egress-proxy`,
+naming the host; an unexpected one there is the thing to look for.
+
+### Strict mode (more setup, safer)
+
+HTTPS to a host listed in `proxy/allowed-domains.txt` only -- today's
+original behavior, kept for an owner who wants an allowlist instead. Plain
+HTTP, other ports, IP addresses and unlisted hosts are all denied.
+
+1. Set `EGRESS_MODE=strict` in `.env`.
+2. In `proxy/allowed-domains.txt`, remove the `#` in front of the hosts
+   your model provider and connectors use. The file ships with `ntfy.sh`
+   active (the iOS wake-up upstream) and one commented block per common
+   built-in provider, the same hosts in the Hermes image (v2026.9.11) and
+   at the contract pin:
+
+   | Provider | Hosts |
+   |---|---|
+   | Anthropic | `api.anthropic.com`; a Claude sign-in token also refreshes at `platform.claude.com` (Hermes falls back to `console.anthropic.com`, which its own source says returns 404, so that one is optional) |
+   | OpenAI API | `api.openai.com` |
+   | OpenAI Codex (ChatGPT sign-in) | `chatgpt.com`, `auth.openai.com` |
+   | GitHub Copilot | `api.githubcopilot.com`, `api.github.com` (token exchange), `github.com` (device sign-in) |
+   | xAI | `api.x.ai`; xAI sign-in also `auth.x.ai` |
+   | OpenRouter | `openrouter.ai` |
+   | Nous Portal | `inference-api.nousresearch.com`, `portal.nousresearch.com` |
+
+   For any other provider, list the host of its base URL in Hermes's
+   provider registry (`hermes_cli/auth.py`). The allowlist is per host: a
+   listed host allows every path on it, so `api.github.com` opens all of
+   GitHub's API.
+3. Add any other host your connectors need, one per line.
+4. `docker compose up -d egress-proxy` to reload Squid with the new mode
+   and allowlist -- Squid does not watch its config files for changes, and
+   this is also the command that fails if `EGRESS_MODE` is misspelled,
+   instead of Docker silently creating an empty directory for a missing
+   mode file.
+
+In either mode, denied requests show in `docker compose logs egress-proxy`
+as `TCP_DENIED` lines; in strict mode, add a host only when you know why
+the stack needs it.
 
 Hermes installs some optional backends from PyPI the first time they are
 used (`tools/lazy_deps.py`, on unless `security.allow_lazy_installs: false`).
-Behind this proxy those installs fail with `TCP_DENIED` unless `pypi.org`
-and `files.pythonhosted.org` are listed. Listing them lets any code in the
-controllers download any package from PyPI. Leaving them out keeps that
-door shut, and `security.allow_lazy_installs: false` then turns the failed
-install into a message that names the missing feature. That trade-off is
-yours.
+Strict mode blocks those installs with `TCP_DENIED` unless `pypi.org` and
+`files.pythonhosted.org` are listed; listing them lets any code in the
+controllers download any package from PyPI, so leaving them out and
+setting `security.allow_lazy_installs: false` turns the failed install
+into a message that names the missing feature instead. Standard mode
+allows PyPI already, the same trade-off as any other public host.
 
 The only published ports belong to `ingress` (HAProxy), on `TAILSCALE_IP`:
 9119 for `hermes serve` and `NTFY_PORT` for ntfy, forwarded as plain TCP, so
