@@ -1,7 +1,8 @@
 /**
  * Settings switch row (docs/10 section 4: settings row min height 52). Sits
  * transparent so the caller can wrap a group of these in `Card` for the
- * grouped-row look.
+ * grouped-row look. `Toggle` is the themed switch on its own, for a
+ * `ListRow`'s right side.
  */
 
 import { Platform, StyleSheet, Switch, Text, View } from 'react-native'
@@ -10,6 +11,30 @@ import { useTheme } from '@/theme/provider'
 
 /** Design floor for the row; never allowed below the shared min hit area. */
 const MIN_HEIGHT = 52
+
+export interface ToggleProps {
+  value: boolean
+  onValueChange: (value: boolean) => void
+  disabled?: boolean
+  accessibilityLabel: string
+}
+
+export function Toggle({ value, onValueChange, disabled, accessibilityLabel }: ToggleProps) {
+  const theme = useTheme()
+  return (
+    <Switch
+      // iOS 26 draws the native switch about 12pt above the frame React Native
+      // lays out for it (measured on the simulator), so it sat above its label.
+      style={styles.switch}
+      value={value}
+      onValueChange={onValueChange}
+      disabled={disabled}
+      accessibilityLabel={accessibilityLabel}
+      trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+      thumbColor={theme.colors.background}
+    />
+  )
+}
 
 export interface SwitchRowProps {
   label: string
@@ -31,17 +56,7 @@ export function SwitchRow({ label, description, value, onValueChange, disabled, 
           <Text style={[styles.description, { color: theme.colors.mutedForeground }]}>{description}</Text>
         ) : null}
       </View>
-      <Switch
-        // iOS 26 draws the native switch about 12pt above the frame React Native
-        // lays out for it (measured on the simulator), so it sat above its label.
-        style={styles.switch}
-        value={value}
-        onValueChange={onValueChange}
-        disabled={disabled}
-        accessibilityLabel={accessibilityLabel ?? label}
-        trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-        thumbColor={theme.colors.background}
-      />
+      <Toggle value={value} onValueChange={onValueChange} disabled={disabled} accessibilityLabel={accessibilityLabel ?? label} />
     </View>
   )
 }

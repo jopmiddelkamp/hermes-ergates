@@ -136,7 +136,7 @@ Template and duplication actions are part of the design and remain absent until 
 
 ### Settings and agent details
 
-- Account avatar opens the grouped sheet pattern from the references: gateway/account, usage when available, connectors, appearance/language/haptics, notification preferences, about/version, sign-out.
+- The account avatar opens Settings, a pushed page with a back chevron and a centered title. From the top: a header with the connection's avatar, name and address; a group without a caption with **Gateway** (a sub-page with Sign-in, Backend and the connection id for push links); **Make it yours** with Notifications (for all agents), Appearance (its subtitle names the mode and theme, such as "System · Nous"; a sub-page with System, Light and Dark and the theme list, each with a check mark on the current choice), a Haptics switch and Hidden bots; **About** with the Ergates version, the Hermes pin and Privacy; then the **Sign out** button. Every row has a leading line icon. Usage appears here once the app can show it.
 - Show measured usage and its unit. Do not invent a subscription percentage for providers that expose only tokens or cost estimates.
 - Agent details puts **Edit Bot** first, followed by routines, tools/connectors, memory and files, with an overflow for the roster actions above. The editor contains model and instructions. Advanced holds approvals mode, terminal configuration and iteration settings; labels explain their actual scope.
 - Permission switches distinguish “Applying…” from “Off”; do not claim a live connector is disabled until the enforcement transition in [04](04-security-and-compliance.md#5-least-privilege-tool-model) completes.
