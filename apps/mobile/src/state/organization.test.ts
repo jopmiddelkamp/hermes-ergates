@@ -354,6 +354,13 @@ describe('placeRow', () => {
     const org = orderedOrg()
     expect(orgActions.placeRow(org, 'kevin', 'prive', 'kevin')).toBe(org)
   })
+
+  it('changes nothing when the row already sits directly in front of the named row, in its current section', () => {
+    // rowOrder is ['kevin', 'ghost', 'linh', ...]: kevin already sits directly in
+    // front of ghost, and is already a Prive member, so this move lands nowhere new.
+    const org = orderedOrg()
+    expect(orgActions.placeRow(org, 'kevin', 'prive', 'ghost')).toBe(org)
+  })
 })
 
 describe('moveRowsToSection', () => {
@@ -403,6 +410,11 @@ describe('pin and section order', () => {
     expect(orgActions.movePin(org, 'linh', 'linh')).toBe(org)
   })
 
+  it('changes nothing when the pin already sits directly in front of the named pin', () => {
+    const org = orgActions.pinMany(orderedOrg(), ['linh', 'kevin', 'mia'])
+    expect(orgActions.movePin(org, 'linh', 'kevin')).toBe(org)
+  })
+
   it('moveSection reorders sections and renumbers their order', () => {
     const three = orgActions.createSection(orderedOrg(), { id: 'ideas', name: 'Ideas', collapsed: true, order: 7 })
     const moved = orgActions.moveSection(three, 'ideas', 'prive')
@@ -414,6 +426,11 @@ describe('pin and section order', () => {
     expect(moved.sections.find(s => s.id === 'ideas')?.collapsed).toBe(true)
     expect(orgActions.moveSection(three, 'prive', null).sections.map(s => s.id)).toEqual(['work', 'ideas', 'prive'])
     expect(orgActions.moveSection(three, 'unknown', null)).toBe(three)
+  })
+
+  it('changes nothing when the section is already directly in front of the named section', () => {
+    const org = orderedOrg()
+    expect(orgActions.moveSection(org, 'prive', 'work')).toBe(org)
   })
 
   it('applyMove runs the move of each kind', () => {
@@ -436,6 +453,18 @@ describe('reading state for several agents', () => {
     const read = orgActions.markManyRead(unread, ['linh', 'kevin'], 400)
     expect(read.manualUnread).toEqual({})
     expect(read.lastOpenedAt).toEqual({ linh: 400, kevin: 400 })
+  })
+
+  it('changes nothing when every named profile is already in that state', () => {
+    const unread = orgActions.markManyUnread(emptyOrg(), ['linh', 'kevin'])
+    expect(orgActions.markManyUnread(unread, ['linh', 'kevin'])).toBe(unread)
+    expect(orgActions.markManyUnread(unread, [])).toBe(unread)
+
+    const read = orgActions.markManyRead(unread, ['linh', 'kevin'], 400)
+    expect(orgActions.markManyRead(read, ['linh', 'kevin'], 400)).toBe(read)
+    expect(orgActions.markManyRead(read, [], 400)).toBe(read)
+    // A later read still legitimately moves the watermark, even with no manual flag left to clear.
+    expect(orgActions.markManyRead(read, ['linh'], 500)).not.toBe(read)
   })
 })
 

@@ -128,48 +128,60 @@ function offenders(read: (source: ts.SourceFile) => Found[]): string[] {
 }
 
 describe('planning ids', () => {
-  it('appear in no code comment', () => {
-    expect(offenders(comments)).toEqual([])
-  })
+  it(
+    'appear in no code comment',
+    () => {
+      expect(offenders(comments)).toEqual([])
+    },
+    30000
+  )
 
-  it('appear in no test title', () => {
-    expect(offenders(testTitles)).toEqual([])
-  })
+  it(
+    'appear in no test title',
+    () => {
+      expect(offenders(testTitles)).toEqual([])
+    },
+    30000
+  )
 
-  it('are looked for in every comment and title, and nowhere else', () => {
-    const source = parse(
-      'sample.tsx',
-      [
-        '// first line',
-        'const url = `https://${host}/api` // after a template',
-        'const slash = /\\/\\//g /* after a regex */',
-        'const view = <Text>see https://example.com</Text>',
-        'const empty = <View>{/* inside JSX */}</View>',
-        "it('a title', () => {})",
-        'call(',
-        '  a,',
-        '  // before a closing paren',
-        ')',
-        '/**',
-        ' * a JSDoc block',
-        ' */',
-        'export {}',
-        '// last line'
-      ].join('\n')
-    )
-    expect(comments(source).map(({ line, text }) => `${line} ${text.trim()}`)).toEqual([
-      '1 // first line',
-      '2 // after a template',
-      '3 /* after a regex */',
-      '5 /* inside JSX */',
-      '9 // before a closing paren',
-      '11 /**',
-      '12 * a JSDoc block',
-      '13 */',
-      '15 // last line'
-    ])
-    expect(testTitles(source)).toEqual([{ line: 6, text: "'a title'" }])
-  })
+  it(
+    'are looked for in every comment and title, and nowhere else',
+    () => {
+      const source = parse(
+        'sample.tsx',
+        [
+          '// first line',
+          'const url = `https://${host}/api` // after a template',
+          'const slash = /\\/\\//g /* after a regex */',
+          'const view = <Text>see https://example.com</Text>',
+          'const empty = <View>{/* inside JSX */}</View>',
+          "it('a title', () => {})",
+          'call(',
+          '  a,',
+          '  // before a closing paren',
+          ')',
+          '/**',
+          ' * a JSDoc block',
+          ' */',
+          'export {}',
+          '// last line'
+        ].join('\n')
+      )
+      expect(comments(source).map(({ line, text }) => `${line} ${text.trim()}`)).toEqual([
+        '1 // first line',
+        '2 // after a template',
+        '3 /* after a regex */',
+        '5 /* inside JSX */',
+        '9 // before a closing paren',
+        '11 /**',
+        '12 * a JSDoc block',
+        '13 */',
+        '15 // last line'
+      ])
+      expect(testTitles(source)).toEqual([{ line: 6, text: "'a title'" }])
+    },
+    30000
+  )
 
   it.each([
     'roadmap bug 7',

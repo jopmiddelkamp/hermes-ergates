@@ -123,6 +123,19 @@ describe('organization actions', () => {
     expect(store.getState().organization.c1).toBeUndefined()
   })
 
+  it('leaves the state object alone when marking already-set profiles unread or read again', () => {
+    const store = newStore()
+    store.getState().markManyUnread('c1', ['kevin', 'linh'])
+    const afterUnread = store.getState()
+    store.getState().markManyUnread('c1', ['kevin', 'linh'])
+    expect(store.getState()).toBe(afterUnread)
+
+    store.getState().markManyRead('c1', ['kevin', 'linh'], 900)
+    const afterRead = store.getState()
+    store.getState().markManyRead('c1', ['kevin', 'linh'], 900)
+    expect(store.getState()).toBe(afterRead)
+  })
+
   it('hydrates an organization without a row order, or with a wrong-type one, with an empty order', async () => {
     const storage = createMemoryStorageJson<PersistedDeviceState>()
     const org = { pins: ['kevin'], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {} }

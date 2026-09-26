@@ -133,6 +133,11 @@ function placeBefore<T>(list: T[], item: T, keyOf: (value: T) => string, before:
 
 const same = (value: string) => value
 
+/** True when both lists name the same items in the same order (a move that landed back where it started). */
+function sameOrder(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index])
+}
+
 function withoutSection(org: Organization, sectionId: string): Organization {
   const membership = { ...org.membership }
   for (const profile of Object.keys(membership)) {
@@ -196,14 +201,20 @@ export const orgActions = {
     if (before === profile) {
       return org
     }
-    return { ...org, rowOrder: placeBefore(org.rowOrder, profile, same, before), membership: { ...org.membership, [profile]: sectionId } }
+    const rowOrder = placeBefore(org.rowOrder, profile, same, before)
+    const sameSection = (org.membership[profile] ?? null) === sectionId
+    if (sameSection && sameOrder(rowOrder, org.rowOrder)) {
+      return org
+    }
+    return { ...org, rowOrder, membership: sameSection ? org.membership : { ...org.membership, [profile]: sectionId } }
   },
 
   movePin(org: Organization, profile: string, before: string | null): Organization {
     if (!org.pins.includes(profile) || before === profile) {
       return org
     }
-    return { ...org, pins: placeBefore(org.pins, profile, same, before) }
+    const pins = placeBefore(org.pins, profile, same, before)
+    return sameOrder(pins, org.pins) ? org : { ...org, pins }
   },
 
   moveSection(org: Organization, sectionId: string, before: string | null): Organization {
@@ -213,7 +224,8 @@ export const orgActions = {
       return org
     }
     const sections = placeBefore(sorted, moving, s => s.id, before).map((s, order) => ({ ...s, order }))
-    return { ...org, sections }
+    const unchanged = sections.length === sorted.length && sections.every((s, i) => s.id === sorted[i].id && s.order === sorted[i].order)
+    return unchanged ? org : { ...org, sections }
   },
 
   applyMove(org: Organization, move: OrderMove): Organization {
@@ -284,11 +296,16 @@ export const orgActions = {
   },
 
   markManyUnread(org: Organization, profiles: string[]): Organization {
-    return profiles.reduce(orgActions.markUnread, org)
+    return profiles.every(p => org.manualUnread[p]) ? org : profiles.reduce(orgActions.markUnread, org)
   },
 
+  /**
+   * A read only changes the watermark; when every named profile already has no
+   * manual flag and is already read at exactly `now`, nothing would change.
+   */
   markManyRead(org: Organization, profiles: string[], now: number): Organization {
-    return profiles.reduce((next, profile) => orgActions.markRead(next, profile, now), org)
+    const alreadyRead = profiles.every(p => !org.manualUnread[p] && org.lastOpenedAt[p] === now)
+    return alreadyRead ? org : profiles.reduce((next, profile) => orgActions.markRead(next, profile, now), org)
   },
 
   /** Opening the read-only screen or revealing older entries acknowledged exactly these identities (spec 12.1). */
