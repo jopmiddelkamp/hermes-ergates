@@ -172,10 +172,11 @@ services:
       - ./proxy/allowed-domains.txt:/etc/squid/allowed-domains.txt:ro
       # EGRESS_MODE (.env) picks the file: unset or "standard" mounts
       # mode-standard.conf, "strict" mounts mode-strict.conf. The long
-      # syntax with create_host_path: false means a mistyped mode is a
-      # missing host file Docker refuses to start from, not an empty
-      # directory it creates and silently mounts (deploy/README.md
-      # "Egress and ingress").
+      # syntax with create_host_path: false is meant to make a mistyped
+      # mode a missing host file Docker refuses to start from, not an
+      # empty directory it creates and silently mounts. Docker documents
+      # the error for a missing --mount source; VERIFY.md V3 "A mistyped
+      # mode stops the proxy" confirms it for Compose once.
       - type: bind
         source: ./proxy/mode-${EGRESS_MODE:-standard}.conf
         target: /etc/squid/mode.conf

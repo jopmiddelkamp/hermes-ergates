@@ -105,6 +105,28 @@ busybox `wget` (the image is Alpine without `curl`):
 
 Result:
 
+#### A mistyped mode stops the proxy
+
+The Compose mount sets `create_host_path: false`, so a mode file that does
+not exist should stop the proxy instead of starting it with an empty
+directory in place of the rules. Docker documents that a `--mount` bind of a
+missing path errors; the Compose reference does not state what `false`
+does, so check it once:
+
+```bash
+EGRESS_MODE=stirct docker compose up -d egress-proxy
+docker compose ps egress-proxy
+docker compose up -d egress-proxy
+```
+
+Expected: the first command fails with a "bind source path does not
+exist" error naming `mode-stirct.conf`, and `ps` shows the proxy is not
+running with that mount. The last command (no override) starts it again
+in the mode `.env` sets. If the first command starts the proxy, that is a finding:
+Squid then reads a directory as its rules file.
+
+Result:
+
 #### Network isolation (either mode)
 
 The `internal` network's isolated gateway (Docker Engine 28.0 or later,
