@@ -165,9 +165,13 @@ export function editRowLabel(bot: Bot, selected: boolean, unread: boolean): stri
   return [bot.name, bot.role, unread ? 'unread' : '', selected ? 'selected' : 'not selected'].filter(Boolean).join(', ')
 }
 
-/** Hides each bot with its own call, all at once; resolves to the bots that were not hidden. */
+/**
+ * Hides each bot with its own call, all at once; resolves to the bots that were
+ * not hidden. `Promise.resolve().then(...)` keeps a call that throws
+ * synchronously from aborting `.map` before the rest even start.
+ */
 export async function hideEach(bots: Bot[], hide: (bot: Bot) => Promise<unknown>): Promise<Bot[]> {
-  const results = await Promise.allSettled(bots.map(bot => hide(bot)))
+  const results = await Promise.allSettled(bots.map(bot => Promise.resolve().then(() => hide(bot))))
   return bots.filter((_, i) => results[i].status === 'rejected')
 }
 

@@ -197,6 +197,18 @@ describe('hiding several agents', () => {
     expect(failed.map(b => b.profile)).toEqual(['linh', 'otto'])
   })
 
+  it('keeps hiding the rest when one call throws synchronously instead of rejecting', async () => {
+    const hide = vi.fn((b: Bot) => {
+      if (b.profile === 'linh') {
+        throw new Error('conflict')
+      }
+      return Promise.resolve()
+    })
+    const failed = await hideEach([bot('kevin'), bot('linh'), bot('otto')], hide)
+    expect(hide).toHaveBeenCalledTimes(3)
+    expect(failed.map(b => b.profile)).toEqual(['linh'])
+  })
+
   it('names every agent that was not hidden in one message', () => {
     expect(hideFailureMessage([bot('linh')])).toBe('Linh was not hidden. Try again.')
     expect(hideFailureMessage([bot('linh'), bot('otto')])).toBe('Linh and Otto were not hidden. Try again.')
