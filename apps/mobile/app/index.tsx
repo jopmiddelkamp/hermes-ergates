@@ -1,8 +1,25 @@
 import { useFocusEffect, useRouter, Redirect } from 'expo-router'
-import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Alert, BackHandler, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native'
 
-import { deleteAgent, profilesParam, useAvatar, useHome, useSetHidden, type Bot } from '@/features/agents'
+import {
+  NO_SELECTION,
+  buildEditItems,
+  deleteAgent,
+  editBarLabels,
+  hideEach,
+  hideFailureMessage,
+  liveSelection,
+  profilesParam,
+  selectedInListOrder,
+  selectionTitle,
+  toggleSelected,
+  useAvatar,
+  useHome,
+  useSetHidden,
+  type Bot,
+  type Selection
+} from '@/features/agents'
 import { usePrimaryConnection } from '@/features/settings'
 import { userMessage } from '@/gateway/errors'
 import { useGateway } from '@/gateway/registry'
@@ -14,6 +31,9 @@ import type { AnchorRect } from '@/ui/ActionMenu'
 import { Avatar } from '@/ui/Avatar'
 import { BotActions } from '@/ui/BotActions'
 import { BotRow } from '@/ui/BotRow'
+import { Button } from '@/ui/Button'
+import { EditBar } from '@/ui/EditBar'
+import { EditList } from '@/ui/EditList'
 import { IconButton } from '@/ui/IconButton'
 import { Screen } from '@/ui/Screen'
 import { SectionHeader } from '@/ui/SectionHeader'
@@ -38,8 +58,13 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   // typed in the chat below it. Action references are stable.
   const pin = useDeviceStore(s => s.pin)
   const unpin = useDeviceStore(s => s.unpin)
+  const pinMany = useDeviceStore(s => s.pinMany)
+  const unpinMany = useDeviceStore(s => s.unpinMany)
   const markRead = useDeviceStore(s => s.markRead)
   const markUnread = useDeviceStore(s => s.markUnread)
+  const markManyRead = useDeviceStore(s => s.markManyRead)
+  const markManyUnread = useDeviceStore(s => s.markManyUnread)
+  const applyMove = useDeviceStore(s => s.applyMove)
   const toggleCollapsed = useDeviceStore(s => s.toggleCollapsed)
   const adoptProfiles = useDeviceStore(s => s.adoptProfiles)
   const forgetProfile = useDeviceStore(s => s.forgetProfile)
@@ -49,6 +74,38 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   const setActiveConnection = useSkinStore(s => s.setActiveConnection)
   const [menu, setMenu] = useState<{ bot: Bot; anchor: AnchorRect } | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  // Edit mode (docs/10 "Home edit mode"). Every change applies at once, so
+  // leaving only clears the selection; there is nothing to cancel.
+  const [editing, setEditing] = useState(false)
+  const [picked, setPicked] = useState<Selection>(NO_SELECTION)
+  const items = useMemo(() => buildEditItems(home), [home])
+  const selection = liveSelection(picked, items)
+  const selected = selectedInListOrder(items, selection)
+  const labels = editBarLabels(selected, { isPinned: home.isPinned, isUnread: home.unread })
+
+  const startEditing = (profile?: string) => {
+    setPicked(profile ? new Set([profile]) : NO_SELECTION)
+    setEditing(true)
+  }
+  const stopEditing = () => {
+    setEditing(false)
+    setPicked(NO_SELECTION)
+  }
+
+  // Android Back leaves Edit mode instead of leaving Home.
+  useFocusEffect(
+    useCallback(() => {
+      if (!editing) {
+        return
+      }
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        setEditing(false)
+        setPicked(NO_SELECTION)
+        return true
+      })
+      return () => subscription.remove()
+    }, [editing])
+  )
 
   const refetchHome = home.refetch
   useFocusEffect(
@@ -100,6 +157,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
     toggleUnread: (bot: Bot, unread: boolean) => (unread ? markUnread(connectionId, bot.profile) : markRead(connectionId, bot.profile, Date.now())),
     togglePin: (bot: Bot, pinned: boolean) => (pinned ? pin(connectionId, bot.profile) : unpin(connectionId, bot.profile)),
     moveToSection: (bot: Bot) => router.push({ pathname: '/move-to-section', params: { profiles: profilesParam([bot.profile]) } }),
+    select: (bot: Bot) => startEditing(bot.profile),
     toggleHidden: (bot: Bot, hidden: boolean) => setHidden.mutate({ bot, hidden }, { onError: err => Alert.alert('Could not update', userMessage(err)) }),
     remove: async (bot: Bot) => {
       const result = await deleteAgent(gateway, bot.profile, bot.isDefault)
@@ -109,6 +167,38 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
         forgetLocalState(bot.profile)
       }
       await home.refetch()
+    }
+  }
+
+  // After each bottom bar action the selection clears and Edit mode stays open.
+  const bar = {
+    move: () => {
+      router.push({ pathname: '/move-to-section', params: { profiles: profilesParam(selected) } })
+      setPicked(NO_SELECTION)
+    },
+    pin: () => {
+      if (labels.pin === 'Unpin') {
+        unpinMany(connectionId, selected)
+      } else {
+        pinMany(connectionId, selected)
+      }
+      setPicked(NO_SELECTION)
+    },
+    hide: async () => {
+      const bots = selected.map(profile => home.byProfile.get(profile)).filter((bot): bot is Bot => Boolean(bot))
+      setPicked(NO_SELECTION)
+      const failed = await hideEach(bots, bot => setHidden.mutateAsync({ bot, hidden: true }))
+      if (failed.length > 0) {
+        Alert.alert('Could not hide', hideFailureMessage(failed))
+      }
+    },
+    read: () => {
+      if (labels.read === 'Mark read') {
+        markManyRead(connectionId, selected, Date.now())
+      } else {
+        markManyUnread(connectionId, selected)
+      }
+      setPicked(NO_SELECTION)
     }
   }
 
@@ -124,11 +214,52 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
 
   const empty = !home.loading && home.bots.length === 0
 
+  if (editing) {
+    return (
+      <Screen>
+        <View style={styles.topBar}>
+          {Platform.OS === 'ios' ? (
+            <>
+              <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.centered]}>
+                <Text accessibilityRole="header" style={[styles.editTitle, { color: theme.colors.foreground }]}>
+                  {selectionTitle(selection.size)}
+                </Text>
+              </View>
+              <Button label="Done" variant="ghost" compact onPress={stopEditing} />
+            </>
+          ) : (
+            <>
+              <IconButton name="x" accessibilityLabel="Leave edit mode" onPress={stopEditing} />
+              <Text accessibilityRole="header" style={[styles.editTitle, { color: theme.colors.foreground }]}>
+                {selectionTitle(selection.size)}
+              </Text>
+            </>
+          )}
+        </View>
+        <EditList
+          items={items}
+          selection={selection}
+          gateway={gateway}
+          connectionId={connectionId}
+          unread={home.unread}
+          onToggle={profile => setPicked(toggleSelected(selection, profile))}
+          onMove={move => applyMove(connectionId, move)}
+        />
+        {selection.size > 0 ? <EditBar labels={labels} onMove={bar.move} onPin={bar.pin} onHide={() => void bar.hide()} onRead={bar.read} /> : null}
+      </Screen>
+    )
+  }
+
   return (
     <Screen>
       <View style={styles.topBar}>
         <IconButton name="user" accessibilityLabel="Settings" onPress={() => router.push('/settings')} />
         <View style={styles.spacer} />
+        {Platform.OS === 'ios' ? (
+          <Button label="Edit" variant="ghost" compact onPress={() => startEditing()} />
+        ) : (
+          <IconButton name="edit-2" accessibilityLabel="Edit" onPress={() => startEditing()} />
+        )}
         <IconButton name="search" accessibilityLabel="Search" onPress={() => router.push('/search')} />
         <IconButton name="plus" accessibilityLabel="Add" onPress={() => router.push('/new-agent')} />
       </View>
@@ -196,6 +327,8 @@ function PinnedAvatar({ bot, gateway, connectionId, unread, onPress, onLongPress
 const styles = StyleSheet.create({
   topBar: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48, marginBottom: 12 },
   spacer: { flex: 1 },
+  centered: { alignItems: 'center', justifyContent: 'center' },
+  editTitle: { fontSize: 17, fontWeight: '600' },
   list: { paddingBottom: 40 },
   pins: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 24, marginVertical: 20 },
   pin: { alignItems: 'center', gap: 8, width: 96 },

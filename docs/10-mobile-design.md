@@ -94,6 +94,17 @@ Clarified by Jop on 2026-09-13 in the [Prive reference](research/screenshots/mob
 
 **Example:** Linh and Kevin belong to Prive and are pinned. Their large avatars appear at the top, while Prive's expanded list contains its unpinned members. Unpin Linh: her avatar leaves the pinned area and her conversation appears under Prive. Kevin stays pinned and remains a Prive member. Pin Linh again: her row leaves the list, her avatar returns to the top, and her Prive membership is unchanged.
 
+### Home edit mode
+
+Edit mode lets the owner act on several agents at once and put rows in their own order. Order, pins and sections stay device preferences.
+
+- **Enter:** a borderless **Edit** text button (iOS) or edit icon (Android) left of Search, or **Select** in the long-press menu, which opens Edit mode with that agent already selected. Search and Add are hidden while editing.
+- **Top bar:** iOS shows **Done** on the left and "N selected" in the middle; Android shows ✕ on the left and "N selected" as the title. Done, ✕ and the Android Back button only leave Edit mode: every change applies at once and is saved on the phone, so there is no Cancel.
+- **List:** the **Pinned** group (pinned agents as rows, in pin order, the concierge first), then the **No section** group (always shown, even when empty), then every section with its header. All sections show expanded while editing; the stored collapse state returns after Done.
+- **Rows:** each row has a selection circle. A tap toggles the selection; it does not open the chat. A screen reader announces "selected" or "not selected", and each row and section header offers **Move up** and **Move down** inside its own group. The pinned concierge never moves, and no pin moves above it.
+- **Bottom bar**, while at least one agent is selected: **Move to…** opens the Move to Section page for all selected agents; **Pin** / **Unpin** says "Unpin" when every selected agent is pinned, and Pin appends the others to the pins in list order; **Hide** hides each agent with its own gateway call, and when some calls fail one alert names the agents that were not hidden; **Mark read** / **Mark unread** says "Mark read" when at least one selected agent is unread. After an action the selection clears and Edit mode stays open.
+- A roster refresh keeps the selection for agents that are still shown and drops the rest.
+
 ### Bot actions
 
 Long-press a conversation or pinned avatar to open a compact action menu. Provide the same actions through the agent details overflow and native accessibility actions, so long-press is never the only route. Add **Edit Bot** as the first action: it is Jop's explicit requirement, even though it is not shown in the two additional menu screenshots. Keep the highlighted row visible behind the menu; use an opaque `popover` surface and neutral icons. Dismiss on outside tap or Back, and return focus to the trigger.
