@@ -63,7 +63,6 @@ function NewAgent({ connection, onClose }: { connection: NonNullable<ReturnType<
       <Field label="Role (badge, optional)" value={role} onChangeText={setRole} placeholder="Bookkeeper" />
       <Field label="Description" value={description} onChangeText={setDescription} placeholder="Reads invoices and prepares reconciliation notes." multiline />
       <Field label="Instructions (optional)" value={soul} onChangeText={setSoul} placeholder="Leave empty to use the Hermes default." multiline />
-      <Text style={[styles.label, { color: theme.colors.mutedForeground }]}>Provider and model (optional; empty inherits the server default)</Text>
       <View style={styles.groups}>
         <Group caption="Provider">
           <ListRow
@@ -110,7 +109,6 @@ function NewAgent({ connection, onClose }: { connection: NonNullable<ReturnType<
 }
 
 const styles = StyleSheet.create({
-  label: { fontSize: 13, marginTop: 12, marginBottom: 6 },
   groups: { gap: 24, marginBottom: 16 },
   noCheck: { width: 22 },
   hint: { fontSize: 13, lineHeight: 18, marginTop: 12 },
