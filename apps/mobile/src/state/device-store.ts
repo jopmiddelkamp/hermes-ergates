@@ -15,7 +15,7 @@ import { persist, type PersistStorage } from 'zustand/middleware'
 
 import type { SecretStore } from '@/gateway/secrets'
 
-import { orgActions, type Organization, type Section } from './organization'
+import { emptyOrganization, orgActions, type BotRow, type Organization, type OrderMove, type Section } from './organization'
 import { expired, recoverAfterRestart, type OutboxItem } from './outbox'
 import type { ProvisioningRun } from './provisioning'
 import { createDeviceBlobStorage, DEVICE_STORAGE_KEY, secretKey, secureSecretStore } from './persistence'
@@ -54,10 +54,6 @@ export function draftKey(connectionId: string, profile: string): string {
   return `${connectionId}:${profile}`
 }
 
-function emptyOrganization(): Organization {
-  return { pins: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {} }
-}
-
 /** The subset of DeviceState that is sealed into AsyncStorage; actions are excluded. */
 export interface PersistedDeviceState {
   connections: Connection[]
@@ -92,13 +88,21 @@ export interface DeviceState extends PersistedDeviceState {
   // orgActions, wrapped and scoped per connection id (docs/10 "Home sections and pinned members").
   pin(connectionId: string, profile: string): void
   unpin(connectionId: string, profile: string): void
+  pinMany(connectionId: string, profiles: string[]): void
+  unpinMany(connectionId: string, profiles: string[]): void
   moveToSection(connectionId: string, profile: string, sectionId: string | null): void
+  moveRowsToSection(connectionId: string, profiles: string[], sectionId: string | null): void
+  applyMove(connectionId: string, move: OrderMove): void
+  adoptProfiles(connectionId: string, rows: BotRow[]): void
+  forgetProfile(connectionId: string, profile: string, now: number): void
   createSection(connectionId: string, section: Section): void
   renameSection(connectionId: string, sectionId: string, name: string): void
   removeSection(connectionId: string, sectionId: string): void
   toggleCollapsed(connectionId: string, sectionId: string): void
   markUnread(connectionId: string, profile: string): void
   markRead(connectionId: string, profile: string, now: number): void
+  markManyUnread(connectionId: string, profiles: string[]): void
+  markManyRead(connectionId: string, profiles: string[], now: number): void
   acknowledgeExchanges(connectionId: string, profile: string, identities: string[]): void
 }
 
@@ -107,8 +111,18 @@ export interface CreateDeviceStoreOptions {
   skipHydration?: boolean
 }
 
-function withExchangeAcks(organization: Record<string, Organization>): Record<string, Organization> {
-  return Object.fromEntries(Object.entries(organization).map(([id, org]) => [id, { ...org, exchangeAcks: org.exchangeAcks ?? {} }]))
+/** Fields added after the first release: a blob without them, or with a wrong-type `rowOrder`, loads with empty ones. */
+function withOrganizationDefaults(organization: Record<string, Organization>): Record<string, Organization> {
+  return Object.fromEntries(
+    Object.entries(organization).map(([id, org]) => [
+      id,
+      {
+        ...org,
+        exchangeAcks: org.exchangeAcks ?? {},
+        rowOrder: Array.isArray(org.rowOrder) ? org.rowOrder.filter((p): p is string => typeof p === 'string') : []
+      }
+    ])
+  )
 }
 
 /** Applies the outbox restart-recovery rule (docs/05 section 5) to persisted state as it is merged in. */
@@ -119,7 +133,7 @@ function mergeDeviceState(persistedState: unknown, currentState: DeviceState): D
   return {
     ...currentState,
     connections: persisted.connections ?? currentState.connections,
-    organization: withExchangeAcks(persisted.organization ?? currentState.organization),
+    organization: withOrganizationDefaults(persisted.organization ?? currentState.organization),
     prefs: { ...currentState.prefs, ...persisted.prefs },
     drafts: persisted.drafts ?? currentState.drafts,
     outbox,
@@ -131,13 +145,14 @@ export function createDeviceStore(storage: PersistStorage<PersistedDeviceState>,
   return create<DeviceState>()(
     persist(
       set => {
+        // An action that changes nothing returns its input: then the state stays
+        // the same object, so no subscriber re-renders and no organization is created.
         const updateOrg = (connectionId: string, fn: (org: Organization) => Organization) =>
-          set(state => ({
-            organization: {
-              ...state.organization,
-              [connectionId]: fn(state.organization[connectionId] ?? emptyOrganization())
-            }
-          }))
+          set(state => {
+            const current = state.organization[connectionId] ?? emptyOrganization()
+            const next = fn(current)
+            return next === current ? state : { organization: { ...state.organization, [connectionId]: next } }
+          })
 
         return {
           connections: [],
@@ -206,13 +221,21 @@ export function createDeviceStore(storage: PersistStorage<PersistedDeviceState>,
 
           pin: (connectionId, profile) => updateOrg(connectionId, org => orgActions.pin(org, profile)),
           unpin: (connectionId, profile) => updateOrg(connectionId, org => orgActions.unpin(org, profile)),
+          pinMany: (connectionId, profiles) => updateOrg(connectionId, org => orgActions.pinMany(org, profiles)),
+          unpinMany: (connectionId, profiles) => updateOrg(connectionId, org => orgActions.unpinMany(org, profiles)),
           moveToSection: (connectionId, profile, sectionId) => updateOrg(connectionId, org => orgActions.moveToSection(org, profile, sectionId)),
+          moveRowsToSection: (connectionId, profiles, sectionId) => updateOrg(connectionId, org => orgActions.moveRowsToSection(org, profiles, sectionId)),
+          applyMove: (connectionId, move) => updateOrg(connectionId, org => orgActions.applyMove(org, move)),
+          adoptProfiles: (connectionId, rows) => updateOrg(connectionId, org => orgActions.adoptProfiles(org, rows)),
+          forgetProfile: (connectionId, profile, now) => updateOrg(connectionId, org => orgActions.forget(org, profile, now)),
           createSection: (connectionId, section) => updateOrg(connectionId, org => orgActions.createSection(org, section)),
           renameSection: (connectionId, sectionId, name) => updateOrg(connectionId, org => orgActions.renameSection(org, sectionId, name)),
           removeSection: (connectionId, sectionId) => updateOrg(connectionId, org => orgActions.removeSection(org, sectionId)),
           toggleCollapsed: (connectionId, sectionId) => updateOrg(connectionId, org => orgActions.toggleCollapsed(org, sectionId)),
           markUnread: (connectionId, profile) => updateOrg(connectionId, org => orgActions.markUnread(org, profile)),
           markRead: (connectionId, profile, now) => updateOrg(connectionId, org => orgActions.markRead(org, profile, now)),
+          markManyUnread: (connectionId, profiles) => updateOrg(connectionId, org => orgActions.markManyUnread(org, profiles)),
+          markManyRead: (connectionId, profiles, now) => updateOrg(connectionId, org => orgActions.markManyRead(org, profiles, now)),
           acknowledgeExchanges: (connectionId, profile, identities) => updateOrg(connectionId, org => orgActions.acknowledgeExchanges(org, profile, identities))
         }
       },

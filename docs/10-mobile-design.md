@@ -71,7 +71,8 @@ All dimensions below are logical points/dp, not screenshot pixels. Reference scr
 ### Home
 
 - Top row: account avatar at left; Search and Add at right. No large marketing header, counts, charts, or permanent bottom tab bar.
-- Optional pinned agents below; pins and order are device preferences. New installs pin the concierge only.
+- Optional pinned agents below; pins and order are device preferences. New installs pin the concierge only; while it is pinned it is always the first pin.
+- Rows keep the owner's order. A new message shows the unread dot and never moves the row; a new agent starts at the top of its group.
 - Recent conversations: avatar, name, compact role badge when it fits, timestamp, one-line message or event preview. An unread dot includes an accessible unread label. Avoid cards or separators around each row.
 - The Add menu contains New Agent; New Group Chat appears when Phase 2 rooms are available. Selecting an action closes the menu before opening its sheet.
 - Search focuses its input. Phase 1 searches the loaded roster by name, role, and description; Phase 2 adds conversation-content search. State the selected scope in the input label. Closing search restores home position.
@@ -83,7 +84,7 @@ Clarified by Jop on 2026-09-13 in the [Prive reference](research/screenshots/mob
 - Show the section name, such as **Prive**, as small, regular-weight grey text with a chevron immediately beside it. Use Hermes `mutedForeground` with the contrast fallback above; avoid a card, filled badge or large heading. The whole heading has a minimum 44-point hit area and an accessible section name and expanded/collapsed state.
 - Tap the heading to expand or collapse its conversation rows. Chevron down means expanded; right means collapsed. New sections start expanded; remember each section's state on this device.
 - Section membership and pin state are independent. Pinning a member shows it in the pinned area above the sections and removes its duplicate row from the section list, while retaining its section assignment. Moving a pinned bot to another section preserves its pin.
-- Unpinning returns the bot to its assigned section using the normal conversation ordering. If that section is collapsed, leave it collapsed and reveal the returned row when the user expands it. Unassigned bots return to the ordinary ungrouped list.
+- Unpinning returns the bot to its assigned section, at its place in the manual order. If that section is collapsed, leave it collapsed and reveal the returned row when the user expands it. Unassigned bots return to the ordinary ungrouped list.
 - Collapsing a section never hides its pinned members. Keep its heading even when all members are pinned, so the section remains available. Removing a section clears its members' section assignment without changing their pin state.
 
 **Example:** Linh and Kevin belong to Prive and are pinned. Their large avatars appear at the top, while Prive's expanded list contains its unpinned members. Unpin Linh: her avatar leaves the pinned area and her conversation appears under Prive. Kevin stays pinned and remains a Prive member. Pin Linh again: her row leaves the list, her avatar returns to the top, and her Prive membership is unchanged.

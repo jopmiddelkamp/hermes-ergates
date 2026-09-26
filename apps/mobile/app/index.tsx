@@ -47,6 +47,8 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   const moveToSection = useDeviceStore(s => s.moveToSection)
   const createSection = useDeviceStore(s => s.createSection)
   const toggleCollapsed = useDeviceStore(s => s.toggleCollapsed)
+  const adoptProfiles = useDeviceStore(s => s.adoptProfiles)
+  const forgetProfile = useDeviceStore(s => s.forgetProfile)
   const clearDraft = useDeviceStore(s => s.clearDraft)
   const haptics = useDeviceStore(s => s.prefs.haptics)
   const setHidden = useSetHidden(gateway, connectionId)
@@ -63,13 +65,21 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   )
 
   // New installs pin the concierge only (docs/10 "Home"): once, when no organization exists for this connection.
+  // Then the manual order records every profile it does not know yet, where it
+  // shows now, so a row never moves by itself (docs/05 section 3). One effect,
+  // so the pin always comes first: adoption creates the organization.
   const hasOrganization = useDeviceStore(s => Boolean(s.organization[connectionId]))
   const defaultBot = home.bots.find(b => b.isDefault)
+  const rows = home.rows
   useEffect(() => {
+    if (rows.length === 0) {
+      return
+    }
     if (!hasOrganization && defaultBot) {
       pin(connectionId, defaultBot.profile)
     }
-  }, [hasOrganization, defaultBot, connectionId, pin])
+    adoptProfiles(connectionId, rows)
+  }, [rows, hasOrganization, defaultBot, connectionId, pin, adoptProfiles])
 
   const openChat = (bot: Bot) => {
     markRead(connectionId, bot.profile, Date.now())
@@ -83,9 +93,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
 
   /** Device-local leftovers of a deleted profile, so recreating the name starts clean. */
   const forgetLocalState = (profile: string) => {
-    unpin(connectionId, profile)
-    moveToSection(connectionId, profile, null)
-    markRead(connectionId, profile, Date.now())
+    forgetProfile(connectionId, profile, Date.now())
     clearDraft(connectionId, profile)
   }
 

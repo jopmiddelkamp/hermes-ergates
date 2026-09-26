@@ -78,6 +78,72 @@ describe('organization actions', () => {
     store.getState().pin('c1', 'linh')
     expect(store.getState().organization.c2).toBeUndefined()
   })
+
+  it('wraps the manual order actions, scoped per connection id', () => {
+    const store = newStore()
+    const s = () => store.getState()
+    s().createSection('c1', { id: 'prive', name: 'Prive', collapsed: false, order: 0 })
+    s().adoptProfiles('c1', [
+      { profile: 'linh', hidden: false, lastActivityAt: 300 },
+      { profile: 'kevin', hidden: false, lastActivityAt: 200 },
+      { profile: 'mia', hidden: false, lastActivityAt: 100 }
+    ])
+    expect(s().organization.c1.rowOrder).toEqual(['linh', 'kevin', 'mia'])
+
+    s().moveRowsToSection('c1', ['mia', 'linh'], 'prive')
+    expect(s().organization.c1.membership).toEqual({ linh: 'prive', mia: 'prive' })
+    expect(s().organization.c1.rowOrder).toEqual(['kevin', 'linh', 'mia'])
+
+    s().applyMove('c1', { kind: 'row', profile: 'mia', sectionId: 'prive', before: 'linh' })
+    expect(s().organization.c1.rowOrder).toEqual(['kevin', 'mia', 'linh'])
+
+    s().pinMany('c1', ['kevin', 'mia'])
+    s().applyMove('c1', { kind: 'pin', profile: 'mia', before: 'kevin' })
+    expect(s().organization.c1.pins).toEqual(['mia', 'kevin'])
+    s().unpinMany('c1', ['mia'])
+    expect(s().organization.c1.pins).toEqual(['kevin'])
+
+    s().markManyUnread('c1', ['kevin', 'linh'])
+    expect(s().organization.c1.manualUnread).toEqual({ kevin: true, linh: true })
+    s().markManyRead('c1', ['kevin', 'linh'], 900)
+    expect(s().organization.c1.manualUnread).toEqual({})
+
+    s().forgetProfile('c1', 'kevin', 950)
+    expect(s().organization.c1.pins).toEqual([])
+    expect(s().organization.c1.rowOrder).toEqual(['mia', 'linh'])
+    expect(s().organization.c1.lastOpenedAt.kevin).toBe(950)
+  })
+
+  it('leaves the state object alone when an action changes nothing, and creates no organization', () => {
+    const store = newStore()
+    const before = store.getState()
+    store.getState().adoptProfiles('c1', [])
+    store.getState().unpin('c1', 'linh')
+    expect(store.getState()).toBe(before)
+    expect(store.getState().organization.c1).toBeUndefined()
+  })
+
+  it('hydrates an organization without a row order, or with a wrong-type one, with an empty order', async () => {
+    const storage = createMemoryStorageJson<PersistedDeviceState>()
+    const org = { pins: ['kevin'], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {} }
+    await storage.setItem('ergates-device-v1', {
+      state: {
+        connections: [conn1],
+        organization: { c1: org, c2: { ...org, rowOrder: 'kevin' }, c3: { ...org, rowOrder: ['mia', 7, 'kevin'] } } as never,
+        prefs: defaultPrefs,
+        drafts: {},
+        outbox: [],
+        provisioning: []
+      },
+      version: 1
+    })
+    const store = createDeviceStore(storage, new MemorySecretStore())
+    await waitForHydration(store)
+    expect(store.getState().organization.c1.rowOrder).toEqual([])
+    expect(store.getState().organization.c2.rowOrder).toEqual([])
+    expect(store.getState().organization.c3.rowOrder).toEqual(['mia', 'kevin'])
+    expect(store.getState().organization.c1.pins).toEqual(['kevin'])
+  })
 })
 
 describe('drafts', () => {
@@ -273,7 +339,7 @@ describe('the device blob at rest', () => {
   const legacyDraft: OutboxItem = { localId: 'l1', connectionId: 'c1', profile: 'linh', text: 'call Dirk back', createdAt: Date.now(), status: 'draft' }
   const legacyState: PersistedDeviceState = {
     connections: [conn1],
-    organization: { c1: { pins: ['linh'], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {} } },
+    organization: { c1: { pins: ['linh'], rowOrder: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {} } },
     prefs: { ...defaultPrefs, themeName: 'dark' },
     drafts: { 'c1:linh': 'the invoice from Dirk' },
     outbox: [legacyDraft],

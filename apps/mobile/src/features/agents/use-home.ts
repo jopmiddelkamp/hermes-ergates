@@ -6,7 +6,7 @@
 import { useMemo } from 'react'
 
 import type { GatewayPort } from '@/gateway/port'
-import { deriveHome, isUnread, type Organization, type Section } from '@/state/organization'
+import { deriveHome, emptyOrganization, isUnread, type BotRow, type Organization, type Section } from '@/state/organization'
 import { useDeviceStore } from '@/state/device-store'
 
 import { useRoster, type Bot } from './roster'
@@ -18,6 +18,8 @@ export interface HomeSection {
 
 export interface HomeModel {
   bots: Bot[]
+  /** The roster as the organization sees it; a new array only when the roster changes. */
+  rows: BotRow[]
   byProfile: Map<string, Bot>
   pinned: Bot[]
   ungrouped: Bot[]
@@ -32,21 +34,23 @@ export interface HomeModel {
   refetch(): Promise<unknown>
 }
 
-const EMPTY_ORG: Organization = { pins: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {} }
+const EMPTY_ORG: Organization = emptyOrganization()
 
 export function useHome(port: GatewayPort, connectionId: string): HomeModel {
   const roster = useRoster(port, connectionId)
   const organization = useDeviceStore(s => s.organization[connectionId]) ?? EMPTY_ORG
+  const rows = useMemo(
+    () => (roster.data ?? []).map(b => ({ profile: b.profile, hidden: b.hidden, lastActivityAt: b.lastActivityAt, isDefault: b.isDefault })),
+    [roster.data]
+  )
   return useMemo(() => {
     const bots = roster.data ?? []
     const byProfile = new Map(bots.map(b => [b.profile, b]))
-    const layout = deriveHome(
-      bots.map(b => ({ profile: b.profile, hidden: b.hidden, lastActivityAt: b.lastActivityAt })),
-      organization
-    )
+    const layout = deriveHome(rows, organization)
     const pick = (profiles: string[]) => profiles.map(p => byProfile.get(p)).filter((b): b is Bot => Boolean(b))
     return {
       bots,
+      rows,
       byProfile,
       pinned: pick(layout.pinned),
       ungrouped: pick(layout.ungrouped),
@@ -66,5 +70,5 @@ export function useHome(port: GatewayPort, connectionId: string): HomeModel {
       error: roster.error,
       refetch: roster.refetch
     }
-  }, [roster.data, roster.isLoading, roster.error, roster.refetch, organization])
+  }, [roster.data, rows, roster.isLoading, roster.error, roster.refetch, organization])
 }

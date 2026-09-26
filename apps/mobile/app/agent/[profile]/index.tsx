@@ -51,6 +51,7 @@ function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId
   const markUnread = useDeviceStore(s => s.markUnread)
   const moveToSection = useDeviceStore(s => s.moveToSection)
   const createSection = useDeviceStore(s => s.createSection)
+  const forgetProfile = useDeviceStore(s => s.forgetProfile)
   const clearDraft = useDeviceStore(s => s.clearDraft)
   const haptics = useDeviceStore(s => s.prefs.haptics)
   const setHidden = useSetHidden(gateway, connectionId)
@@ -68,9 +69,7 @@ function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId
 
   /** Device-local leftovers of a deleted profile, so recreating the name starts clean. */
   const forgetLocalState = (deleted: string) => {
-    unpin(connectionId, deleted)
-    moveToSection(connectionId, deleted, null)
-    markRead(connectionId, deleted, Date.now())
+    forgetProfile(connectionId, deleted, Date.now())
     clearDraft(connectionId, deleted)
   }
 

@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { deriveHome, isUnread, orgActions, type BotRow, type Organization } from './organization'
+import { deriveHome, emptyOrganization, isUnread, memberSection, orgActions, type BotRow, type Organization } from './organization'
 
-function emptyOrg(): Organization {
-  return { pins: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {} }
-}
+const emptyOrg = emptyOrganization
 
 /** Linh and Kevin belong to Prive (10 section: "Home sections and pinned members"). */
 function priveOrg(): Organization {
@@ -133,7 +131,7 @@ describe('deriveHome', () => {
     expect(allProfiles).not.toContain('ghost')
   })
 
-  it('orders rows by lastActivityAt descending', () => {
+  it('shows rows the manual order does not know yet by lastActivityAt descending', () => {
     const orderedRows: BotRow[] = [
       { profile: 'a', hidden: false, lastActivityAt: 100 },
       { profile: 'b', hidden: false, lastActivityAt: 300 },
@@ -247,5 +245,212 @@ describe('acknowledgeExchanges (spec 12.1)', () => {
     expect(acked.pins).toEqual(['kevin'])
     expect(acked.membership).toEqual({})
     expect(acked.lastOpenedAt).toEqual({})
+  })
+})
+
+/** Five visible agents and one hidden one; Linh and Kevin are in Prive, Mia is in Work. */
+function orderedOrg(): Organization {
+  return {
+    ...emptyOrg(),
+    sections: [
+      { id: 'prive', name: 'Prive', collapsed: false, order: 0 },
+      { id: 'work', name: 'Work', collapsed: false, order: 1 }
+    ],
+    membership: { linh: 'prive', kevin: 'prive', mia: 'work' },
+    rowOrder: ['kevin', 'ghost', 'linh', 'noor', 'mia', 'otto']
+  }
+}
+
+const orderedRows: BotRow[] = [
+  { profile: 'linh', hidden: false, lastActivityAt: 300 },
+  { profile: 'kevin', hidden: false, lastActivityAt: 200 },
+  { profile: 'mia', hidden: false, lastActivityAt: 500 },
+  { profile: 'noor', hidden: false, lastActivityAt: 100 },
+  { profile: 'otto', hidden: false, lastActivityAt: 900 },
+  { profile: 'ghost', hidden: true, lastActivityAt: 999 }
+]
+
+const rowsOf = (org: Organization, sectionId: string) => deriveHome(orderedRows, org).sections.find(s => s.section.id === sectionId)?.rows
+
+describe('the manual row order', () => {
+  it('shows every group in rowOrder, whatever the activity', () => {
+    const layout = deriveHome(orderedRows, orderedOrg())
+    expect(layout.ungrouped).toEqual(['noor', 'otto'])
+    expect(rowsOf(orderedOrg(), 'prive')).toEqual(['kevin', 'linh'])
+    expect(rowsOf(orderedOrg(), 'work')).toEqual(['mia'])
+  })
+
+  it('does not move a row when a new message arrives', () => {
+    const busier = orderedRows.map(r => (r.profile === 'noor' ? { ...r, lastActivityAt: 10_000 } : r))
+    expect(deriveHome(busier, orderedOrg()).ungrouped).toEqual(['noor', 'otto'])
+  })
+
+  it('shows profiles the order does not know yet first in their group, latest activity first', () => {
+    const rows: BotRow[] = [...orderedRows, { profile: 'ada', hidden: false, lastActivityAt: 50 }, { profile: 'bo', hidden: false, lastActivityAt: 60 }]
+    expect(deriveHome(rows, orderedOrg()).ungrouped).toEqual(['bo', 'ada', 'noor', 'otto'])
+  })
+
+  it('ignores names in rowOrder that have no row', () => {
+    const org = { ...orderedOrg(), rowOrder: ['deleted', ...orderedOrg().rowOrder, 'gone'] }
+    expect(deriveHome(orderedRows, org).ungrouped).toEqual(['noor', 'otto'])
+  })
+
+  it('keeps a hidden profile in its place, so unhiding puts it back where it was', () => {
+    const unhidden = orderedRows.map(r => (r.profile === 'ghost' ? { ...r, hidden: false } : r))
+    expect(deriveHome(orderedRows, orderedOrg()).ungrouped).not.toContain('ghost')
+    expect(deriveHome(unhidden, orderedOrg()).ungrouped).toEqual(['ghost', 'noor', 'otto'])
+  })
+
+  it('shows a pinned concierge as the first pin, and an unpinned one as an ordinary row', () => {
+    const rows = orderedRows.map(r => (r.profile === 'otto' ? { ...r, isDefault: true } : r))
+    // Noor is pinned first, the concierge second.
+    const pinned = orgActions.pinMany(orderedOrg(), ['noor', 'otto'])
+    expect(deriveHome(rows, pinned).pinned).toEqual(['otto', 'noor'])
+    expect(deriveHome(rows, orgActions.unpin(pinned, 'otto')).pinned).toEqual(['noor'])
+    expect(deriveHome(rows, orgActions.unpin(pinned, 'otto')).ungrouped).toEqual(['otto'])
+  })
+})
+
+describe('adoptProfiles', () => {
+  it('records new profiles at the front, latest activity first, and changes nothing when none is new', () => {
+    const org = orderedOrg()
+    const rows: BotRow[] = [...orderedRows, { profile: 'ada', hidden: false, lastActivityAt: 50 }, { profile: 'bo', hidden: true, lastActivityAt: 60 }]
+    const adopted = orgActions.adoptProfiles(org, rows)
+    expect(adopted.rowOrder).toEqual(['bo', 'ada', ...org.rowOrder])
+    expect(orgActions.adoptProfiles(adopted, rows)).toBe(adopted)
+  })
+
+  it('keeps the screen as it was on the first load after the update, then keeps it still', () => {
+    const before: Organization = { ...emptyOrg(), sections: orderedOrg().sections, membership: orderedOrg().membership, pins: ['linh'] }
+    const adopted = orgActions.adoptProfiles(before, orderedRows)
+    expect(deriveHome(orderedRows, adopted)).toEqual(deriveHome(orderedRows, before))
+    expect(adopted.rowOrder).toEqual(['ghost', 'otto', 'mia', 'linh', 'kevin', 'noor'])
+
+    const busier = orderedRows.map(r => (r.profile === 'noor' ? { ...r, lastActivityAt: 10_000 } : r))
+    expect(deriveHome(busier, adopted).ungrouped).toEqual(['otto', 'noor'])
+  })
+})
+
+describe('placeRow', () => {
+  it('reorders a row inside its group', () => {
+    const org = orgActions.placeRow(orderedOrg(), 'linh', 'prive', 'kevin')
+    expect(rowsOf(org, 'prive')).toEqual(['linh', 'kevin'])
+    expect(org.membership.linh).toBe('prive')
+  })
+
+  it('moves a row into another group in front of the named row, in one step', () => {
+    const org = orgActions.placeRow(orderedOrg(), 'otto', 'prive', 'linh')
+    expect(rowsOf(org, 'prive')).toEqual(['kevin', 'otto', 'linh'])
+    expect(deriveHome(orderedRows, org).ungrouped).toEqual(['noor'])
+  })
+
+  it('puts the row at the end of its group when before is null or names no row in the order', () => {
+    expect(rowsOf(orgActions.placeRow(orderedOrg(), 'kevin', 'prive', null), 'prive')).toEqual(['linh', 'kevin'])
+    expect(rowsOf(orgActions.placeRow(orderedOrg(), 'noor', 'work', 'nobody'), 'work')).toEqual(['mia', 'noor'])
+    expect(deriveHome(orderedRows, orgActions.placeRow(orderedOrg(), 'mia', null, null)).ungrouped).toEqual(['noor', 'otto', 'mia'])
+  })
+
+  it('changes nothing when a row is placed in front of itself', () => {
+    const org = orderedOrg()
+    expect(orgActions.placeRow(org, 'kevin', 'prive', 'kevin')).toBe(org)
+  })
+})
+
+describe('moveRowsToSection', () => {
+  it('moves several rows to the end of the section, keeping their relative order', () => {
+    const org = orgActions.moveRowsToSection(orderedOrg(), ['otto', 'kevin', 'noor'], 'work')
+    expect(rowsOf(org, 'work')).toEqual(['mia', 'kevin', 'noor', 'otto'])
+    expect(rowsOf(org, 'prive')).toEqual(['linh'])
+    expect(deriveHome(orderedRows, org).ungrouped).toEqual([])
+  })
+
+  it('leaves rows that are already in the section where they are, and moves rows back to no section', () => {
+    const org = orderedOrg()
+    expect(orgActions.moveRowsToSection(org, ['kevin', 'linh'], 'prive')).toBe(org)
+    const back = orgActions.moveRowsToSection(org, ['kevin', 'noor'], null)
+    expect(deriveHome(orderedRows, back).ungrouped).toEqual(['noor', 'otto', 'kevin'])
+    expect(back.membership.kevin).toBeNull()
+  })
+
+  it('treats membership of a section that no longer exists as no section', () => {
+    const org: Organization = { ...orderedOrg(), membership: { ...orderedOrg().membership, noor: 'deleted' } }
+    expect(memberSection(org, 'noor')).toBeNull()
+    expect(orgActions.moveRowsToSection(org, ['noor'], null)).toBe(org)
+  })
+
+  it('keeps pins when rows move between sections', () => {
+    const org = orgActions.moveRowsToSection(orgActions.pin(orderedOrg(), 'linh'), ['linh'], 'work')
+    expect(org.pins).toEqual(['linh'])
+    expect(org.membership.linh).toBe('work')
+  })
+})
+
+describe('pin and section order', () => {
+  it('pinMany appends the unpinned ones in the given order; unpinMany removes them', () => {
+    const one = orgActions.pin(orderedOrg(), 'mia')
+    const more = orgActions.pinMany(one, ['noor', 'mia', 'kevin', 'noor'])
+    expect(more.pins).toEqual(['mia', 'noor', 'kevin'])
+    expect(orgActions.pinMany(more, ['kevin'])).toBe(more)
+    expect(orgActions.unpinMany(more, ['mia', 'kevin']).pins).toEqual(['noor'])
+    expect(orgActions.unpinMany(more, ['otto'])).toBe(more)
+  })
+
+  it('movePin reorders pins and ignores a profile that is not pinned', () => {
+    const org = orgActions.pinMany(orderedOrg(), ['linh', 'kevin', 'mia'])
+    expect(orgActions.movePin(org, 'mia', 'linh').pins).toEqual(['mia', 'linh', 'kevin'])
+    expect(orgActions.movePin(org, 'linh', null).pins).toEqual(['kevin', 'mia', 'linh'])
+    expect(orgActions.movePin(org, 'noor', 'linh')).toBe(org)
+    expect(orgActions.movePin(org, 'linh', 'linh')).toBe(org)
+  })
+
+  it('moveSection reorders sections and renumbers their order', () => {
+    const three = orgActions.createSection(orderedOrg(), { id: 'ideas', name: 'Ideas', collapsed: true, order: 7 })
+    const moved = orgActions.moveSection(three, 'ideas', 'prive')
+    expect(deriveHome(orderedRows, moved).sections.map(s => [s.section.id, s.section.order])).toEqual([
+      ['ideas', 0],
+      ['prive', 1],
+      ['work', 2]
+    ])
+    expect(moved.sections.find(s => s.id === 'ideas')?.collapsed).toBe(true)
+    expect(orgActions.moveSection(three, 'prive', null).sections.map(s => s.id)).toEqual(['work', 'ideas', 'prive'])
+    expect(orgActions.moveSection(three, 'unknown', null)).toBe(three)
+  })
+
+  it('applyMove runs the move of each kind', () => {
+    const org = orgActions.pinMany(orderedOrg(), ['linh', 'kevin'])
+    expect(orgActions.applyMove(org, { kind: 'row', profile: 'otto', sectionId: 'work', before: 'mia' }).rowOrder).toEqual(
+      orgActions.placeRow(org, 'otto', 'work', 'mia').rowOrder
+    )
+    expect(orgActions.applyMove(org, { kind: 'pin', profile: 'kevin', before: 'linh' }).pins).toEqual(['kevin', 'linh'])
+    expect(orgActions.applyMove(org, { kind: 'section', sectionId: 'work', before: 'prive' }).sections.map(s => [s.id, s.order])).toEqual([
+      ['work', 0],
+      ['prive', 1]
+    ])
+  })
+})
+
+describe('reading state for several agents', () => {
+  it('markManyUnread flags each; markManyRead clears each and sets the watermark', () => {
+    const unread = orgActions.markManyUnread(emptyOrg(), ['linh', 'kevin'])
+    expect(unread.manualUnread).toEqual({ linh: true, kevin: true })
+    const read = orgActions.markManyRead(unread, ['linh', 'kevin'], 400)
+    expect(read.manualUnread).toEqual({})
+    expect(read.lastOpenedAt).toEqual({ linh: 400, kevin: 400 })
+  })
+})
+
+describe('forget', () => {
+  it('removes a deleted profile from pins, sections and the order, so a new one with that name starts at the top', () => {
+    let org = orgActions.pin(orderedOrg(), 'linh')
+    org = orgActions.markUnread(org, 'linh')
+    const forgotten = orgActions.forget(org, 'linh', 700)
+    expect(forgotten.pins).toEqual([])
+    expect(forgotten.rowOrder).not.toContain('linh')
+    expect('linh' in forgotten.membership).toBe(false)
+    expect(forgotten.manualUnread).toEqual({})
+    expect(forgotten.lastOpenedAt.linh).toBe(700)
+
+    const recreated: BotRow[] = [...orderedRows.filter(r => r.profile !== 'linh'), { profile: 'linh', hidden: false, lastActivityAt: 1 }]
+    expect(deriveHome(recreated, forgotten).ungrouped).toEqual(['linh', 'noor', 'otto'])
   })
 })
