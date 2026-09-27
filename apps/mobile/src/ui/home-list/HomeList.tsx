@@ -191,7 +191,7 @@ export function HomeList(props: HomeListProps) {
             expanded={!item.section.collapsed}
             editing={editing}
             progress={progress}
-            actions={moveActions(items, item.key)}
+            actions={editing ? moveActions(items, item.key) : []}
             onAction={act(item)}
             onToggle={() => onToggleCollapsed(item.section.id)}
             onEdit={() => onEditSection(item.section.id)}
@@ -210,7 +210,7 @@ export function HomeList(props: HomeListProps) {
             editing={editing}
             progress={progress}
             selected={selection.has(item.bot.profile)}
-            actions={moveActions(items, item.key)}
+            actions={editing ? moveActions(items, item.key) : []}
             onAction={act(item)}
             onPress={() => (editing ? onToggle(item.bot.profile) : onOpen(item.bot))}
             onLongPress={anchor => onMenu(item.bot, anchor)}

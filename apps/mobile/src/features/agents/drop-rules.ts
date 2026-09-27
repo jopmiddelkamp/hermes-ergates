@@ -10,7 +10,7 @@
 
 import type { OrderMove } from '@/state/organization'
 
-import type { EditItem, ListItem, PinnedItem } from './edit-mode'
+import type { ListItem, PinnedItem } from './edit-mode'
 
 /** The fixed heights (points) the rows list draws; the section drag and swipe to select measure with them. */
 export const EDIT_ITEM_HEIGHT = { row: 64, section: 48 } as const
@@ -62,11 +62,6 @@ export function orderIsLegal(order: readonly string[], meta: SlotMeta): boolean 
     }
   }
   return true
-}
-
-/** Rows, pins and section headers carry a drag handle; the pinned concierge and the spacer do not. */
-export function hasHandle(item: EditItem | DragSpacer): boolean {
-  return item.kind === 'row' || item.kind === 'section' || (item.kind === 'pinned' && !item.locked)
 }
 
 /** What the live sort strategy knows while the finger moves. */

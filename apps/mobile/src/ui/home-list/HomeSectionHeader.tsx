@@ -6,7 +6,9 @@
  * Section page. With Edit mode's progress a ≡ handle fades in on the right.
  * The name area and the handle sit side by side, so the two gestures never
  * overlap; touching the handle switches the rows list to headers only
- * before the drag starts.
+ * before the drag starts. Outside Edit mode a `hitSlop` extends the name
+ * area's touch past the ≡ column's reserved page-padding strip, so the
+ * whole header toggles collapse edge to edge.
  */
 
 import { Pressable, StyleSheet, Text, View, type AccessibilityActionEvent } from 'react-native'
@@ -51,6 +53,7 @@ export function HomeSectionHeader({ name, expanded, editing, progress, actions, 
         accessibilityLabel={`${name} section`}
         accessibilityActions={[...(editing ? actions : []), EDIT_SECTION_ACTION]}
         onAccessibilityAction={onAction}
+        hitSlop={editing ? undefined : { right: gutter }}
         style={[styles.name, { paddingLeft: gutter }]}
       >
         <Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.text, { color: theme.colors.mutedForeground }]}>

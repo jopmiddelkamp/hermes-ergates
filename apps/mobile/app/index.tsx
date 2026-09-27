@@ -5,6 +5,7 @@ import { Alert, BackHandler, StyleSheet, Text } from 'react-native'
 import {
   NO_SELECTION,
   buildEditItems,
+  collapseSelection,
   deleteAgent,
   editBarLabels,
   hideEach,
@@ -32,7 +33,7 @@ import { useTheme } from '@/theme/provider'
 import { useSkinStore } from '@/theme/skin-store'
 import type { AnchorRect } from '@/ui/ActionMenu'
 import { BotActions } from '@/ui/BotActions'
-import { EditBar } from '@/ui/home-list/EditBar'
+import { EditBar, editBarHeight } from '@/ui/home-list/EditBar'
 import { HomeList } from '@/ui/home-list/HomeList'
 import { HomeTopBar } from '@/ui/home-list/HomeTopBar'
 import { useShowProgress } from '@/ui/home-list/motion'
@@ -55,6 +56,10 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   // The roster list scrolls to the bottom edge of the phone; its content
   // carries the inset instead of Screen reserving a strip for it.
   const listBottomInset = useBottomInset(LIST_BOTTOM_PADDING)
+  // The bottom bar is a fixed overlay, not part of the flex layout, so while
+  // it is up the list reserves its height (the bar's own inset included) on
+  // top of the list's usual end margin, so the last row can scroll clear of it.
+  const barBottomInset = useBottomInset()
   // The error and empty lines sit in the edge-to-edge list, padded like its rows.
   const gutter = usePagePadding()
   // Guarded by `HomeScreen`, which redirects to /connect without a connection.
@@ -260,9 +265,12 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
         onToggle={profile => setPicked(toggleSelected(selection, profile))}
         onSelectionChange={setPicked}
         onMove={organizer.applyMove}
-        onToggleCollapsed={sectionId => toggleCollapsed(connectionId, sectionId)}
+        onToggleCollapsed={sectionId => {
+          setPicked(collapseSelection(picked, home, sectionId))
+          toggleCollapsed(connectionId, sectionId)
+        }}
         onEditSection={editSection}
-        bottomPadding={listBottomInset}
+        bottomPadding={editing && selection.size > 0 ? editBarHeight(theme, barBottomInset) + LIST_BOTTOM_PADDING : listBottomInset}
         header={
           home.error ? (
             <Text style={[styles.line, { color: theme.colors.destructive, paddingHorizontal: gutter }]} accessibilityRole="alert">

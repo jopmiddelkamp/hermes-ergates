@@ -7,7 +7,6 @@ import {
   NO_SECTION_DRAG,
   SPACER_KEY,
   dropMove,
-  hasHandle,
   listMinHeight,
   nextOrder,
   nextSectionDrag,
@@ -94,23 +93,6 @@ describe('orderIsLegal', () => {
 
   it('skips keys it does not know', () => {
     expect(legal(['row:gone', ...start])).toBe(true)
-  })
-})
-
-describe('hasHandle', () => {
-  it('gives a handle to rows, pins and section headers, not to the pinned concierge or the spacer', () => {
-    expect(buildEditItems(layout()).filter(hasHandle).map(i => i.key)).toEqual([
-      'pinned:noor',
-      'pinned:mia',
-      'row:otto',
-      'row:zed',
-      'section:prive',
-      'row:kevin',
-      'row:linh',
-      'section:work',
-      'section:archive'
-    ])
-    expect(hasHandle({ kind: 'spacer', key: SPACER_KEY, height: 10 })).toBe(false)
   })
 })
 

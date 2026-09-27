@@ -5,6 +5,7 @@ import type { Section } from '@/state/organization'
 import {
   NO_SELECTION,
   buildEditItems,
+  collapseSelection,
   editBarLabels,
   editRowLabel,
   hideEach,
@@ -114,6 +115,23 @@ describe('the selection', () => {
   it('lists the selected agents in list order, pins first', () => {
     const items = buildEditItems(layout())
     expect(selectedInListOrder(items, new Set(['linh', 'otto', 'noor']))).toEqual(['noor', 'otto', 'linh'])
+  })
+
+  it('drops the rows of a collapsing section for good, so expanding it again does not restore them', () => {
+    const selection = new Set(['kevin', 'noor'])
+    expect([...collapseSelection(selection, layout(), 'prive')]).toEqual(['noor'])
+  })
+
+  it('changes nothing when the section is already collapsed, since collapsing it further does not apply', () => {
+    const selection = new Set(['kevin', 'noor'])
+    const closed = { ...layout(), sections: [{ section: { ...prive, collapsed: true }, rows: [bot('kevin'), bot('linh')] }, { section: work, rows: [] }] }
+    expect(collapseSelection(selection, closed, 'prive')).toBe(selection)
+  })
+
+  it('changes nothing for a section with none of its rows selected, or a section that does not exist', () => {
+    const selection = new Set(['noor'])
+    expect(collapseSelection(selection, layout(), 'prive')).toBe(selection)
+    expect(collapseSelection(selection, layout(), 'gone')).toBe(selection)
   })
 })
 

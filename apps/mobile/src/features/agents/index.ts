@@ -4,6 +4,7 @@ export { deleteAgent } from './delete'
 export {
   NO_SELECTION,
   buildEditItems,
+  collapseSelection,
   editBarLabels,
   editRowLabel,
   hideEach,
@@ -31,7 +32,6 @@ export {
   EDIT_ITEM_HEIGHT,
   NO_SECTION_DRAG,
   dropMove,
-  hasHandle,
   listMinHeight,
   nextOrder,
   nextSectionDrag,

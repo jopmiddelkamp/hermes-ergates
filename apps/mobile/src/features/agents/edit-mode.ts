@@ -103,6 +103,23 @@ export function selectedInListOrder(items: EditItem[], selection: Selection): st
   return items.map(profileOf).filter((p): p is string => p !== null && selection.has(p))
 }
 
+/**
+ * The selection right before a section collapses, with its rows taken out
+ * for good: expanding the section again does not restore them. Call this
+ * with the layout as it is before the toggle; a section that is already
+ * collapsed (the toggle is about to expand it) or unknown leaves the
+ * selection unchanged.
+ */
+export function collapseSelection(selection: Selection, layout: EditLayout, sectionId: string): Selection {
+  const group = layout.sections.find(s => s.section.id === sectionId)
+  if (!group || group.section.collapsed) {
+    return selection
+  }
+  const drop = new Set(group.rows.map(bot => bot.profile))
+  const next = new Set([...selection].filter(profile => !drop.has(profile)))
+  return next.size === selection.size ? selection : next
+}
+
 export function selectionTitle(count: number): string {
   return `${count} selected`
 }

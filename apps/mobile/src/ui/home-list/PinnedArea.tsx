@@ -3,11 +3,12 @@
  * "Home edit mode"): large avatars in pin order, wrapped and centered, a
  * pinned concierge first. With Edit mode's progress each avatar gets a
  * selection badge at its top left and, except a pinned concierge, a move
- * handle at its top right. A tap toggles the selection in Edit mode; the
- * move handle drags the avatar left and right inside the pinned area, across
- * wrapped lines, and nothing drops in front of a pinned concierge (its
- * `fixed-order` handle keeps it in place). Screen readers get Move left and
- * Move right instead.
+ * handle at its top right; the unread dot moves down to the bottom right,
+ * clear of both. A tap toggles the selection in Edit mode; the move handle
+ * drags the avatar left and right inside the pinned area, across wrapped
+ * lines, and nothing drops in front of a pinned concierge (its `fixed-order`
+ * handle keeps it in place). Screen readers get Move left and Move right
+ * instead.
  */
 
 import { useRef } from 'react'
@@ -31,6 +32,9 @@ const PIN_GAP = 24
 const BADGE_SIZE = 24
 /** The move handle's touch area around its badge. */
 const MOVE_TOUCH = 40
+const DOT_SIZE = 12
+/** How far the unread dot moves down, from its normal-mode spot near the top to clear of the selection badge and the move handle. */
+const DOT_DROP = AVATAR_SIZE - DOT_SIZE - 4
 
 export interface PinnedAreaProps {
   pins: PinnedItem[]
@@ -131,6 +135,11 @@ function PinnedAvatar({ item, editing, progress, selected, unread, actions, onAc
   const avatar = useAvatar(gateway, connectionId, bot.profile, bot.hasAvatar)
   const ref = useRef<View>(null)
   const badge = useAnimatedStyle(() => ({ opacity: progress.get(), transform: [{ scale: progress.get() }] }))
+  // The badge and the move handle sit at the avatar's top corners, so the
+  // unread dot moves down to clear them both, the same way for every avatar
+  // (the concierge included, even without a move handle) so it never jumps
+  // between two rules.
+  const dotPosition = useAnimatedStyle(() => ({ transform: [{ translateY: progress.get() * DOT_DROP }] }))
   const measure = () => ref.current?.measureInWindow((x, y, width, height) => onLongPress({ x, y, width, height }))
   const face = (
     <Pressable
@@ -146,7 +155,7 @@ function PinnedAvatar({ item, editing, progress, selected, unread, actions, onAc
       <Text style={[styles.label, { color: theme.colors.mutedForeground }]} numberOfLines={1}>
         {bot.name}
       </Text>
-      {unread ? <View style={[styles.dot, { backgroundColor: theme.colors.primary }]} accessibilityLabel="Unread" /> : null}
+      {unread ? <Animated.View style={[styles.dot, { backgroundColor: theme.colors.primary }, dotPosition]} accessibilityLabel="Unread" /> : null}
     </Pressable>
   )
   return (
@@ -172,7 +181,7 @@ function PinnedAvatar({ item, editing, progress, selected, unread, actions, onAc
 const styles = StyleSheet.create({
   pin: { alignItems: 'center', gap: 8, width: PIN_WIDTH },
   label: { fontSize: 15 },
-  dot: { position: 'absolute', top: 2, right: 10, width: 12, height: 12, borderRadius: 6 },
+  dot: { position: 'absolute', top: 2, right: 10, width: DOT_SIZE, height: DOT_SIZE, borderRadius: DOT_SIZE / 2 },
   // The badge and the move handle sit on the avatar's top corners (the avatar is centered in the 96 pt column).
   badge: { position: 'absolute', top: -2, left: 2 },
   move: { position: 'absolute', top: -2 - (MOVE_TOUCH - BADGE_SIZE) / 2, right: 2 - (MOVE_TOUCH - BADGE_SIZE) / 2 },
