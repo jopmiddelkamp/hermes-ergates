@@ -29,19 +29,18 @@ import { SelectionCircle } from './SelectionCircle'
 const AVATAR_SIZE = 84
 const PIN_WIDTH = 96
 const PIN_GAP = 24
-const BADGE_SIZE = 48
-/** The move handle's touch area around its badge. */
-const MOVE_TOUCH = 56
-/** The ≡ glyph inside the move badge, scaled up from the rows' own 22 pt by the same factor as the badge (24 to 48 pt), so it keeps the same proportion inside its circle. */
-const MOVE_GRIP_SIZE = 28
+const BADGE_SIZE = 36
+/** The move handle's touch area around its badge (44 pt, the minimum touch target). */
+const MOVE_TOUCH = 44
+/** The ≡ glyph inside the move badge, sized to keep the same proportion inside its circle (7/12 of the badge). */
+const MOVE_GRIP_SIZE = 21
 const DOT_SIZE = 12
 /** How far the unread dot moves down, from its normal-mode spot near the top to clear of the selection badge and the move handle. */
 const DOT_DROP = AVATAR_SIZE - DOT_SIZE - 4
 
 /**
- * Two 48 pt badges at the avatar's square corners would overlap the next
- * pin's badge, so each one centers on the avatar's round edge at 45°
- * instead. The avatar is a circle of radius `AVATAR_RADIUS`, centered at
+ * Badges at the avatar's square corners would crowd the next pin's badge,
+ * so each one centers on the avatar's round edge at 45° instead. The avatar is a circle of radius `AVATAR_RADIUS`, centered at
  * (`AVATAR_CENTER_X`, `AVATAR_CENTER_Y`) in the column (`styles.pin` centers
  * it there, top-aligned, so its top edge is the column's own origin). A
  * point on the circle at 45° is the center offset by `radius · cos45°` on
