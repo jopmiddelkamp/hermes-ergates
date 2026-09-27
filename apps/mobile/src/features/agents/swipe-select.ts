@@ -8,8 +8,13 @@
  * No React, React Native or Reanimated, so Node tests cover every rule. The
  * functions marked 'worklet' also run on the UI thread inside the rows list's
  * swipe gesture and its auto-scroll frame callback; they call no other function.
- * The swipe runs over the rows list only (`ListItem`): the pinned avatars
- * above it are selected by a tap.
+ * The same swipe also runs over the pinned avatars, starting on a pin's
+ * selection badge instead of a row's circle: `swipeMode` and `swipeSelection`
+ * take `EditItem[]`, so the pinned area's gesture (`src/ui/home-list/
+ * use-swipe-select.ts`) calls them with the pins in pin order instead of the
+ * rows list, and `pinAt` below finds the pin under the finger from the pins'
+ * measured layout, in place of `lineAt`. A swipe that starts on a pin stays
+ * within the pins; it never continues into the rows list, or the other way.
  */
 
 import { EDIT_ITEM_HEIGHT } from './drop-rules'
@@ -67,6 +72,32 @@ export function lineAt(lines: readonly SwipeLine[], y: number): string | null {
     }
   }
   return lines.length > 0 ? lines[lines.length - 1]!.key : null
+}
+
+/** A pinned avatar's whole 96 pt column (avatar and name), relative to the pinned area's own top left. */
+export interface PinCell {
+  key: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/**
+ * The key of the pin whose cell contains (x, y), or null between cells, on a
+ * gap or past the pinned area's own edge. Unlike `lineAt`, this does not fall
+ * back to the nearest cell: the pinned area's gesture keeps the pin it
+ * already has when this returns null, the same way `lineAt`'s caller keeps
+ * the rows list's last line once the finger is past its own edges.
+ */
+export function pinAt(cells: readonly PinCell[], x: number, y: number): string | null {
+  'worklet'
+  for (const cell of cells) {
+    if (x >= cell.x && x < cell.x + cell.width && y >= cell.y && y < cell.y + cell.height) {
+      return cell.key
+    }
+  }
+  return null
 }
 
 function profileOf(item: EditItem | undefined): string | null {

@@ -280,6 +280,7 @@ export function HomeList(props: HomeListProps) {
         onPress={bot => (editing ? onToggle(bot.profile) : onOpen(bot))}
         onLongPress={onMenu}
         onMove={onMove}
+        onSelectionChange={onSelectionChange}
         gutter={gutter}
       />
       {/* Keeps the rows list as tall as the whole list while only headers show and while it comes back, so the scroll position holds. */}

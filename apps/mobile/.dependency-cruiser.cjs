@@ -129,9 +129,9 @@ module.exports = {
     },
     {
       name: 'adr029-4-gesture-handler-at-the-root',
-      comment: 'react-native-gesture-handler must be set up once, at the app root; only app/_layout.tsx may import it, and the Home list for its swipe-to-select gesture, which must win over the scroll view: src/ui/home-list/use-swipe-select.ts builds it and src/ui/home-list/HomeRow.tsx attaches it to the circle column.',
+      comment: 'react-native-gesture-handler must be set up once, at the app root; only app/_layout.tsx may import it, and the Home list for its swipe-to-select gesture, which must win over the scroll view: src/ui/home-list/use-swipe-select.ts builds it, src/ui/home-list/HomeRow.tsx attaches it to the row circle, and src/ui/home-list/PinnedArea.tsx attaches the same gesture (built by the same file) to each pinned avatar\'s selection badge.',
       severity: 'error',
-      from: { pathNot: `(^app/_layout\\.tsx$|^src/ui/home-list/use-swipe-select\\.ts$|^src/ui/home-list/HomeRow\\.tsx$|${TEST})` },
+      from: { pathNot: `(^app/_layout\\.tsx$|^src/ui/home-list/use-swipe-select\\.ts$|^src/ui/home-list/HomeRow\\.tsx$|^src/ui/home-list/PinnedArea\\.tsx$|${TEST})` },
       to: { path: '^node_modules/react-native-gesture-handler/' }
     }
   ],

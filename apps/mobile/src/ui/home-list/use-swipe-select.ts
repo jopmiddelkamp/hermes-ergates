@@ -20,7 +20,22 @@ import { Gesture, type PanGesture } from 'react-native-gesture-handler'
 import Animated, { scrollTo, useFrameCallback, useScrollOffset, useSharedValue, type AnimatedRef, type FrameInfo } from 'react-native-reanimated'
 import { scheduleOnRN } from 'react-native-worklets'
 
-import { autoScrollOffset, autoScrollSpeed, lineAt, lineTop, swipeLines, swipeMode, swipeSelection, type ListItem, type Selection, type SwipeLine, type SwipeMode } from '@/features/agents'
+import {
+  autoScrollOffset,
+  autoScrollSpeed,
+  lineAt,
+  lineTop,
+  pinAt,
+  swipeLines,
+  swipeMode,
+  swipeSelection,
+  type ListItem,
+  type PinCell,
+  type PinnedItem,
+  type Selection,
+  type SwipeLine,
+  type SwipeMode
+} from '@/features/agents'
 
 /** What a row's selection circle needs from swipe to select. */
 export interface SwipeSelect {
@@ -189,4 +204,146 @@ export function useSwipeSelect(scrollRef: AnimatedRef<Animated.ScrollView>, item
       listTop.set(event.nativeEvent.layout.y)
     }
   }
+}
+
+/** The cell for a pin's key, or null while it is not yet measured (or no longer shown). */
+function cellFor(cells: readonly PinCell[], key: string): PinCell | null {
+  'worklet'
+  for (const cell of cells) {
+    if (cell.key === key) {
+      return cell
+    }
+  }
+  return null
+}
+
+/** What a pinned avatar's selection badge needs from swipe to select. */
+export interface PinSwipeSelect {
+  /** Builds the swipe gesture for the pin's badge with this key. */
+  gestureFor(key: string): PanGesture
+  /** The pin's own 96 pt column, measured or remeasured after a pin drag reorders the pins: `PinnedArea`'s `onLayout` on the pin. */
+  onCellLayout(key: string, event: LayoutChangeEvent): void
+  /** The pin with this key left the pinned area; a swipe that started on it ends. */
+  forget(key: string): void
+}
+
+/** The swipe in progress over the pins, on the JS thread. */
+interface PinSwipeStart {
+  startKey: string
+  base: Selection
+  mode: SwipeMode
+}
+
+/**
+ * Swipe to select over the pinned avatars: the same iOS Mail rule as
+ * `useSwipeSelect` above, starting on a pin's selection badge instead of a
+ * row's circle, and hit-tested against the pins' own measured cells
+ * (`pinAt`) instead of the rows list's fixed line heights. No auto-scroll:
+ * the pinned area sits at the top of the list, so it never needs the list to
+ * scroll itself. `badgeOffset` is the selection badge's fixed position
+ * inside its pin's cell (top left; `PinnedArea` owns the geometry it comes
+ * from), used to turn a touch on the small badge into a point in the pinned
+ * area: `event.x`/`event.y` are measured from the badge's own top left, the
+ * same way a row's `event.y` is measured from its circle column's top.
+ */
+export function usePinSwipeSelect(pins: PinnedItem[], selection: Selection, onSelectionChange: (selection: Selection) => void, badgeOffset: { x: number; y: number }): PinSwipeSelect {
+  const cells = useSharedValue<PinCell[]>([])
+  const active = useSharedValue(false)
+  const currentKey = useSharedValue<string | null>(null)
+
+  // The gesture is built once per pin, so the JS side reads the latest props from here.
+  const latest = useRef({ pins, selection, onSelectionChange })
+  latest.current = { pins, selection, onSelectionChange }
+  const swipe = useRef<PinSwipeStart | null>(null)
+
+  const showPin = useCallback((key: string) => {
+    const start = swipe.current
+    if (start) {
+      latest.current.onSelectionChange(swipeSelection(latest.current.pins, start.base, start.startKey, key, start.mode))
+    }
+  }, [])
+
+  const track = useCallback(
+    (x: number, y: number) => {
+      'worklet'
+      const key = pinAt(cells.get(), x, y)
+      if (key !== null && key !== currentKey.get()) {
+        currentKey.set(key)
+        scheduleOnRN(showPin, key)
+      }
+    },
+    [cells, currentKey, showPin]
+  )
+
+  const begin = useCallback((key: string) => {
+    const { pins: now, selection: base, onSelectionChange: change } = latest.current
+    const mode = swipeMode(now, base, key)
+    swipe.current = { startKey: key, base, mode }
+    change(swipeSelection(now, base, key, key, mode))
+  }, [])
+
+  const finish = useCallback(() => {
+    swipe.current = null
+  }, [])
+
+  // A pin that leaves the pinned area mid-swipe (unpinned by the bottom bar
+  // while its own badge is mid-gesture) takes its gesture with it, and that
+  // gesture never reports its end: end the swipe here, the same reason rows do.
+  const forget = useCallback(
+    (key: string) => {
+      if (swipe.current?.startKey === key) {
+        active.set(false)
+        currentKey.set(null)
+        finish()
+      }
+    },
+    [active, currentKey, finish]
+  )
+
+  const gestureFor = useCallback(
+    (key: string) =>
+      Gesture.Pan()
+        .minDistance(0)
+        .maxPointers(1)
+        .onStart(() => {
+          'worklet'
+          if (!cellFor(cells.get(), key)) {
+            return
+          }
+          currentKey.set(key)
+          active.set(true)
+          scheduleOnRN(begin, key)
+        })
+        .onUpdate(event => {
+          'worklet'
+          if (!active.get()) {
+            return
+          }
+          const cell = cellFor(cells.get(), key)
+          if (!cell) {
+            return
+          }
+          track(cell.x + badgeOffset.x + event.x, cell.y + badgeOffset.y + event.y)
+        })
+        .onFinalize(() => {
+          'worklet'
+          if (!active.get()) {
+            return
+          }
+          active.set(false)
+          currentKey.set(null)
+          scheduleOnRN(finish)
+        }),
+    [cells, currentKey, active, begin, track, finish, badgeOffset]
+  )
+
+  const onCellLayout = useCallback(
+    (key: string, event: LayoutChangeEvent) => {
+      const { x, y, width, height } = event.nativeEvent.layout
+      cells.set([...cells.get().filter(cell => cell.key !== key), { key, x, y, width, height }])
+    },
+    [cells]
+  )
+
+  return useMemo<PinSwipeSelect>(() => ({ gestureFor, onCellLayout, forget }), [gestureFor, onCellLayout, forget])
 }

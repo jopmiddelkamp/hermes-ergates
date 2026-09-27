@@ -9,10 +9,21 @@
  * lines, and nothing drops in front of a pinned concierge (its `fixed-order`
  * handle keeps it in place). Screen readers get Move left and Move right
  * instead.
+ *
+ * The selection badge also carries swipe to select (the agents feature's
+ * `swipe-select.ts`, `use-swipe-select.ts`'s `usePinSwipeSelect`): a touch
+ * that starts there and moves selects or deselects a range of pins, the same
+ * iOS Mail rule the rows list uses, in pin order across wrapped lines. Each
+ * pin's own `onLayout` feeds its measured cell to the hit test, so it stays
+ * right after a pin drag reorders them; `BADGE_OFFSET` is the badge's own
+ * fixed position inside that cell, used to seed the swipe at the touch's
+ * real spot. This is also why the badge needs react-native-gesture-handler
+ * (`GestureDetector`): see the dependency-cruiser rule this file is named in.
  */
 
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { Pressable, StyleSheet, Text, View, type AccessibilityActionEvent } from 'react-native'
+import { GestureDetector } from 'react-native-gesture-handler'
 import Animated, { useAnimatedStyle, type AnimatedRef, type SharedValue } from 'react-native-reanimated'
 import Sortable, { type SortableFlexDragEndParams } from 'react-native-sortables'
 
@@ -25,6 +36,7 @@ import type { AnchorRect } from '../ActionMenu'
 import { Avatar } from '../Avatar'
 import { Grip } from './Grip'
 import { SelectionCircle } from './SelectionCircle'
+import { usePinSwipeSelect, type PinSwipeSelect } from './use-swipe-select'
 
 const AVATAR_SIZE = 84
 const PIN_WIDTH = 96
@@ -56,6 +68,14 @@ const BADGE_CENTER_Y = AVATAR_CENTER_Y - CORNER_OFFSET
 const SELECTION_CENTER_X = AVATAR_CENTER_X - CORNER_OFFSET
 const MOVE_CENTER_X = AVATAR_CENTER_X + CORNER_OFFSET
 
+/**
+ * The selection badge's own top left, inside its pin's cell: fixed, because
+ * it comes only from the avatar geometry above, never from the label's
+ * height. Swipe to select uses it to turn a touch on the badge into a point
+ * in the pinned area (`usePinSwipeSelect`'s `badgeOffset`).
+ */
+const BADGE_OFFSET = { x: SELECTION_CENTER_X - BADGE_SIZE / 2, y: BADGE_CENTER_Y - BADGE_SIZE / 2 }
+
 export interface PinnedAreaProps {
   pins: PinnedItem[]
   /** The whole Home list, for Move left and Move right. */
@@ -74,14 +94,17 @@ export interface PinnedAreaProps {
   onPress(bot: Bot): void
   onLongPress(bot: Bot, anchor: AnchorRect): void
   onMove(move: OrderMove): void
+  /** Sets the whole selection: a swipe across the selection badges selects or deselects several pins at once. */
+  onSelectionChange(selection: Selection): void
   gutter: number
 }
 
-export function PinnedArea({ pins, items, editing, progress, selection, gateway, connectionId, haptics, scrollRef, unread, onPress, onLongPress, onMove, gutter }: PinnedAreaProps) {
+export function PinnedArea({ pins, items, editing, progress, selection, gateway, connectionId, haptics, scrollRef, unread, onPress, onLongPress, onMove, onSelectionChange, gutter }: PinnedAreaProps) {
   // Stable across renders that do not change the pins or the handlers, for
   // the same reason `HomeList` memoizes its own `Sortable.Grid` props. Kept
   // above the empty-pins return below: every hook here must run every render.
   const onDragStart = useCallback(() => lightTap(haptics), [haptics])
+  const swipe = usePinSwipeSelect(pins, selection, onSelectionChange, BADGE_OFFSET)
 
   const onDragEnd = useCallback(
     ({ key, indexToKey }: SortableFlexDragEndParams) => {
@@ -140,6 +163,7 @@ export function PinnedArea({ pins, items, editing, progress, selection, gateway,
           connectionId={connectionId}
           onPress={() => onPress(item.bot)}
           onLongPress={anchor => onLongPress(item.bot, anchor)}
+          swipe={swipe}
         />
       ))}
     </Sortable.Flex>
@@ -158,9 +182,10 @@ interface PinnedAvatarProps {
   connectionId: string
   onPress(): void
   onLongPress(anchor: AnchorRect): void
+  swipe: PinSwipeSelect
 }
 
-function PinnedAvatar({ item, editing, progress, selected, unread, actions, onAction, gateway, connectionId, onPress, onLongPress }: PinnedAvatarProps) {
+function PinnedAvatar({ item, editing, progress, selected, unread, actions, onAction, gateway, connectionId, onPress, onLongPress, swipe }: PinnedAvatarProps) {
   const theme = useTheme()
   const { bot } = item
   const avatar = useAvatar(gateway, connectionId, bot.profile, bot.hasAvatar)
@@ -172,6 +197,10 @@ function PinnedAvatar({ item, editing, progress, selected, unread, actions, onAc
   // jumps between two rules.
   const dotPosition = useAnimatedStyle(() => ({ transform: [{ translateY: progress.get() * DOT_DROP }] }))
   const measure = () => ref.current?.measureInWindow((x, y, width, height) => onLongPress({ x, y, width, height }))
+  // Gated by the badge's own `pointerEvents` below, not by rebuilding the
+  // gesture: outside Edit mode no touch ever reaches it (HomeRow does the same).
+  const swipeGesture = useMemo(() => swipe.gestureFor(item.key), [swipe, item.key])
+  useEffect(() => () => swipe.forget(item.key), [swipe, item.key])
   const face = (
     <Pressable
       onPress={onPress}
@@ -190,12 +219,15 @@ function PinnedAvatar({ item, editing, progress, selected, unread, actions, onAc
     </Pressable>
   )
   return (
-    <View ref={ref} collapsable={false}>
+    <View ref={ref} collapsable={false} onLayout={event => swipe.onCellLayout(item.key, event)}>
       {/* A `fixed-order` handle keeps the pinned concierge first: it cannot be picked up, and no pin drops in front of it. */}
       {item.locked ? <Sortable.Handle mode="fixed-order">{face}</Sortable.Handle> : face}
-      <Animated.View pointerEvents="none" style={[styles.badge, badge]}>
-        <SelectionCircle selected={selected} size={BADGE_SIZE} onAvatar />
-      </Animated.View>
+      {/* A touch that starts here belongs to swipe to select; a tap still toggles, the same way a tap on the avatar does. */}
+      <GestureDetector gesture={swipeGesture}>
+        <Animated.View pointerEvents={editing ? 'auto' : 'none'} style={[styles.badge, badge]}>
+          <SelectionCircle selected={selected} size={BADGE_SIZE} onAvatar />
+        </Animated.View>
+      </GestureDetector>
       {item.locked ? null : (
         <Animated.View pointerEvents={editing ? 'auto' : 'none'} style={[styles.move, badge]}>
           <Sortable.Handle style={styles.moveTouch}>
@@ -214,7 +246,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 15 },
   dot: { position: 'absolute', top: 2, right: 10, width: DOT_SIZE, height: DOT_SIZE, borderRadius: DOT_SIZE / 2 },
   // The badge and the move handle center on the avatar's round edge at 45°, top left and top right (see the arithmetic above).
-  badge: { position: 'absolute', top: BADGE_CENTER_Y - BADGE_SIZE / 2, left: SELECTION_CENTER_X - BADGE_SIZE / 2 },
+  badge: { position: 'absolute', top: BADGE_OFFSET.y, left: BADGE_OFFSET.x },
   move: { position: 'absolute', top: BADGE_CENTER_Y - MOVE_TOUCH / 2, left: MOVE_CENTER_X - MOVE_TOUCH / 2 },
   moveTouch: { width: MOVE_TOUCH, height: MOVE_TOUCH, alignItems: 'center', justifyContent: 'center' },
   moveBadge: { width: BADGE_SIZE, height: BADGE_SIZE, borderRadius: BADGE_SIZE / 2, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' }
