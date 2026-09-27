@@ -77,7 +77,7 @@ Field, Card/Group and the secondary Button fill with whichever of `muted` or `ba
 ### Home
 
 - Top row: account avatar at left; Edit (a borderless text button on iOS, an icon on Android), Search and Add at right. No large marketing header, counts, charts, or permanent bottom tab bar.
-- Optional pinned agents below; pins and order are device preferences. New installs pin the concierge only; while it is pinned it is always the first pin.
+- Optional pinned agents below. Which agents are pinned is shared with Hermes Desktop; the pin order is a device preference. On a new install the phone pins the concierge once, when Hermes has no pinned value for it; while it is pinned it is always the first pin.
 - Rows keep the owner's order. A new message shows the unread dot and never moves the row; a new agent starts at the top of its group.
 - Recent conversations: avatar, name, compact role badge when it fits, timestamp, one-line message or event preview. An unread dot includes an accessible unread label. Avoid cards or separators around each row. The list runs edge to edge: a row's tap highlight spans the screen width and the scroll bar sits at the screen edge.
 - The Add menu contains New Agent; New Group Chat appears when Phase 2 rooms are available. Selecting an action closes the menu before opening its sheet.
@@ -88,6 +88,7 @@ Field, Card/Group and the secondary Button fill with whichever of `muted` or `ba
 Clarified by Jop on 2026-09-13 in the [Prive reference](research/screenshots/mobile/2026-09-13-home-prive-section.png). A Home organization group is called a **section** in these docs; it does not create a shared conversation or a Hermes room.
 
 - Show the section name, such as **Prive**, as small, regular-weight grey text with a chevron immediately beside it. Use Hermes `mutedForeground` with the contrast fallback above; avoid a card, filled badge or large heading. The whole heading has a minimum 44-point hit area and an accessible section name and expanded/collapsed state.
+- The section of each agent is shared with Hermes Desktop (docs/05 "Bot metadata compatibility"); the list of sections, their order and their collapse state stay on this phone. A section the phone finds only on agents shows at the end, named from the agents, or "Untitled section" when none carries a name.
 - Tap the heading to expand or collapse its conversation rows. Chevron down means expanded; right means collapsed. New sections start expanded; remember each section's state on this device.
 - Long-press a heading, on Home and in Edit mode, to open the pushed **Section** page; screen readers get the same page through the heading's **Edit section** action. The page has a **Name** field with the current name and a **Save** button, disabled while the name is empty (after trimming) or unchanged; Save renames the section and goes back. Below it, **Delete section** asks first ("Delete section Prive? Its agents move to No section."), then moves the section's agents to the end of No section in their current order, removes the section and its collapse state, keeps every pin, and goes back. It works the same on iOS and Android.
 - Section membership and pin state are independent. Pinning a member shows it in the pinned area above the sections and removes its duplicate row from the section list, while retaining its section assignment. Moving a pinned bot to another section preserves its pin.
@@ -98,7 +99,7 @@ Clarified by Jop on 2026-09-13 in the [Prive reference](research/screenshots/mob
 
 ### Home edit mode
 
-Edit mode lets the owner act on several agents at once and put rows in their own order. Order, pins and sections stay device preferences.
+Edit mode lets the owner act on several agents at once and put rows in their own order. The order stays a device preference; pins and sections go to Hermes (docs/05 "Organization outbox").
 
 - **Enter:** a borderless **Edit** text button (iOS) or edit icon (Android) left of Search, or **Select** in the long-press menu, which opens Edit mode with that agent already selected. Search and Add are hidden while editing.
 - **Top bar:** iOS shows **Done** on the left and "N selected" in the middle; Android shows ✕ on the left and "N selected" as the title. Done, ✕ and the Android Back button only leave Edit mode: every change applies at once and is saved on the phone, so there is no Cancel.
@@ -118,7 +119,7 @@ One menu, mirroring the Hermes Desktop context menu: no "More" level, groups sep
 
 | Group | Action | Behavior | Phase |
 |---|---|---|---|
-| 1 | Pin / Unpin | Device-local shortcut; first two prominent, additional pins in a horizontal strip. Preserve section membership; unpin returns to the assigned section | 1 |
+| 1 | Pin / Unpin | Shared with Hermes Desktop (`pinned`). Preserve section membership; unpin returns to the assigned section | 1 |
 | 1 | Move to › | Replaces the menu's content in place (same anchored card) with the Move level: a "‹ Move to" header back to the main level, then "No section" and every section in order, each with a check mark on the bot's current place (folder icon elsewhere). Tapping a row moves the bot there (to the end of that group) and closes the menu; tapping the current place just closes. A separator, then "Create section" opens the Create level: a "‹ Create section" header, a soft name field (placeholder "Section name", autofocused) and a primary **Create** button, disabled for a blank name; Create makes the section, moves the bot into it and closes. The keyboard never covers the field or the button | 1 |
 | 1 | Mark as Unread / Mark as Read | Device-local reading marker; opening the conversation clears the manual unread flag | 1 |
 | 2 | Edit Bot | Opens the editor below; also available directly from agent details | 1 |
@@ -129,9 +130,9 @@ One menu, mirroring the Hermes Desktop context menu: no "More" level, groups sep
 | — | Share as Template | Review a sanitized configuration snapshot before export; exclude credentials, conversation history, memory, files and active routines by default | 2 |
 | — | Duplicate | New identity from a reviewed configuration snapshot, with fresh provisioning and separately approved tool access. Do not copy secrets, history, memory or active schedules | 2 |
 
-Template and duplication actions are part of the design and remain absent until Phase 2 is implemented. Hide is reversible and neutral; Delete uses `destructive`. Deletion cleanup and failure recovery must pass the lifecycle gate in 11. Moving to a section is an organization feature, not a group chat. Device-local pins/sections deliberately do not claim desktop synchronization; mobile must preserve any existing desktop `pinned` and `sectionId` metadata when saving other fields.
+Template and duplication actions are part of the design and remain absent until Phase 2 is implemented. Hide is reversible and neutral; Delete uses `destructive`. Deletion cleanup and failure recovery must pass the lifecycle gate in 11. Moving to a section is an organization feature, not a group chat. Pins and each agent's section are shared with Hermes Desktop through `ui_meta['hermes-bots']` (docs/05); saving any other field keeps them.
 
-The Edit mode bottom bar's "Move to…" still opens the separate Move to Section page for several agents at once: No section and every section, with a check mark on a section only when every chosen agent is in it, and a soft "New section name" field with **Create section** (disabled while the name is empty). Tapping a row, or Create, moves every chosen agent to the end of that group and goes back. Device-local collapsible sections; changing membership preserves pin state. Removing a section returns unpinned members to the ordinary list and keeps pinned members pinned.
+The Edit mode bottom bar's "Move to…" still opens the separate Move to Section page for several agents at once: No section and every section, with a check mark on a section only when every chosen agent is in it, and a soft "New section name" field with **Create section** (disabled while the name is empty). Tapping a row, or Create, moves every chosen agent to the end of that group and goes back. Collapsible sections (the collapse state stays on this phone); changing membership preserves pin state. Removing a section returns unpinned members to the ordinary list and keeps pinned members pinned.
 
 ### Chat
 

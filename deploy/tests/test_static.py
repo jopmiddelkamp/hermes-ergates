@@ -361,7 +361,8 @@ def test_hermes_serve_mounts_the_templates_read_only_outside_the_data_volume() -
 # Each live check of VERIFY.md and a phrase it must keep: the checks earlier
 # work could not automate, so none may drop out unnoticed. V21-V23 (a green
 # CI run on a real remote, and two app-only checks) were carried over from
-# earlier reviews and did not fit any of V1-V20.
+# earlier reviews and did not fit any of V1-V20; V24 and V25 are app checks
+# on a device too.
 VERIFY_CHECKS = {
     "V1": "-k parse",
     "V2": "docker ps",
@@ -387,6 +388,7 @@ VERIFY_CHECKS = {
     "V22": "stay tappable",
     "V23": "queued_unsent",
     "V24": "jcenter()",
+    "V25": "Airplane mode",
 }
 
 

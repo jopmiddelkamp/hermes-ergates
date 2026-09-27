@@ -34,6 +34,8 @@ export interface HomeModel {
   isPinned(profile: string): boolean
   sectionOf(profile: string): Section | null
   loading: boolean
+  /** When the roster was last read from Hermes (0 before the first read). */
+  updatedAt: number
   error: unknown
   refetch(): Promise<unknown>
 }
@@ -82,10 +84,11 @@ export function useHome(port: GatewayPort, connectionId: string): HomeModel {
         return id ? organization.sections.find(s => s.id === id) ?? null : null
       },
       loading: roster.isLoading,
+      updatedAt: roster.dataUpdatedAt,
       error: roster.error,
       refetch: roster.refetch
     }
-  }, [roster.data, rows, roster.isLoading, roster.error, roster.refetch, organization])
+  }, [roster.data, rows, roster.isLoading, roster.dataUpdatedAt, roster.error, roster.refetch, organization])
 }
 
 /** The organizing actions for this connection, run on the organization as Home shows it (`rows` is `HomeModel.rows`). */

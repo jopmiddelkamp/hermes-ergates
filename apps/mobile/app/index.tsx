@@ -19,6 +19,7 @@ import {
   useAvatar,
   useHome,
   useOrganizer,
+  useOrgSync,
   useSetHidden,
   type Bot,
   type MembershipSnapshot,
@@ -72,6 +73,8 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   // typed in the chat below it. Action references are stable.
   const organizer = useOrganizer(connectionId, home.rows)
   const syncWithHermes = useDeviceStore(s => s.syncWithHermes)
+  // Sends queued pin and section changes to Hermes (docs/05 "Organization outbox").
+  useOrgSync(gateway, connectionId, home, message => Alert.alert('Could not update', message))
   const markRead = useDeviceStore(s => s.markRead)
   const markUnread = useDeviceStore(s => s.markUnread)
   const markManyRead = useDeviceStore(s => s.markManyRead)

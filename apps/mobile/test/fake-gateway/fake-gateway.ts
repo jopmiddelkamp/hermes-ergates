@@ -258,6 +258,15 @@ export class FakeGateway implements GatewayPort {
   /** The Ergates routes, over this gateway's profiles. */
   readonly ergates = new FakeErgates({ hasProfile: name => this.profileNames.has(name) })
 
+  /** `ui_meta` and its revisions per profile once a write touched them, as profile.yaml holds them. */
+  private readonly storedMeta = new Map<string, { uiMeta: T.UiMeta; revisions: Record<string, number> }>()
+  /** Every `profiles.configure` call, in order. */
+  readonly configureCalls: T.ConfigureParams[] = []
+  /** Test hook: runs before each `profiles.configure` is applied, e.g. to let Hermes Desktop write in between. */
+  beforeConfigure: ((params: T.ConfigureParams) => void) | null = null
+  /** Test hook: while true, `profiles.list` and `profiles.configure` fail like a lost connection. */
+  profilesOffline = false
+
   constructor(script: FakeScript = {}) {
     this.script = script
   }
@@ -315,15 +324,84 @@ export class FakeGateway implements GatewayPort {
     this.connections.clear()
   }
 
+  /** The profile's `ui_meta` and revisions: what a write left, else the recorded roster's. */
+  private metaOf(name: string): { uiMeta: T.UiMeta; revisions: Record<string, number> } {
+    const stored = this.storedMeta.get(name)
+    if (stored) {
+      return stored
+    }
+    const recorded = (profilesListFixture.profiles as T.ProfileSummary[]).find(p => p.name === name)
+    const meta = { uiMeta: clone<T.UiMeta>(recorded?.ui_meta ?? {}), revisions: clone<Record<string, number>>(recorded?.ui_meta_revisions ?? {}) }
+    this.storedMeta.set(name, meta)
+    return meta
+  }
+
+  /** Test hook: Hermes Desktop saving `hermes-bots` metadata, a merge without a revision check (last write wins). */
+  desktopWrite(name: string, patch: T.HermesBotsMeta): void {
+    const meta = this.metaOf(name)
+    meta.uiMeta['hermes-bots'] = { ...meta.uiMeta['hermes-bots'], ...patch }
+    meta.revisions['hermes-bots'] = (meta.revisions['hermes-bots'] ?? 0) + 1
+  }
+
+  /**
+   * Like `_configure_ui_meta` at the pin (tui_gateway/methods_profiles.py:437-481):
+   * each namespace is replaced whole (null deletes it) after a revision check
+   * per namespace; one mismatch refuses the whole write.
+   */
+  private writeUiMeta(name: string, incoming: T.UiMeta, expected: Record<string, number> | undefined): T.ConfigureResult {
+    const meta = this.metaOf(name)
+    const keys = Object.keys(incoming)
+    const conflicts: Record<string, { expected: number | undefined; actual: number }> = {}
+    for (const key of expected ? keys : []) {
+      const actual = meta.revisions[key] ?? 0
+      if (expected?.[key] !== actual) {
+        conflicts[key] = { expected: expected?.[key], actual }
+      }
+    }
+    const revisionsOf = () => Object.fromEntries(keys.map(key => [key, meta.revisions[key] ?? 0]))
+    if (Object.keys(conflicts).length > 0) {
+      return { ok: false, applied: { ui_meta: false, ui_meta_conflicts: conflicts, ui_meta_revisions: revisionsOf() } }
+    }
+    for (const key of keys) {
+      if (incoming[key] === null) {
+        delete meta.uiMeta[key]
+      } else {
+        meta.uiMeta[key] = clone(incoming[key])
+      }
+      meta.revisions[key] = (meta.revisions[key] ?? 0) + 1
+    }
+    return { ok: true, applied: { ui_meta: true, ui_meta_revisions: revisionsOf() } }
+  }
+
+  private checkProfilesOnline(): void {
+    if (this.profilesOffline) {
+      throw new GatewayError('network', 'No connection to the gateway.')
+    }
+  }
+
   readonly profiles: ProfilesApi = {
     list: async () => {
+      this.checkProfilesOnline()
       const listed = clone(profilesListFixture) as T.ProfilesListResult
       const recorded = new Set(listed.profiles.map(p => p.name))
-      const created = [...this.profileNames].filter(name => !recorded.has(name)).map(name => ({ name, is_default: false }))
-      return { ...listed, profiles: [...listed.profiles.filter(p => this.profileNames.has(p.name)), ...created] }
+      const created: T.ProfileSummary[] = [...this.profileNames].filter(name => !recorded.has(name)).map(name => ({ name, is_default: false }))
+      const profiles = [...listed.profiles.filter(p => this.profileNames.has(p.name)), ...created].map(p => {
+        const stored = this.storedMeta.get(p.name)
+        return stored ? { ...p, ui_meta: clone<T.UiMeta>(stored.uiMeta), ui_meta_revisions: { ...stored.revisions } } : p
+      })
+      return { ...listed, profiles }
     },
     describe: async () => clone(profilesDescribeFixture) as T.ProfileDescribe,
-    configure: async () => ({ ok: true }),
+    configure: async params => {
+      this.checkProfilesOnline()
+      if (!this.profileNames.has(params.name)) {
+        // `_resolve_profile` at the pin: 4064 "profile not found".
+        throw new GatewayError('rpc', `profile '${params.name}' not found`, { code: 4064 })
+      }
+      this.configureCalls.push(clone(params))
+      this.beforeConfigure?.(params)
+      return params.ui_meta ? this.writeUiMeta(params.name, params.ui_meta, params.ui_meta_expected_revisions) : { ok: true }
+    },
     create: async params => {
       // Like `profiles.create` at the pin: an existing name is a FileExistsError, 4062.
       if (this.profileNames.has(params.name)) {

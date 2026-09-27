@@ -46,7 +46,7 @@ function SettingsBody({ connection, onBack }: { connection: NonNullable<ReturnTy
   const address = connection.baseUrl.replace(/^https?:\/\//, '')
 
   const confirmSignOut = () => {
-    Alert.alert('Sign out?', 'This removes the gateway from this phone, including drafts and unsent messages. Your assistants and their history stay on the server.', [
+    Alert.alert('Sign out?', 'This removes the gateway from this phone, including drafts, unsent messages and pin or section changes Hermes does not have yet. Your assistants and their history stay on the server.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign out',

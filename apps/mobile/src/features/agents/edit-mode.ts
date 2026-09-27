@@ -175,7 +175,8 @@ export async function hideEach(bots: Bot[], hide: (bot: Bot) => Promise<unknown>
   return bots.filter((_, i) => results[i].status === 'rejected')
 }
 
-function joinNames(names: string[]): string {
+/** "Linh", "Linh and Kevin", "Linh, Kevin and Mia". */
+export function joinNames(names: string[]): string {
   return names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
 }
 

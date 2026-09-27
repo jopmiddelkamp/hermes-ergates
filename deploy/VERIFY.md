@@ -591,3 +591,34 @@ empty section, one section with a few agents, and enough agents to scroll:
     the ≡ handles still drag.
 
 Result:
+
+### V25 Pins and sections shared with Hermes Desktop
+
+With Hermes Desktop on the Mac and the app on a phone, both connected to the
+same gateway (docs/05 "Bot metadata compatibility", "Organization outbox"):
+
+1. Phone to Desktop: on the phone, pin an agent and move another into a
+   section. Within one Desktop roster refresh (a few seconds) Desktop shows
+   the first agent pinned and the second filed under that section (named on
+   a Desktop that reads `sectionName`, otherwise under the section Desktop
+   already knows by that id).
+2. Desktop to phone: on Desktop, unpin that agent and drag the other one
+   back to Unassigned. Pull to refresh Home on the phone: the avatar leaves
+   the pinned area and the row goes back to No section.
+3. Offline: turn on Airplane mode on the phone, pin an agent and move
+   another into a section. Home shows both at once. Force-quit the app and
+   open it again: both still show. Turn Airplane mode off and open Home:
+   within a few seconds Desktop shows both changes, and no alert appears.
+4. Both at once: with the phone in Airplane mode, move an agent into a
+   section on the phone, then change that agent's pin on Desktop. Turn
+   Airplane mode off: the phone's move reaches Desktop and Desktop's pin
+   stays (the phone read the agent again and applied only its own change).
+5. Rename and delete: rename a section on the phone; on a Desktop that reads
+   `sectionName` its members show under the new name. Delete the section on
+   the phone: Desktop shows its members under Unassigned.
+6. Concierge on a new install: install the app fresh against a gateway
+   whose concierge has no pinned value in Hermes: it shows pinned on the
+   phone and on Desktop. Unpin it on Desktop, reinstall the app: it stays
+   unpinned.
+
+Result:

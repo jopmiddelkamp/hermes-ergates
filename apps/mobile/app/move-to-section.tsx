@@ -66,7 +66,7 @@ function MoveToSection({ connection, profiles, onDone }: { connection: Connectio
 
   return (
     <Page title="Move to Section" onBack={() => runOnce(onDone)}>
-      <Text style={[styles.hint, { color: theme.colors.mutedForeground }]}>Sections organize Home on this phone. A pinned agent stays pinned.</Text>
+      <Text style={[styles.hint, { color: theme.colors.mutedForeground }]}>Hermes Desktop shows the same section for each agent. A pinned agent stays pinned.</Text>
       <Group>
         {sectionChoices(home.organization, profiles).map(choice => (
           <ListRow
