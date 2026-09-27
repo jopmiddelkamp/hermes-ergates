@@ -47,7 +47,7 @@ export interface HomeSectionHeaderProps {
 
 export function HomeSectionHeader({ name, expanded, editing, layoutEditing, progress, actions, onAction, onToggle, onEdit, onHandle, sectionKey, gutter }: HomeSectionHeaderProps) {
   const theme = useTheme()
-  const handle = useAnimatedStyle(() => ({ opacity: progress.get(), transform: [{ translateX: handleOffset(progress.get(), gutter) }] }))
+  const handle = useAnimatedStyle(() => ({ opacity: progress.get(), transform: [{ translateX: handleOffset(progress.get(), gutter, layoutEditing) }] }))
   return (
     <View style={[styles.header, { backgroundColor: theme.colors.background }]}>
       <Pressable

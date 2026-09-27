@@ -78,10 +78,10 @@ export function HomeRow({ bot, gateway, connectionId, unread, editing, layoutEdi
   useEffect(() => () => swipe.forget(rowKey), [swipe, rowKey])
   const [pressed, setPressed] = useState(false)
 
-  const body = useAnimatedStyle(() => ({ transform: [{ translateX: rowOffsets(progress.get(), gutter).body }] }))
-  const timeDot = useAnimatedStyle(() => ({ transform: [{ translateX: rowOffsets(progress.get(), gutter).timeDot }] }))
+  const body = useAnimatedStyle(() => ({ transform: [{ translateX: rowOffsets(progress.get(), gutter, layoutEditing).body }] }))
+  const timeDot = useAnimatedStyle(() => ({ transform: [{ translateX: rowOffsets(progress.get(), gutter, layoutEditing).timeDot }] }))
   const circle = useAnimatedStyle(() => ({ opacity: progress.get(), transform: [{ translateX: (progress.get() - 1) * CIRCLE_COLUMN }] }))
-  const handle = useAnimatedStyle(() => ({ opacity: progress.get(), transform: [{ translateX: handleOffset(progress.get(), gutter) }] }))
+  const handle = useAnimatedStyle(() => ({ opacity: progress.get(), transform: [{ translateX: handleOffset(progress.get(), gutter, layoutEditing) }] }))
 
   const time = formatRowTime(bot.lastActivityAt)
   const preview = bot.preview || bot.description

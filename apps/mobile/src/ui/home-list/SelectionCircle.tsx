@@ -12,9 +12,8 @@ import { StyleSheet, View } from 'react-native'
 import { useTheme } from '@/theme/provider'
 
 import { Icon } from '../icons'
+import { CIRCLE_SIZE } from './row-offsets'
 
-/** 22 pt across on a row. */
-export const CIRCLE_SIZE = 22
 const CIRCLE_RING = 1.5
 /** The unselected ring on a row is `mutedForeground` at this strength. */
 const CIRCLE_RING_OPACITY = 0.55
