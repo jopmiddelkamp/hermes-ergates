@@ -9,9 +9,12 @@ import {
   editRowLabel,
   hideEach,
   hideFailureMessage,
+  listItems,
   liveSelection,
   moveActions,
+  moveDirection,
   moveStep,
+  pinnedItems,
   selectedInListOrder,
   selectionTitle,
   toggleSelected,
@@ -36,7 +39,7 @@ function bot(profile: string, extra: Partial<Bot> = {}): Bot {
   }
 }
 
-const prive: Section = { id: 'prive', name: 'Prive', collapsed: true, order: 0 }
+const prive: Section = { id: 'prive', name: 'Prive', collapsed: false, order: 0 }
 const work: Section = { id: 'work', name: 'Work', collapsed: false, order: 1 }
 
 /** Hermes (the concierge) and Noor pinned; Otto without a section; Kevin and Linh in Prive; Work empty. */
@@ -54,28 +57,25 @@ function layout(): EditLayout {
 const keys = (l: EditLayout) => buildEditItems(l).map(i => i.key)
 
 describe('buildEditItems', () => {
-  it('draws Pinned, No section and every section, top to bottom, as one flat list', () => {
-    expect(keys(layout())).toEqual([
-      'caption:pinned',
-      'pinned:hermes',
-      'pinned:noor',
-      'caption:none',
-      'row:otto',
-      'section:prive',
-      'row:kevin',
-      'row:linh',
-      'section:work'
-    ])
+  it('draws the pins, the rows without a section and every section, top to bottom, as one flat list without captions', () => {
+    expect(keys(layout())).toEqual(['pinned:hermes', 'pinned:noor', 'row:otto', 'section:prive', 'row:kevin', 'row:linh', 'section:work'])
   })
 
-  it('shows a collapsed section expanded, and keeps its stored collapse state', () => {
+  it('leaves the rows of a collapsed section out, and keeps its top row for a drop under its header', () => {
+    const closed = { ...layout(), sections: [{ section: { ...prive, collapsed: true }, rows: [bot('kevin'), bot('linh')] }, { section: work, rows: [] }] }
+    const items = buildEditItems(closed)
+    expect(items.map(i => i.key)).toEqual(['pinned:hermes', 'pinned:noor', 'row:otto', 'section:prive', 'section:work'])
+    expect(items.flatMap(i => (i.kind === 'section' ? [i.topRow] : []))).toEqual(['kevin', null])
+  })
+
+  it('draws nothing for an empty Home', () => {
+    expect(keys({ pinned: [], ungrouped: [], sections: [] })).toEqual([])
+  })
+
+  it('splits the list into the pinned avatars and the rows list below them', () => {
     const items = buildEditItems(layout())
-    expect(items.filter(i => i.kind === 'row' && i.sectionId === 'prive').map(i => i.key)).toEqual(['row:kevin', 'row:linh'])
-    expect(items.find(i => i.kind === 'section' && i.section.id === 'prive')).toMatchObject({ section: { collapsed: true } })
-  })
-
-  it('leaves out the Pinned caption without pins, and always draws the No section caption', () => {
-    expect(keys({ pinned: [], ungrouped: [], sections: [] })).toEqual(['caption:none'])
+    expect(pinnedItems(items).map(i => i.key)).toEqual(['pinned:hermes', 'pinned:noor'])
+    expect(listItems(items).map(i => i.key)).toEqual(['row:otto', 'section:prive', 'row:kevin', 'row:linh', 'section:work'])
   })
 
   it('locks only the pinned concierge', () => {
@@ -103,6 +103,12 @@ describe('the selection', () => {
     const refreshed = buildEditItems({ ...layout(), ungrouped: [] })
     expect([...liveSelection(selection, refreshed)]).toEqual(['kevin'])
     expect(liveSelection(selection, buildEditItems(layout()))).toBe(selection)
+  })
+
+  it('drops the selection of the rows a section hides when it collapses', () => {
+    const selection = new Set(['kevin', 'noor'])
+    const collapsed = buildEditItems({ ...layout(), sections: [{ section: { ...prive, collapsed: true }, rows: [bot('kevin'), bot('linh')] }, { section: work, rows: [] }] })
+    expect([...liveSelection(selection, collapsed)]).toEqual(['noor'])
   })
 
   it('lists the selected agents in list order, pins first', () => {
@@ -151,8 +157,7 @@ describe('Move up and Move down', () => {
     expect(moveStep(items, 'section:prive', 'up')).toBeNull()
   })
 
-  it('never moves a caption or an unknown key', () => {
-    expect(moveStep(items, 'caption:none', 'down')).toBeNull()
+  it('never moves an unknown key', () => {
     expect(moveStep(items, 'row:nobody', 'up')).toBeNull()
   })
 
@@ -167,6 +172,19 @@ describe('Move up and Move down', () => {
     const pins = buildEditItems({ ...layout(), pinned: [bot('noor'), bot('mia'), bot('ada')] })
     expect(moveStep(pins, 'pinned:mia', 'up')).toEqual({ kind: 'pin', profile: 'mia', before: 'noor' })
     expect(moveStep(pins, 'pinned:noor', 'down')).toEqual({ kind: 'pin', profile: 'noor', before: 'ada' })
+  })
+
+  it('offers Move left and Move right on a pin, with the same rules as Move up and Move down', () => {
+    const pins = buildEditItems({ ...layout(), pinned: [bot('noor'), bot('mia'), bot('ada')] })
+    expect(moveActions(pins, 'pinned:mia')).toEqual([
+      { name: 'moveLeft', label: 'Move left' },
+      { name: 'moveRight', label: 'Move right' }
+    ])
+    expect(moveActions(pins, 'pinned:noor')).toEqual([{ name: 'moveRight', label: 'Move right' }])
+  })
+
+  it('reads the direction of a screen-reader action by its name', () => {
+    expect(['moveUp', 'moveLeft', 'moveDown', 'moveRight', 'editSection'].map(moveDirection)).toEqual(['up', 'up', 'down', 'down', null])
   })
 
   it('offers only the moves that can happen as screen-reader actions', () => {

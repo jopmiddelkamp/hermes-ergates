@@ -1,22 +1,19 @@
 /**
  * Dragging in Home Edit mode as pure functions (docs/10 "Home edit mode"):
- * which slots a dragged row, pin or section header may take, the live rule the
- * drag list asks while the finger moves, how a finished drop becomes one
- * `OrderMove` (or null: the item goes back), and the headers-only list shown
- * while a section header is dragged. No React, React Native or Reanimated, so
- * Node tests cover every rule. The functions marked 'worklet' also run on the
- * UI thread inside the drag list's sort strategy; they call only each other.
+ * the live rule the rows list asks while the finger moves, how a finished
+ * drop becomes one `OrderMove` (or null: the item goes back), the pinned
+ * avatars' drop, and the headers-only list shown while a section header is
+ * dragged. No React, React Native or Reanimated, so Node tests cover every
+ * rule. The functions marked 'worklet' also run on the UI thread inside the
+ * rows list's sort strategy; they call only each other.
  */
 
 import type { OrderMove } from '@/state/organization'
 
-import type { EditItem } from './edit-mode'
+import type { EditItem, ListItem, PinnedItem } from './edit-mode'
 
-/** The fixed heights (points) the edit list draws; the section drag anchors with them. */
-export const EDIT_ITEM_HEIGHT = { caption: 36, pinned: 64, row: 64, section: 48 } as const
-
-/** Bottom padding under the edit list. */
-const LIST_PADDING = 40
+/** The fixed heights (points) the rows list draws; the section drag and swipe to select measure with them. */
+export const EDIT_ITEM_HEIGHT = { row: 64, section: 48 } as const
 
 export const SPACER_KEY = 'spacer'
 
@@ -27,30 +24,19 @@ export interface DragSpacer {
   height: number
 }
 
-/** One line of the drag list: an edit item, or the spacer while a section header is dragged. */
-export type DragItem = EditItem | DragSpacer
+/** One line of the rows list: a row or a section header, or the spacer while a section header is dragged. */
+export type DragItem = ListItem | DragSpacer
 
 /** What the slot rule needs to know about each key, as plain data a worklet can read. */
-export type SlotKind = 'pinnedCaption' | 'noneCaption' | 'section' | 'pinned' | 'lockedPinned' | 'row' | 'spacer'
+export type SlotKind = 'section' | 'row' | 'spacer'
 
 export type SlotMeta = Record<string, SlotKind>
-
-function slotKind(item: DragItem): SlotKind {
-  switch (item.kind) {
-    case 'caption':
-      return item.key === 'caption:pinned' ? 'pinnedCaption' : 'noneCaption'
-    case 'pinned':
-      return item.locked ? 'lockedPinned' : 'pinned'
-    default:
-      return item.kind
-  }
-}
 
 /** The slot kind of every key in the list, and of the spacer. */
 export function slotMeta(items: readonly DragItem[]): SlotMeta {
   const meta: SlotMeta = { [SPACER_KEY]: 'spacer' }
   for (const item of items) {
-    meta[item.key] = slotKind(item)
+    meta[item.key] = item.kind
   }
   return meta
 }
@@ -59,52 +45,27 @@ export function slotMeta(items: readonly DragItem[]): SlotMeta {
 // function into a factory evaluated at module load, and `nextOrder` below
 // closes over `orderIsLegal` and `sameKeys`. Moving either of them below
 // `nextOrder` compiles fine and passes the Node tests, but crashes on device
-// with a temporal-dead-zone error the first time the drag list calls it.
+// with a temporal-dead-zone error the first time the rows list calls it.
 // Keep `orderIsLegal` and `sameKeys` declared above `nextOrder`.
 
 /**
- * Whether an order (keys, top to bottom) keeps the drag rules: pins stay in the
- * Pinned group with a pinned concierge first, unpinned rows stay out of it,
- * section headers stay below No section, and nothing sits above the first
- * caption, or above the spacer that tops the headers-only list. Keys the meta
- * does not know are skipped.
+ * Whether an order (keys, top to bottom) keeps the drag rules. Every row may
+ * go anywhere: above the first section header is No section, under a header
+ * is that section. Only the spacer that tops the headers-only list must stay
+ * first. Keys the meta does not know are skipped.
  */
 export function orderIsLegal(order: readonly string[], meta: SlotMeta): boolean {
   'worklet'
-  // 'top' is above every caption; the spacer starts the headers-only list, which has no captions.
-  let group: 'top' | 'pinned' | 'other' = 'top'
-  let pinsSeen = 0
-  for (const key of order) {
-    const kind = meta[key]
-    switch (kind) {
-      case undefined:
-        break
-      case 'spacer':
-      case 'noneCaption':
-        group = 'other'
-        break
-      case 'pinnedCaption':
-        group = 'pinned'
-        break
-      case 'section':
-      case 'row':
-        if (group !== 'other') {
-          return false
-        }
-        break
-      default:
-        // A pin, or the pinned concierge, which must be the first pin.
-        if (group !== 'pinned' || (kind === 'lockedPinned' && pinsSeen > 0)) {
-          return false
-        }
-        pinsSeen++
+  for (let i = 1; i < order.length; i++) {
+    if (meta[order[i]!] === 'spacer') {
+      return false
     }
   }
   return true
 }
 
-/** Rows, pins and section headers carry a drag handle; captions and the pinned concierge do not. */
-export function hasHandle(item: DragItem): boolean {
+/** Rows, pins and section headers carry a drag handle; the pinned concierge and the spacer do not. */
+export function hasHandle(item: EditItem | DragSpacer): boolean {
   return item.kind === 'row' || item.kind === 'section' || (item.kind === 'pinned' && !item.locked)
 }
 
@@ -172,42 +133,50 @@ export function nextOrder(query: SlotQuery): string[] | null {
   return startOrder.indexOf(activeKey) !== activeIndex && sameKeys(startOrder, order) ? [...startOrder] : null
 }
 
-type SectionItem = Extract<EditItem, { kind: 'section' }>
+type SectionItem = Extract<ListItem, { kind: 'section' }>
 
-const isSection = (item: EditItem): item is SectionItem => item.kind === 'section'
+const isSection = (item: ListItem): item is SectionItem => item.kind === 'section'
 
-/** Where a key sits in an order: the key of its caption or section header, and the item right after it. */
-function placement(order: readonly string[], key: string, known: ReadonlyMap<string, EditItem>): { group: string | null; next: EditItem | undefined } {
+/** Where a key sits in an order: the key of the section header above it (null: No section), and the item right after it. */
+function placement(order: readonly string[], key: string, known: ReadonlyMap<string, ListItem>): { group: string | null; next: ListItem | undefined } {
   const at = order.indexOf(key)
   let group: string | null = null
   for (let i = at - 1; i >= 0; i--) {
-    const item = known.get(order[i]!)
-    if (item?.kind === 'caption' || item?.kind === 'section') {
-      group = item.key
+    if (known.get(order[i]!)?.kind === 'section') {
+      group = order[i]!
       break
     }
   }
-  let next: EditItem | undefined
+  let next: ListItem | undefined
   for (let i = at + 1; i < order.length && !next; i++) {
     next = known.get(order[i]!)
   }
   return { group, next }
 }
 
-function profileOf(item: EditItem | undefined, kind: 'row' | 'pinned'): string | null {
-  return item?.kind === kind ? item.bot.profile : null
+/**
+ * The row a dropped row lands in front of: the row right after it, or, when
+ * nothing but a header or the end follows, the top row of a collapsed
+ * section it was dropped under (its rows are not shown), else null (the end).
+ */
+function landsBefore(where: { group: string | null; next: ListItem | undefined }, known: ReadonlyMap<string, ListItem>): string | null {
+  if (where.next?.kind === 'row') {
+    return where.next.bot.profile
+  }
+  const header = where.group === null ? undefined : known.get(where.group)
+  return header?.kind === 'section' && header.section.collapsed ? header.topRow : null
 }
 
 /**
- * The order move for a finished drop, or null when nothing moves: a drop in
- * the same place, a drop the rules forbid, a caption or the pinned concierge,
- * or an agent that disappeared during the drag. `items` is the list as it is
- * now; `order` is the keys after the drop (the full list, or the headers-only
- * list of a section drag). Keys no longer in `items` are skipped.
+ * The order move for a finished drop in the rows list, or null when nothing
+ * moves: a drop in the same place, a drop the rules forbid, or an item that
+ * disappeared during the drag. `items` is the rows list as it is now; `order`
+ * is the keys after the drop (the full list, or the headers-only list of a
+ * section drag). Keys no longer in `items` are skipped.
  */
-export function dropMove(items: readonly EditItem[], order: readonly string[], key: string): OrderMove | null {
+export function dropMove(items: readonly ListItem[], order: readonly string[], key: string): OrderMove | null {
   const item = items.find(i => i.key === key)
-  if (!item || item.kind === 'caption' || !hasHandle(item) || !order.includes(key) || !orderIsLegal(order, slotMeta(items))) {
+  if (!item || !order.includes(key) || !orderIsLegal(order, slotMeta(items))) {
     return null
   }
   if (item.kind === 'section') {
@@ -222,16 +191,30 @@ export function dropMove(items: readonly EditItem[], order: readonly string[], k
   const known = new Map(items.map(i => [i.key, i]))
   const was = placement(items.map(i => i.key), key, known)
   const now = placement(order, key, known)
-  const peer = item.kind === 'pinned' ? 'pinned' : 'row'
-  const before = profileOf(now.next, peer)
-  if (now.group === was.group && before === profileOf(was.next, peer)) {
+  const before = landsBefore(now, known)
+  if (now.group === was.group && before === landsBefore(was, known)) {
     return null
-  }
-  if (item.kind === 'pinned') {
-    return { kind: 'pin', profile: item.bot.profile, before }
   }
   const group = now.group === null ? undefined : known.get(now.group)
   return { kind: 'row', profile: item.bot.profile, sectionId: group?.kind === 'section' ? group.section.id : null, before }
+}
+
+/**
+ * The pin move for a finished drop among the pinned avatars, or null: a drop
+ * in the same place, the pinned concierge, or an order with anything in front
+ * of a pinned concierge. `order` is the pinned keys after the drop; keys of
+ * pins that disappeared during the drag are skipped.
+ */
+export function pinDropMove(pins: readonly PinnedItem[], order: readonly string[], key: string): OrderMove | null {
+  const item = pins.find(p => p.key === key)
+  const known = order.filter(k => pins.some(p => p.key === k))
+  const locked = pins.find(p => p.locked)
+  if (!item || item.locked || !known.includes(key) || (locked && known[0] !== locked.key)) {
+    return null
+  }
+  const nextKey = known[known.indexOf(key) + 1]
+  const before = pins.find(p => p.key === nextKey)?.bot.profile ?? null
+  return before === (pins[pins.indexOf(item) + 1]?.bot.profile ?? null) ? null : { kind: 'pin', profile: item.bot.profile, before }
 }
 
 function heightOf(item: DragItem): number {
@@ -247,7 +230,7 @@ function listHeight(items: readonly DragItem[]): number {
  * a spacer whose height keeps the dragged header at the same place on screen.
  * A key that names no section shows the whole list.
  */
-export function sectionDragItems(items: readonly EditItem[], sectionKey: string): DragItem[] {
+export function sectionDragItems(items: readonly ListItem[], sectionKey: string): DragItem[] {
   const at = items.findIndex(i => i.kind === 'section' && i.key === sectionKey)
   if (at === -1) {
     return [...items]
@@ -259,14 +242,13 @@ export function sectionDragItems(items: readonly EditItem[], sectionKey: string)
 }
 
 /**
- * The least height of the scroll content: the whole list plus its bottom
- * padding. It stays the same while only the headers show and while the whole
- * list comes back (the drag list draws its new height a few frames after the
- * data changes), so the list never gets shorter than the scroll position needs
- * and the scroll position does not move.
+ * The least height of the rows list: the whole list. It stays the same while
+ * only the headers show and while the whole list comes back (the drag list
+ * draws its new height a few frames after the data changes), so the scroll
+ * content never gets shorter than the scroll position needs.
  */
-export function listMinHeight(items: readonly EditItem[]): number {
-  return listHeight(items) + LIST_PADDING
+export function listMinHeight(items: readonly ListItem[]): number {
+  return listHeight(items)
 }
 
 /** The section header whose handle is touched or dragged; while `key` is set, the list shows only the headers. */

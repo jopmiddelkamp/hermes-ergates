@@ -6,12 +6,14 @@
  * the finger leaves again goes back to how it was before the swipe. While the
  * finger is near the list's top or bottom edge, the list scrolls by itself.
  * No React, React Native or Reanimated, so Node tests cover every rule. The
- * functions marked 'worklet' also run on the UI thread inside the edit list's
+ * functions marked 'worklet' also run on the UI thread inside the rows list's
  * swipe gesture and its auto-scroll frame callback; they call no other function.
+ * The swipe runs over the rows list only (`ListItem`): the pinned avatars
+ * above it are selected by a tap.
  */
 
 import { EDIT_ITEM_HEIGHT } from './drop-rules'
-import type { EditItem, Selection } from './edit-mode'
+import type { EditItem, ListItem, Selection } from './edit-mode'
 
 // Declared above the worklets that read them: the worklets Babel plugin
 // evaluates each worklet's closure at module load (see drop-rules.ts).
@@ -23,7 +25,7 @@ export const AUTO_SCROLL_MAX_SPEED = 1000
 /** The longest frame the auto-scroll counts, in ms: after a stall the list moves one short step, not a jump. */
 const AUTO_SCROLL_MAX_FRAME = 50
 
-/** One line of the edit list as the swipe gesture reads it on the UI thread. */
+/** One line of the rows list as the swipe gesture reads it on the UI thread. */
 export interface SwipeLine {
   key: string
   height: number
@@ -32,8 +34,8 @@ export interface SwipeLine {
 /** Starting on an unselected row selects; starting on a selected row deselects. */
 export type SwipeMode = 'select' | 'deselect'
 
-/** Every line of the edit list with the fixed height the list draws it at, top to bottom. */
-export function swipeLines(items: readonly EditItem[]): SwipeLine[] {
+/** Every line of the rows list with the fixed height the list draws it at, top to bottom. */
+export function swipeLines(items: readonly ListItem[]): SwipeLine[] {
   return items.map(item => ({ key: item.key, height: EDIT_ITEM_HEIGHT[item.kind] }))
 }
 
@@ -51,8 +53,8 @@ export function lineTop(lines: readonly SwipeLine[], key: string): number {
 }
 
 /**
- * The key of the line at content y: a row, a pin, a caption or a section
- * header (the range skips the last two). Above the list is its first line and
+ * The key of the line at y from the top of the rows list: a row or a section
+ * header (the range skips headers). Above the list is its first line and
  * below it its last line; an empty list has none.
  */
 export function lineAt(lines: readonly SwipeLine[], y: number): string | null {
@@ -77,9 +79,9 @@ export function swipeMode(items: readonly EditItem[], selection: Selection, star
 }
 
 /**
- * The selection while the finger is on `currentKey`: every row and pin from
- * the start line to the current one, in either direction, selected or
- * deselected by `mode`; captions and section headers in the range are skipped.
+ * The selection while the finger is on `currentKey`: every row from the start
+ * line to the current one, in either direction, selected or deselected by
+ * `mode`; section headers in the range are skipped.
  * Everything else keeps its state from `base`, the selection when the swipe
  * started, so moving back returns a row to how it was. A key the list no
  * longer shows changes nothing.

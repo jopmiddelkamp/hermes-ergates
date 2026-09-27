@@ -1,8 +1,9 @@
 /**
  * Home Edit mode as pure functions (docs/10 "Home edit mode"): the flat list
- * the edit list draws, the selection, the bottom bar labels, Move up and Move
- * down, and the concierge lock. No React and no React Native, so Node tests
- * cover every rule; the Home screen and `EditList` only bind it.
+ * Home draws in both modes, the selection, the bottom bar labels, Move up and
+ * Move down (Move left and Move right on a pin), and the concierge lock. No
+ * React and no React Native, so Node tests cover every rule; the Home screen
+ * and `src/ui/home-list` only bind it.
  */
 
 import type { OrderMove, Section } from '@/state/organization'
@@ -10,15 +11,23 @@ import type { OrderMove, Section } from '@/state/organization'
 import type { Bot } from './roster'
 
 /**
- * One line of the edit list, top to bottom: the Pinned group (caption and
- * pinned rows), the No section group (caption and rows), then each section
- * (header and rows). Every section shows expanded. `key` is unique in the list.
+ * One item of the Home list, in both modes, top to bottom: the pinned
+ * avatars (in pin order, a pinned concierge first), the rows without a
+ * section, then each section's header and, unless the section is collapsed,
+ * its rows. `key` is unique in the list. A section header keeps its first
+ * row (`topRow`), shown or not: a row dropped right under a collapsed header
+ * lands in front of it.
  */
 export type EditItem =
-  | { kind: 'caption'; key: 'caption:pinned' | 'caption:none'; label: 'Pinned' | 'No section' }
   | { kind: 'pinned'; key: string; bot: Bot; locked: boolean }
-  | { kind: 'section'; key: string; section: Section }
+  | { kind: 'section'; key: string; section: Section; topRow: string | null }
   | { kind: 'row'; key: string; bot: Bot; sectionId: string | null }
+
+/** A pinned avatar. */
+export type PinnedItem = Extract<EditItem, { kind: 'pinned' }>
+
+/** A line of the rows list below the pinned avatars: a row or a section header. */
+export type ListItem = Exclude<EditItem, { kind: 'pinned' }>
 
 /** The Home layout the list is built from (`HomeModel` has this shape). */
 export interface EditLayout {
@@ -34,8 +43,8 @@ export const NO_SELECTION: Selection = new Set()
 export type MoveDirection = 'up' | 'down'
 
 export interface MoveAction {
-  name: 'moveUp' | 'moveDown'
-  label: 'Move up' | 'Move down'
+  name: 'moveUp' | 'moveDown' | 'moveLeft' | 'moveRight'
+  label: 'Move up' | 'Move down' | 'Move left' | 'Move right'
 }
 
 export interface EditBarLabels {
@@ -45,25 +54,30 @@ export interface EditBarLabels {
 
 export function buildEditItems(layout: EditLayout): EditItem[] {
   const items: EditItem[] = []
-  if (layout.pinned.length > 0) {
-    items.push({ kind: 'caption', key: 'caption:pinned', label: 'Pinned' })
-    // `deriveHome` already puts a pinned concierge first; it is the one pin that never moves.
-    for (const bot of layout.pinned) {
-      items.push({ kind: 'pinned', key: `pinned:${bot.profile}`, bot, locked: bot.isDefault })
-    }
+  // `deriveHome` already puts a pinned concierge first; it is the one pin that never moves.
+  for (const bot of layout.pinned) {
+    items.push({ kind: 'pinned', key: `pinned:${bot.profile}`, bot, locked: bot.isDefault })
   }
-  // Always drawn, so the group stays a place to move rows to when it is empty.
-  items.push({ kind: 'caption', key: 'caption:none', label: 'No section' })
   for (const bot of layout.ungrouped) {
     items.push({ kind: 'row', key: `row:${bot.profile}`, bot, sectionId: null })
   }
   for (const { section, rows } of layout.sections) {
-    items.push({ kind: 'section', key: `section:${section.id}`, section })
-    for (const bot of rows) {
-      items.push({ kind: 'row', key: `row:${bot.profile}`, bot, sectionId: section.id })
+    items.push({ kind: 'section', key: `section:${section.id}`, section, topRow: rows[0]?.profile ?? null })
+    if (!section.collapsed) {
+      for (const bot of rows) {
+        items.push({ kind: 'row', key: `row:${bot.profile}`, bot, sectionId: section.id })
+      }
     }
   }
   return items
+}
+
+export function pinnedItems(items: readonly EditItem[]): PinnedItem[] {
+  return items.filter((item): item is PinnedItem => item.kind === 'pinned')
+}
+
+export function listItems(items: readonly EditItem[]): ListItem[] {
+  return items.filter((item): item is ListItem => item.kind !== 'pinned')
 }
 
 function profileOf(item: EditItem): string | null {
@@ -122,12 +136,12 @@ function idOf(item: EditItem | undefined): string | null {
 
 /**
  * The order move one step up or down inside the item's own group, or null when
- * it cannot move that way: at the group's edge, a caption, the pinned concierge,
- * or a pin that would pass above the concierge.
+ * it cannot move that way: at the group's edge, the pinned concierge, or a pin
+ * that would pass above the concierge. For a pin, up is left and down is right.
  */
 export function moveStep(items: EditItem[], key: string, direction: MoveDirection): OrderMove | null {
   const item = items.find(i => i.key === key)
-  if (!item || item.kind === 'caption' || (item.kind === 'pinned' && item.locked)) {
+  if (!item || (item.kind === 'pinned' && item.locked)) {
     return null
   }
   const peers = peersOf(items, item)
@@ -148,19 +162,34 @@ export function moveStep(items: EditItem[], key: string, direction: MoveDirectio
   }
 }
 
-/** The screen-reader actions an item offers: only the moves that can happen. */
+/** The screen-reader actions an item offers: only the moves that can happen; Move left and Move right on a pin. */
 export function moveActions(items: EditItem[], key: string): MoveAction[] {
+  const pin = items.find(i => i.key === key)?.kind === 'pinned'
   const actions: MoveAction[] = []
   if (moveStep(items, key, 'up')) {
-    actions.push({ name: 'moveUp', label: 'Move up' })
+    actions.push(pin ? { name: 'moveLeft', label: 'Move left' } : { name: 'moveUp', label: 'Move up' })
   }
   if (moveStep(items, key, 'down')) {
-    actions.push({ name: 'moveDown', label: 'Move down' })
+    actions.push(pin ? { name: 'moveRight', label: 'Move right' } : { name: 'moveDown', label: 'Move down' })
   }
   return actions
 }
 
-/** What a screen reader says for a row in Edit mode, ending in its selection state. */
+/** The direction of a move action by its name, or null for any other action. */
+export function moveDirection(actionName: string): MoveDirection | null {
+  switch (actionName) {
+    case 'moveUp':
+    case 'moveLeft':
+      return 'up'
+    case 'moveDown':
+    case 'moveRight':
+      return 'down'
+    default:
+      return null
+  }
+}
+
+/** What a screen reader says for a row or a pinned avatar in Edit mode, ending in its selection state. */
 export function editRowLabel(bot: Bot, selected: boolean, unread: boolean): string {
   return [bot.name, bot.role, unread ? 'unread' : '', selected ? 'selected' : 'not selected'].filter(Boolean).join(', ')
 }

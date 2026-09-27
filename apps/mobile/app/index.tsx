@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter, Redirect } from 'expo-router'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, BackHandler, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Alert, BackHandler, StyleSheet, Text } from 'react-native'
 
 import {
   NO_SELECTION,
@@ -14,9 +14,7 @@ import {
   membershipSnapshot,
   profilesParam,
   selectedInListOrder,
-  selectionTitle,
   toggleSelected,
-  useAvatar,
   useHome,
   useOrganizer,
   useOrgSync,
@@ -33,16 +31,12 @@ import { useDeviceStore } from '@/state/device-store'
 import { useTheme } from '@/theme/provider'
 import { useSkinStore } from '@/theme/skin-store'
 import type { AnchorRect } from '@/ui/ActionMenu'
-import { Avatar } from '@/ui/Avatar'
 import { BotActions } from '@/ui/BotActions'
-import { BotRow } from '@/ui/BotRow'
-import { Button } from '@/ui/Button'
-import { EditBar } from '@/ui/EditBar'
-import { EditList } from '@/ui/EditList'
-import { IconButton } from '@/ui/IconButton'
-import { bleed } from '@/ui/page-padding'
+import { EditBar } from '@/ui/home-list/EditBar'
+import { HomeList } from '@/ui/home-list/HomeList'
+import { HomeTopBar } from '@/ui/home-list/HomeTopBar'
+import { useShowProgress } from '@/ui/home-list/motion'
 import { Screen, usePagePadding } from '@/ui/Screen'
-import { SectionHeader } from '@/ui/SectionHeader'
 import { useBottomInset } from '@/ui/use-bottom-inset'
 
 export default function HomeScreen() {
@@ -61,8 +55,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   // The roster list scrolls to the bottom edge of the phone; its content
   // carries the inset instead of Screen reserving a strip for it.
   const listBottomInset = useBottomInset(LIST_BOTTOM_PADDING)
-  // The roster list runs edge to edge (a row's tap highlight and the scroll
-  // bar reach the screen edges); each row pads its content by the page padding.
+  // The error and empty lines sit in the edge-to-edge list, padded like its rows.
   const gutter = usePagePadding()
   // Guarded by `HomeScreen`, which redirects to /connect without a connection.
   const connection = useDeviceStore(s => s.connections.find(c => c.id === connectionId))!
@@ -88,8 +81,10 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   const [menu, setMenu] = useState<{ bot: Bot; anchor: AnchorRect } | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   // Edit mode (docs/10 "Home edit mode"). Every change applies at once, so
-  // leaving only clears the selection; there is nothing to cancel.
+  // leaving only clears the selection; there is nothing to cancel. The same
+  // list stays on screen: circles, handles and badges animate in and out.
   const [editing, setEditing] = useState(false)
+  const progress = useShowProgress(editing)
   const [picked, setPicked] = useState<Selection>(NO_SELECTION)
   const items = useMemo(() => buildEditItems(home), [home])
   const selection = liveSelection(picked, items)
@@ -235,96 +230,49 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
     setRefreshing(false)
   }
 
-  const renderRow = (bot: Bot) => (
-    <BotRow
-      key={bot.profile}
-      bot={bot}
-      gateway={gateway}
-      connectionId={connectionId}
-      unread={home.unread(bot.profile)}
-      onPress={() => openChat(bot)}
-      onLongPress={anchor => openMenu(bot, anchor)}
-      gutter={gutter}
-    />
-  )
-
   const empty = !home.loading && home.bots.length === 0
-
-  if (editing) {
-    return (
-      <Screen>
-        <View style={styles.topBar}>
-          {Platform.OS === 'ios' ? (
-            <>
-              <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.centered]}>
-                <Text accessibilityRole="header" style={[styles.editTitle, { color: theme.colors.foreground }]}>
-                  {selectionTitle(selection.size)}
-                </Text>
-              </View>
-              <Button label="Done" variant="ghost" compact onPress={stopEditing} />
-            </>
-          ) : (
-            <>
-              <IconButton name="x" accessibilityLabel="Leave edit mode" onPress={stopEditing} />
-              <Text accessibilityRole="header" style={[styles.editTitle, { color: theme.colors.foreground }]}>
-                {selectionTitle(selection.size)}
-              </Text>
-            </>
-          )}
-        </View>
-        <EditList
-          items={items}
-          selection={selection}
-          gateway={gateway}
-          connectionId={connectionId}
-          haptics={haptics}
-          unread={home.unread}
-          onToggle={profile => setPicked(toggleSelected(selection, profile))}
-          onSelectionChange={setPicked}
-          onMove={organizer.applyMove}
-          onEditSection={editSection}
-          barBelow={selection.size > 0}
-        />
-        {selection.size > 0 ? <EditBar labels={labels} onMove={bar.move} onPin={bar.pin} onHide={() => void bar.hide()} onRead={bar.read} /> : null}
-      </Screen>
-    )
-  }
 
   return (
     <Screen>
-      <View style={styles.topBar}>
-        <IconButton name="user" accessibilityLabel="Settings" onPress={() => router.push('/settings')} />
-        <View style={styles.spacer} />
-        {Platform.OS === 'ios' ? (
-          <Button label="Edit" variant="ghost" compact onPress={() => startEditing()} />
-        ) : (
-          <IconButton name="edit-2" accessibilityLabel="Edit" onPress={() => startEditing()} />
-        )}
-        <IconButton name="search" accessibilityLabel="Search" onPress={() => router.push('/search')} />
-        <IconButton name="plus" accessibilityLabel="Add" onPress={() => router.push('/new-agent')} />
-      </View>
-      <ScrollView style={bleed(gutter)} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={{ paddingBottom: listBottomInset }}>
-        {home.error ? (
-          <Text style={[styles.line, { color: theme.colors.destructive, paddingHorizontal: gutter }]} accessibilityRole="alert">
-            Could not load your assistants. Pull to retry.
-          </Text>
-        ) : null}
-        {home.pinned.length > 0 ? (
-          <View style={[styles.pins, { paddingHorizontal: gutter }]}>
-            {home.pinned.map(bot => (
-              <PinnedAvatar key={bot.profile} bot={bot} gateway={gateway} connectionId={connectionId} unread={home.unread(bot.profile)} onPress={() => openChat(bot)} onLongPress={anchor => openMenu(bot, anchor)} />
-            ))}
-          </View>
-        ) : null}
-        {home.ungrouped.map(renderRow)}
-        {home.sections.map(({ section, rows }) => (
-          <View key={section.id}>
-            <SectionHeader name={section.name} expanded={!section.collapsed} onToggle={() => toggleCollapsed(connectionId, section.id)} onEdit={() => editSection(section.id)} gutter={gutter} />
-            {section.collapsed ? null : rows.map(renderRow)}
-          </View>
-        ))}
-        {empty ? <Text style={[styles.line, { color: theme.colors.mutedForeground, paddingHorizontal: gutter }]}>No assistants yet. Tap + to create one.</Text> : null}
-      </ScrollView>
+      <HomeTopBar
+        editing={editing}
+        progress={progress}
+        selectedCount={selection.size}
+        onSettings={() => router.push('/settings')}
+        onEdit={() => startEditing()}
+        onDone={stopEditing}
+        onSearch={() => router.push('/search')}
+        onAdd={() => router.push('/new-agent')}
+      />
+      <HomeList
+        items={items}
+        selection={selection}
+        editing={editing}
+        progress={progress}
+        gateway={gateway}
+        connectionId={connectionId}
+        haptics={haptics}
+        unread={home.unread}
+        refreshing={refreshing}
+        onRefresh={() => void onRefresh()}
+        onOpen={openChat}
+        onMenu={openMenu}
+        onToggle={profile => setPicked(toggleSelected(selection, profile))}
+        onSelectionChange={setPicked}
+        onMove={organizer.applyMove}
+        onToggleCollapsed={sectionId => toggleCollapsed(connectionId, sectionId)}
+        onEditSection={editSection}
+        bottomPadding={listBottomInset}
+        header={
+          home.error ? (
+            <Text style={[styles.line, { color: theme.colors.destructive, paddingHorizontal: gutter }]} accessibilityRole="alert">
+              Could not load your assistants. Pull to retry.
+            </Text>
+          ) : null
+        }
+        footer={empty ? <Text style={[styles.line, { color: theme.colors.mutedForeground, paddingHorizontal: gutter }]}>No assistants yet. Tap + to create one.</Text> : null}
+      />
+      <EditBar labels={labels} shown={editing && selection.size > 0} onMove={bar.move} onPin={bar.pin} onHide={() => void bar.hide()} onRead={bar.read} />
       <BotActions
         bot={menu?.bot ?? null}
         anchor={menu?.anchor ?? null}
@@ -340,39 +288,6 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   )
 }
 
-function useAnchor() {
-  const ref = useRef<View>(null)
-  const measure = (cb: (rect: AnchorRect) => void) => {
-    ref.current?.measureInWindow((x, y, width, height) => cb({ x, y, width, height }))
-  }
-  return { ref, measure }
-}
-
-function PinnedAvatar({ bot, gateway, connectionId, unread, onPress, onLongPress }: { bot: Bot; gateway: ReturnType<typeof useGateway>; connectionId: string; unread: boolean; onPress: () => void; onLongPress: (anchor: AnchorRect) => void }) {
-  const theme = useTheme()
-  const avatar = useAvatar(gateway, connectionId, bot.profile, bot.hasAvatar)
-  const { ref, measure } = useAnchor()
-  return (
-    <View ref={ref} collapsable={false}>
-      <Pressable onPress={onPress} onLongPress={() => measure(onLongPress)} accessibilityRole="button" accessibilityLabel={`${bot.name}${unread ? ', unread' : ''}`} style={styles.pin}>
-        <Avatar name={bot.name} color={bot.color} imageUri={avatar.data ?? null} size={84} />
-        <Text style={[styles.pinLabel, { color: theme.colors.mutedForeground }]} numberOfLines={1}>
-          {bot.name}
-        </Text>
-        {unread ? <View style={[styles.pinDot, { backgroundColor: theme.colors.primary }]} accessibilityLabel="Unread" /> : null}
-      </Pressable>
-    </View>
-  )
-}
-
 const styles = StyleSheet.create({
-  topBar: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48, marginBottom: 12 },
-  spacer: { flex: 1 },
-  centered: { alignItems: 'center', justifyContent: 'center' },
-  editTitle: { fontSize: 17, fontWeight: '600' },
-  pins: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 24, marginVertical: 20 },
-  pin: { alignItems: 'center', gap: 8, width: 96 },
-  pinLabel: { fontSize: 15 },
-  pinDot: { position: 'absolute', top: 2, right: 10, width: 12, height: 12, borderRadius: 6 },
   line: { fontSize: 15, lineHeight: 22, paddingVertical: 24, textAlign: 'center' }
 })

@@ -121,17 +121,17 @@ module.exports = {
       to: { path: '^node_modules/(@react-native-cookies/cookies|expo-secure-store|expo-crypto|@react-native-async-storage/async-storage|expo-file-system|expo-document-picker|expo-image-picker|expo-image-manipulator|expo-speech-recognition)/' }
     },
     {
-      name: 'adr029-4-drag-libraries-in-edit-list',
-      comment: 'react-native-sortables and react-native-reanimated back the Home edit-mode drag list; only src/ui/EditList.tsx may import them.',
+      name: 'adr029-4-drag-libraries-in-home-list',
+      comment: 'react-native-sortables and react-native-reanimated back the one Home list, its drag lists and its Edit mode motion; only the files in src/ui/home-list/ may import them.',
       severity: 'error',
-      from: { pathNot: `(^src/ui/EditList\\.tsx$|${TEST})` },
+      from: { pathNot: `(^src/ui/home-list/|${TEST})` },
       to: { path: '^node_modules/(react-native-sortables|react-native-reanimated)/' }
     },
     {
       name: 'adr029-4-gesture-handler-at-the-root',
-      comment: 'react-native-gesture-handler must be set up once, at the app root; only app/_layout.tsx may import it, and the Home edit-mode list (src/ui/EditList.tsx) for its swipe-to-select gesture, which must win over the scroll view.',
+      comment: 'react-native-gesture-handler must be set up once, at the app root; only app/_layout.tsx may import it, and the Home list for its swipe-to-select gesture, which must win over the scroll view: src/ui/home-list/use-swipe-select.ts builds it and src/ui/home-list/HomeRow.tsx attaches it to the circle column.',
       severity: 'error',
-      from: { pathNot: `(^app/_layout\\.tsx$|^src/ui/EditList\\.tsx$|${TEST})` },
+      from: { pathNot: `(^app/_layout\\.tsx$|^src/ui/home-list/use-swipe-select\\.ts$|^src/ui/home-list/HomeRow\\.tsx$|${TEST})` },
       to: { path: '^node_modules/react-native-gesture-handler/' }
     }
   ],

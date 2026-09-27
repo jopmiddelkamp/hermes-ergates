@@ -12,11 +12,13 @@ import {
   nextOrder,
   nextSectionDrag,
   orderIsLegal,
+  pinDropMove,
   sectionDragItems,
   slotMeta,
+  type DragItem,
   type SlotQuery
 } from './drop-rules'
-import { buildEditItems, type EditItem, type EditLayout } from './edit-mode'
+import { buildEditItems, listItems, pinnedItems, type EditLayout, type ListItem } from './edit-mode'
 import type { Bot } from './roster'
 
 function bot(profile: string, extra: Partial<Bot> = {}): Bot {
@@ -37,22 +39,29 @@ function bot(profile: string, extra: Partial<Bot> = {}): Bot {
 }
 
 const prive: Section = { id: 'prive', name: 'Prive', collapsed: false, order: 0 }
-const work: Section = { id: 'work', name: 'Work', collapsed: true, order: 1 }
+const work: Section = { id: 'work', name: 'Work', collapsed: false, order: 1 }
+const archive: Section = { id: 'archive', name: 'Archive', collapsed: true, order: 2 }
 
-/** Hermes (the concierge), Noor and Mia pinned; Otto and Zed without a section; Kevin and Linh in Prive; Work empty. */
+/**
+ * Hermes (the concierge), Noor and Mia pinned; Otto and Zed without a section;
+ * Kevin and Linh in Prive; Work empty; Ada and Bo in Archive, which is collapsed.
+ */
 function layout(): EditLayout {
   return {
     pinned: [bot('hermes', { isDefault: true }), bot('noor'), bot('mia')],
     ungrouped: [bot('otto'), bot('zed')],
     sections: [
       { section: prive, rows: [bot('kevin'), bot('linh')] },
-      { section: work, rows: [] }
+      { section: work, rows: [] },
+      { section: archive, rows: [bot('ada'), bot('bo')] }
     ]
   }
 }
 
-const items = (l: EditLayout = layout()) => buildEditItems(l)
-const keysOf = (list: readonly { key: string }[]) => list.map(i => i.key)
+/** The rows list below the pinned avatars. */
+const list = (l: EditLayout = layout()) => listItems(buildEditItems(l))
+const pins = (l: EditLayout = layout()) => pinnedItems(buildEditItems(l))
+const keysOf = (items: readonly { key: string }[]) => items.map(i => i.key)
 
 /** `order` with `key` taken out and put back at `to` (insert, as the drag list does). */
 function moved(order: readonly string[], key: string, to: number): string[] {
@@ -60,77 +69,37 @@ function moved(order: readonly string[], key: string, to: number): string[] {
   return [...rest.slice(0, to), key, ...rest.slice(to)]
 }
 
-const legal = (order: string[], list: EditItem[] = items()) => orderIsLegal(order, slotMeta(list))
+const legal = (order: string[], items: readonly DragItem[] = list()) => orderIsLegal(order, slotMeta(items))
 
 describe('orderIsLegal', () => {
-  const start = keysOf(items())
+  const start = keysOf(list())
 
-  it('accepts the list as it is drawn', () => {
-    expect(start).toEqual([
-      'caption:pinned',
-      'pinned:hermes',
-      'pinned:noor',
-      'pinned:mia',
-      'caption:none',
-      'row:otto',
-      'row:zed',
-      'section:prive',
-      'row:kevin',
-      'row:linh',
-      'section:work'
-    ])
+  it('draws the rows list without captions or pins', () => {
+    expect(start).toEqual(['row:otto', 'row:zed', 'section:prive', 'row:kevin', 'row:linh', 'section:work', 'section:archive'])
     expect(legal(start)).toBe(true)
   })
 
-  it('lets a row move inside its group, into another section, into No section, and under an empty section header', () => {
-    expect(legal(moved(start, 'row:zed', 5))).toBe(true)
-    expect(legal(moved(start, 'row:otto', 8))).toBe(true)
-    expect(legal(moved(start, 'row:linh', 5))).toBe(true)
-    expect(legal(moved(start, 'row:otto', 10))).toBe(true)
-  })
-
-  it('keeps an unpinned row out of the Pinned group and away from the top', () => {
-    expect(legal(moved(start, 'row:otto', 2))).toBe(false)
-    expect(legal(moved(start, 'row:otto', 4))).toBe(false)
-    expect(legal(moved(start, 'row:otto', 0))).toBe(false)
-    const unpinned = items({ ...layout(), pinned: [] })
-    expect(legal(moved(keysOf(unpinned), 'row:otto', 0), unpinned)).toBe(false)
-  })
-
-  it('keeps a pinned row inside the Pinned group, and nothing above a pinned concierge', () => {
-    expect(legal(moved(start, 'pinned:mia', 2))).toBe(true)
-    expect(legal(moved(start, 'pinned:mia', 5))).toBe(false)
-    expect(legal(moved(start, 'pinned:noor', 8))).toBe(false)
-    expect(legal(moved(start, 'pinned:mia', 1))).toBe(false)
-    expect(legal(moved(start, 'pinned:hermes', 2))).toBe(false)
-  })
-
-  it('treats an unpinned concierge as an ordinary row, so any pin can go first', () => {
-    const plain = items({ ...layout(), pinned: [bot('noor'), bot('mia')], ungrouped: [bot('hermes', { isDefault: true }), bot('otto')] })
-    expect(legal(moved(keysOf(plain), 'pinned:mia', 1), plain)).toBe(true)
-    expect(legal(moved(keysOf(plain), 'row:hermes', 7), plain)).toBe(true)
-  })
-
-  it('keeps a section header below the No section caption', () => {
-    expect(legal(moved(start, 'section:work', 7))).toBe(true)
-    expect(legal(moved(start, 'section:work', 3))).toBe(false)
-    expect(legal(moved(start, 'section:work', 0))).toBe(false)
+  it('lets a row go anywhere: above the first header is No section, under a header is that section', () => {
+    expect(legal(moved(start, 'row:kevin', 0))).toBe(true)
+    expect(legal(moved(start, 'row:otto', 3))).toBe(true)
+    expect(legal(moved(start, 'row:otto', 6))).toBe(true)
   })
 
   it('keeps the spacer first in the headers-only list', () => {
-    const headers = keysOf(sectionDragItems(items(), 'section:work'))
+    const headers = keysOf(sectionDragItems(list(), 'section:work'))
+    expect(headers).toEqual([SPACER_KEY, 'section:prive', 'section:work', 'section:archive'])
     expect(legal(moved(headers, 'section:work', 1))).toBe(true)
     expect(legal(moved(headers, 'section:work', 0))).toBe(false)
   })
 
   it('skips keys it does not know', () => {
-    expect(legal(['caption:pinned', 'pinned:gone', ...start.slice(1)])).toBe(true)
+    expect(legal(['row:gone', ...start])).toBe(true)
   })
 })
 
 describe('hasHandle', () => {
-  it('gives a handle to rows, pins and section headers, not to captions or the pinned concierge', () => {
-    expect(items().filter(hasHandle).map(i => i.key)).toEqual([
+  it('gives a handle to rows, pins and section headers, not to the pinned concierge or the spacer', () => {
+    expect(buildEditItems(layout()).filter(hasHandle).map(i => i.key)).toEqual([
       'pinned:noor',
       'pinned:mia',
       'row:otto',
@@ -138,154 +107,163 @@ describe('hasHandle', () => {
       'section:prive',
       'row:kevin',
       'row:linh',
-      'section:work'
+      'section:work',
+      'section:archive'
     ])
     expect(hasHandle({ kind: 'spacer', key: SPACER_KEY, height: 10 })).toBe(false)
   })
 })
 
 describe('nextOrder, the live rule while the finger moves', () => {
-  const start = keysOf(items())
-  const heights = Object.fromEntries(items().map(i => [i.key, EDIT_ITEM_HEIGHT[i.kind]]))
-  /** Otto (index 5, 64 pt high) with its center at `centerY`. */
+  const start = keysOf(list())
+  const heights = Object.fromEntries(list().map(i => [i.key, EDIT_ITEM_HEIGHT[i.kind]]))
+  /** Otto (index 0, 64 pt high) with its center at `centerY`. */
   const query = (centerY: number, extra: Partial<SlotQuery> = {}): SlotQuery => ({
     order: start,
     startOrder: start,
     activeKey: 'row:otto',
-    activeIndex: 5,
+    activeIndex: 0,
     activeHeight: 64,
     centerY,
     heights,
-    meta: slotMeta(items()),
+    meta: slotMeta(list()),
     ...extra
   })
 
   it('keeps the order while the row is over its own slot', () => {
-    expect(nextOrder(query(296))).toBeNull()
+    expect(nextOrder(query(32))).toBeNull()
   })
 
-  it('takes the row to its nearest slot, legal or not: it never searches for a legal one', () => {
-    // Slot centers after the other items: ... Kevin's slot is centered at 472.
-    expect(nextOrder(query(472))).toEqual(moved(start, 'row:otto', 8))
+  it('takes the row to its nearest slot', () => {
+    // Slot tops after the other items: Zed 0, Prive 64, Kevin 112, Linh 176, ... so slot 3 is centered at 208.
+    expect(nextOrder(query(208))).toEqual(moved(start, 'row:otto', 3))
   })
 
-  it('refuses a slot in the Pinned group: the row stays, or slides back to where the drag started', () => {
-    expect(nextOrder(query(132))).toBeNull()
-    const away = moved(start, 'row:otto', 8)
-    expect(nextOrder(query(132, { order: away, activeIndex: 8 }))).toEqual(start)
-  })
-
-  it('refuses a slot above the pinned concierge for a pin, whether that slot is above every caption or only above the concierge', () => {
-    const mia = { activeKey: 'pinned:mia', activeIndex: 3 }
-    // Slot 0 (center 32): above the Pinned caption itself.
-    expect(nextOrder(query(32, mia))).toBeNull()
-    // Slot 1 (center 68): below the caption but still above the locked concierge.
-    expect(nextOrder(query(68, mia))).toBeNull()
-    expect(nextOrder(query(132, mia))).toEqual(moved(start, 'pinned:mia', 2))
-  })
-
-  it('does not slide back to a start order whose items changed during the drag', () => {
-    const away = moved(start, 'row:otto', 8)
-    expect(nextOrder(query(132, { order: away, activeIndex: 8, startOrder: [...start, 'row:new'] }))).toBeNull()
+  it('refuses a slot above the spacer: the header stays, or slides back to where the drag started', () => {
+    const headers = sectionDragItems(list(), 'section:work')
+    const order = keysOf(headers)
+    const headerHeights = Object.fromEntries(headers.map(i => [i.key, i.kind === 'spacer' ? i.height : EDIT_ITEM_HEIGHT[i.kind]]))
+    const work = { order, startOrder: order, activeKey: 'section:work', activeIndex: 2, activeHeight: 48, heights: headerHeights, meta: slotMeta(headers) }
+    expect(nextOrder(query(10, work))).toBeNull()
+    const away = moved(order, 'section:work', 1)
+    expect(nextOrder(query(10, { ...work, order: away, activeIndex: 1 }))).toEqual(order)
+    expect(nextOrder(query(10, { ...work, order: away, activeIndex: 1, startOrder: [...order, 'section:new'] }))).toBeNull()
   })
 
   it('reads one height for every item, and moves nothing before the list is measured', () => {
-    expect(nextOrder(query(64 * 8 + 32, { heights: 64 }))).toEqual(moved(start, 'row:otto', 8))
-    expect(nextOrder(query(472, { heights: null }))).toBeNull()
+    expect(nextOrder(query(64 * 3 + 32, { heights: 64 }))).toEqual(moved(start, 'row:otto', 3))
+    expect(nextOrder(query(208, { heights: null }))).toBeNull()
   })
 })
 
 describe('dropMove', () => {
-  const start = keysOf(items())
-  const drop = (key: string, to: number, list: EditItem[] = items()) => dropMove(list, moved(keysOf(list), key, to), key)
+  const start = keysOf(list())
+  const drop = (key: string, to: number, items: ListItem[] = list()) => dropMove(items, moved(keysOf(items), key, to), key)
 
   it('reorders a row inside its group', () => {
-    expect(drop('row:linh', 8)).toEqual({ kind: 'row', profile: 'linh', sectionId: 'prive', before: 'kevin' })
-    expect(drop('row:otto', 6)).toEqual({ kind: 'row', profile: 'otto', sectionId: null, before: null })
+    expect(drop('row:linh', 3)).toEqual({ kind: 'row', profile: 'linh', sectionId: 'prive', before: 'kevin' })
+    expect(drop('row:otto', 1)).toEqual({ kind: 'row', profile: 'otto', sectionId: null, before: null })
   })
 
   it('moves a row into another section, into No section, and under an empty section header', () => {
-    expect(drop('row:otto', 7)).toEqual({ kind: 'row', profile: 'otto', sectionId: 'prive', before: 'kevin' })
-    expect(drop('row:kevin', 5)).toEqual({ kind: 'row', profile: 'kevin', sectionId: null, before: 'otto' })
-    expect(drop('row:otto', 10)).toEqual({ kind: 'row', profile: 'otto', sectionId: 'work', before: null })
+    expect(drop('row:otto', 2)).toEqual({ kind: 'row', profile: 'otto', sectionId: 'prive', before: 'kevin' })
+    expect(drop('row:kevin', 0)).toEqual({ kind: 'row', profile: 'kevin', sectionId: null, before: 'otto' })
+    expect(drop('row:otto', 5)).toEqual({ kind: 'row', profile: 'otto', sectionId: 'work', before: null })
   })
 
   it('moves a row to the end of a different, non-empty section', () => {
     // Otto dropped after Linh (Prive's last row) and before the Work header.
-    expect(drop('row:otto', 9)).toEqual({ kind: 'row', profile: 'otto', sectionId: 'prive', before: null })
+    expect(drop('row:otto', 4)).toEqual({ kind: 'row', profile: 'otto', sectionId: 'prive', before: null })
+  })
+
+  it('puts a row dropped right under a collapsed section header at the top of that section', () => {
+    expect(drop('row:otto', 6)).toEqual({ kind: 'row', profile: 'otto', sectionId: 'archive', before: 'ada' })
+    const closedEmpty = list({ ...layout(), sections: [{ section: { ...work, collapsed: true }, rows: [] }] })
+    expect(drop('row:otto', 2, closedEmpty)).toEqual({ kind: 'row', profile: 'otto', sectionId: 'work', before: null })
   })
 
   it('moves a row above the first section header while No section is empty', () => {
-    const empty = items({ ...layout(), ungrouped: [] })
-    const startEmpty = keysOf(empty)
-    // Kevin dropped right after the No section caption, before the Prive header.
-    expect(dropMove(empty, moved(startEmpty, 'row:kevin', 5), 'row:kevin')).toEqual({ kind: 'row', profile: 'kevin', sectionId: null, before: null })
+    const empty = list({ ...layout(), ungrouped: [] })
+    // Kevin dropped at the very top, before the Prive header.
+    expect(drop('row:kevin', 0, empty)).toEqual({ kind: 'row', profile: 'kevin', sectionId: null, before: null })
   })
 
-  it('returns null for a drop in the same place', () => {
-    expect(drop('row:otto', 5)).toBeNull()
-    expect(drop('pinned:noor', 2)).toBeNull()
-    expect(dropMove(items(), start, 'section:prive')).toBeNull()
-  })
-
-  it('returns null for a drop the pinned rules forbid, so the row goes back', () => {
-    expect(drop('row:otto', 2)).toBeNull()
-    expect(drop('pinned:mia', 6)).toBeNull()
-    expect(drop('pinned:mia', 1)).toBeNull()
-  })
-
-  it('reorders the pins', () => {
-    expect(drop('pinned:mia', 2)).toEqual({ kind: 'pin', profile: 'mia', before: 'noor' })
-    expect(drop('pinned:noor', 3)).toEqual({ kind: 'pin', profile: 'noor', before: null })
-  })
-
-  it('never moves a caption or the pinned concierge', () => {
-    expect(dropMove(items(), start, 'caption:none')).toBeNull()
-    expect(dropMove(items(), start, 'pinned:hermes')).toBeNull()
+  it('returns null for a drop in the same place, a pin, or a key it does not know', () => {
+    expect(drop('row:otto', 0)).toBeNull()
+    expect(dropMove(list(), start, 'section:prive')).toBeNull()
+    expect(dropMove(list(), start, 'pinned:noor')).toBeNull()
+    expect(dropMove(list(), start, 'row:gone')).toBeNull()
   })
 
   it('reads the new section order from the headers-only list', () => {
-    const headers = keysOf(sectionDragItems(items(), 'section:work'))
-    expect(dropMove(items(), moved(headers, 'section:work', 1), 'section:work')).toEqual({ kind: 'section', sectionId: 'work', before: 'prive' })
-    const fromPrive = keysOf(sectionDragItems(items(), 'section:prive'))
-    expect(dropMove(items(), moved(fromPrive, 'section:prive', 2), 'section:prive')).toEqual({ kind: 'section', sectionId: 'prive', before: null })
-    expect(dropMove(items(), headers, 'section:work')).toBeNull()
+    const headers = keysOf(sectionDragItems(list(), 'section:work'))
+    expect(dropMove(list(), moved(headers, 'section:work', 1), 'section:work')).toEqual({ kind: 'section', sectionId: 'work', before: 'prive' })
+    const fromPrive = keysOf(sectionDragItems(list(), 'section:prive'))
+    expect(dropMove(list(), moved(fromPrive, 'section:prive', 3), 'section:prive')).toEqual({ kind: 'section', sectionId: 'prive', before: null })
+    expect(dropMove(list(), headers, 'section:work')).toBeNull()
   })
 
   it('reads the section order from the full list when the switch to headers came too late', () => {
-    expect(drop('section:work', 7)).toEqual({ kind: 'section', sectionId: 'work', before: 'prive' })
+    expect(drop('section:work', 2)).toEqual({ kind: 'section', sectionId: 'work', before: 'prive' })
   })
 
   it('returns null when the dragged agent disappeared during the drag, so the list redraws without it', () => {
-    const without = items({ ...layout(), ungrouped: [bot('zed')] })
-    expect(dropMove(without, moved(start, 'row:otto', 8), 'row:otto')).toBeNull()
+    const without = list({ ...layout(), ungrouped: [bot('zed')] })
+    expect(dropMove(without, moved(start, 'row:otto', 3), 'row:otto')).toBeNull()
   })
 
   it('ignores another agent that disappeared during the drag', () => {
-    const withoutKevin = items({ ...layout(), sections: [{ section: prive, rows: [bot('linh')] }, { section: work, rows: [] }] })
-    expect(dropMove(withoutKevin, moved(start, 'row:otto', 8), 'row:otto')).toEqual({ kind: 'row', profile: 'otto', sectionId: 'prive', before: 'linh' })
+    const withoutKevin = list({ ...layout(), sections: [{ section: prive, rows: [bot('linh')] }, { section: work, rows: [] }] })
+    expect(dropMove(withoutKevin, moved(start, 'row:otto', 3), 'row:otto')).toEqual({ kind: 'row', profile: 'otto', sectionId: 'prive', before: 'linh' })
+  })
+})
+
+describe('pinDropMove, a drop among the pinned avatars', () => {
+  const order = keysOf(pins())
+  const drop = (key: string, to: number) => pinDropMove(pins(), moved(order, key, to), key)
+
+  it('reorders the pins, left and right across wrapped lines alike', () => {
+    expect(drop('pinned:mia', 1)).toEqual({ kind: 'pin', profile: 'mia', before: 'noor' })
+    expect(drop('pinned:noor', 2)).toEqual({ kind: 'pin', profile: 'noor', before: null })
+  })
+
+  it('returns null for a drop in the same place, for the pinned concierge, and for anything in front of it', () => {
+    expect(drop('pinned:noor', 1)).toBeNull()
+    expect(pinDropMove(pins(), order, 'pinned:hermes')).toBeNull()
+    expect(drop('pinned:mia', 0)).toBeNull()
+    expect(pinDropMove(pins(), order, 'row:otto')).toBeNull()
+  })
+
+  it('lets any pin go first when the concierge is not pinned', () => {
+    const plain = pins({ ...layout(), pinned: [bot('noor'), bot('mia')] })
+    expect(pinDropMove(plain, moved(keysOf(plain), 'pinned:mia', 0), 'pinned:mia')).toEqual({ kind: 'pin', profile: 'mia', before: 'noor' })
+  })
+
+  it('ignores a pin that disappeared during the drag', () => {
+    expect(pinDropMove(pins(), ['pinned:hermes', 'pinned:mia', 'pinned:gone', 'pinned:noor'], 'pinned:mia')).toEqual({ kind: 'pin', profile: 'mia', before: 'noor' })
   })
 })
 
 describe('the headers-only list for a section drag', () => {
   it('shows only the section headers, under a spacer that keeps the dragged header where it was', () => {
-    expect(sectionDragItems(items(), 'section:prive')).toEqual([
-      { kind: 'spacer', key: SPACER_KEY, height: 392 },
+    expect(sectionDragItems(list(), 'section:prive')).toEqual([
+      { kind: 'spacer', key: SPACER_KEY, height: 128 },
       expect.objectContaining({ key: 'section:prive' }),
-      expect.objectContaining({ key: 'section:work' })
+      expect.objectContaining({ key: 'section:work' }),
+      expect.objectContaining({ key: 'section:archive' })
     ])
-    // 568 pt above Work, minus the one header (48 pt) that now sits above it.
-    expect(sectionDragItems(items(), 'section:work')[0]).toEqual({ kind: 'spacer', key: SPACER_KEY, height: 520 })
+    // 304 pt above Work, minus the one header (48 pt) that now sits above it.
+    expect(sectionDragItems(list(), 'section:work')[0]).toEqual({ kind: 'spacer', key: SPACER_KEY, height: 256 })
   })
 
   it('shows the whole list for a key that is not a section', () => {
-    expect(sectionDragItems(items(), 'section:gone')).toEqual(items())
+    expect(sectionDragItems(list(), 'section:gone')).toEqual(list())
   })
 
-  it('keeps the list at least as tall as the whole list, so switching to the headers and back does not move the scroll position', () => {
-    // Captions 2 × 36, pins 3 × 64, rows 4 × 64, headers 2 × 48, plus 40 pt at the bottom.
-    expect(listMinHeight(items())).toBe(72 + 192 + 256 + 96 + 40)
-    expect(listMinHeight([])).toBe(40)
+  it('keeps the rows list at least as tall as the whole list, so switching to the headers and back does not move the scroll position', () => {
+    // Rows 4 × 64, headers 3 × 48.
+    expect(listMinHeight(list())).toBe(256 + 144)
+    expect(listMinHeight([])).toBe(0)
   })
 })
 

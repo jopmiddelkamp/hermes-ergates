@@ -153,7 +153,7 @@ export default function RootLayout() {
     )
   }
 
-  // Outermost, so every gesture in the app (the Home edit list's drag handles) has its root.
+  // Outermost, so every gesture in the app (the Home list's drag handles) has its root.
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>

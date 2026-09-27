@@ -518,45 +518,57 @@ Result:
 
 ### V24 Home edit mode dragging on Android
 
-On an Android phone, with a pinned concierge and at least two other pins, one
-empty section, one section with a few agents, and enough agents to scroll:
+On an Android phone, with a pinned concierge and at least three other pins
+(enough to wrap onto a second line), one empty section, one collapsed section
+with a few agents, one expanded section with a few agents, and enough agents
+to scroll:
 
 1. Build the dev client from `apps/mobile` with `npx expo run:android`. The
    build passes; before the cookies patch it stopped at
    `Could not find method jcenter()`.
-2. Handle and scroll: open Home, tap the edit icon. Touching a ≡ handle and
-   moving at once lifts its row (no hold needed), also in a list long enough
-   to scroll; a swipe on a row body, or a very fast flick that starts on a
-   handle, scrolls the list and moves no row; a tap on a row toggles its circle.
-3. Cross-group drops: drag a No section row into a section, in front of a
-   row there; drag it back into No section; drag one right under the empty
-   section's header. Each stays where it was dropped after tapping ✕.
-4. Pinned rules: a pin dragged below the Pinned group slides back; a No
-   section row dragged into the Pinned group slides back; the concierge has
-   no handle and no pin can pass above it; two pins swap places.
-5. Section drag: touch a section header's ≡: only the section headers show,
+2. Edit in place: open Home, scroll halfway down and tap the edit icon. The
+   same list stays at the same scroll position: selection circles slide in
+   from the left while the rows move right, ≡ handles fade in on the right,
+   time and unread dots stay left of the handles, the avatars get a badge at
+   the top left and (all but the concierge) a move handle at the top right,
+   the icons cross-fade into ✕ and "0 selected". Collapsed sections stay
+   collapsed; a tap on a header still collapses or expands it. Tap ✕: the
+   same animation plays back. With Settings → Accessibility → Remove
+   animations on, both changes are instant.
+3. Handle and scroll: touching a ≡ handle and moving at once lifts its row
+   (no hold needed), also in a list long enough to scroll; a swipe on a row
+   body, or a very fast flick that starts on a handle, scrolls the list and
+   moves no row; a tap on a row toggles its circle, a tap on an avatar
+   toggles its badge.
+4. Cross-group drops: drag a No section row into a section, in front of a
+   row there; drag it back above the first section header (No section);
+   drag one right under the empty section's header; drag one right under
+   the collapsed section's header: it joins that section at its top (expand
+   it to see). Each stays where it was dropped after tapping ✕.
+5. Pinned avatars: drag an avatar by its move handle to the right, onto the
+   second line, and back to the left; the pin order follows. No avatar drops
+   in front of the concierge, and the concierge has no move handle.
+6. Section drag: touch a section header's ≡: only the section headers show,
    the touched header stays under the finger; drag it and drop: the sections
-   take the new order and the list expands. Touch the ≡ and lift without
+   take the new order and the list comes back. Touch the ≡ and lift without
    dragging: the whole list comes back. On a debug build, note whether the
    headers-only list appears before the header moves.
-6. Auto-scroll: drag a row to the bottom edge, then to the top edge: the list
+7. Auto-scroll: drag a row to the bottom edge, then to the top edge: the list
    scrolls both ways and the row drops where the finger is.
-7. Haptics: with Settings → Haptics on, a light tap on pick-up and on drop;
-   with Haptics off, none.
-8. Back: the system Back button leaves Edit mode, also right after a drop,
+8. Haptics: with Settings → Haptics on, a light tap on pick-up and on drop
+   (rows and avatars); with Haptics off, none.
+9. Back: the system Back button leaves Edit mode, also right after a drop,
    and Home keeps the new order.
-9. Section page: long-press a section name, on Home and in Edit mode: the
-   Section page opens. Rename a section; delete another and confirm: its
-   agents appear at the end of No section, pins unchanged.
-10. Handle area: hold a row's ≡ column near the row's top edge, then near its
+10. Section page: long-press a section name, on Home and in Edit mode: the
+    Section page opens. Rename a section; delete another and confirm: its
+    agents appear at the end of No section, pins unchanged.
+11. Handle area: hold a row's ≡ column near the row's top edge, then near its
     bottom edge (not on the glyph), and drag: the row lifts and moves each
     time; the list does not scroll instead. The same on a section header's ≡.
-11. Reorder inside a group: drag a No section row two places down, and a row
-    inside a section above the row before it. Each stays in its group, in
-    the new place, after tapping ✕.
-12. Several at once: select three agents from different groups, tap Move
-    to…, pick a section: all three land in that section and the list keeps
-    its other rows in order.
+12. Several at once: select two rows from different groups and one avatar,
+    tap Move to…, pick a section: all three land in that section (the pinned
+    one stays pinned) and the list keeps its other rows in order. The bottom
+    bar slides up with the first selection and down after the action.
 13. New message: note the order, send a message to an agent in the middle of
     No section from another device or chat, and come back to Home: the row
     shows the new message and does not move, in Home and in Edit mode.
@@ -567,7 +579,9 @@ empty section, one section with a few agents, and enough agents to scroll:
     app (Home gesture); come back: the whole list shows and nothing moved.
 16. TalkBack: turn TalkBack on, focus a No section row and use the actions
     menu: Move up and Move down move it one place, and the list shows it
-    there; on a section header, Move up, Move down and Edit section work.
+    there; on a section header, Move up, Move down and Edit section work; on
+    a pinned avatar, Move left and Move right work, it reads "selected" or
+    "not selected", and the concierge offers neither.
 17. Scroll starting on a header handle: start a scroll gesture with your
     finger landing on a section header's ≡, instead of a row. Expected: the
     list may briefly show only the section headers before the scroll
@@ -578,17 +592,17 @@ empty section, one section with a few agents, and enough agents to scroll:
 18. Swipe to select with auto-scroll: with nothing selected, put a finger on
     the circle of the first No section row and move it straight down over
     the circles. Expected: the list does not scroll under the finger; each
-    row the finger passes gets a filled circle, section headers and captions
-    get none, and the count in the title follows. Move back up two rows:
-    those two rows are empty again. Keep going down to the bottom edge of
-    the list (above the bottom bar) and hold still: the list scrolls down by
-    itself, faster the closer the finger is to the edge, the rows that pass
-    under the finger are selected, and the scrolling stops at the end of the
-    list. Then move up to the top edge and hold: the list scrolls back up and
-    stops at the top. Lift, then start a new swipe on a selected row's circle
-    and move down: the swipe deselects instead. A plain tap on a circle still
-    toggles only that row, a swipe on a row body still scrolls the list, and
-    the ≡ handles still drag.
+    row the finger passes gets a filled circle, section headers get none,
+    and the count in the title follows. Move back up two rows: those two
+    rows are empty again. Keep going down to the bottom edge of the list
+    (above the bottom bar) and hold still: the list scrolls down by itself,
+    faster the closer the finger is to the edge, the rows that pass under
+    the finger are selected, and the scrolling stops at the end of the list.
+    Then move up to the top edge and hold: the list scrolls back up and
+    stops at the top. Lift, then start a new swipe on a selected row's
+    circle and move down: the swipe deselects instead. A plain tap on a
+    circle still toggles only that row, a swipe on a row body still scrolls
+    the list, and the ≡ handles still drag.
 
 Result:
 

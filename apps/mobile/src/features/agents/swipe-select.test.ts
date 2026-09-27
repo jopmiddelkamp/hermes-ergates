@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { Section } from '@/state/organization'
 
 import { EDIT_ITEM_HEIGHT } from './drop-rules'
-import { buildEditItems, type EditLayout, type Selection } from './edit-mode'
+import { buildEditItems, listItems, type EditLayout, type Selection } from './edit-mode'
 import type { Bot } from './roster'
 import {
   AUTO_SCROLL_EDGE,
@@ -38,11 +38,10 @@ const prive: Section = { id: 'prive', name: 'Prive', collapsed: false, order: 0 
 const work: Section = { id: 'work', name: 'Work', collapsed: false, order: 1 }
 
 /**
- * Hermes (the concierge), Noor and Mia pinned; Otto and Zed without a section;
- * Kevin and Linh in Prive; Work empty. Content y of each line, top to bottom:
- * Pinned caption 0, Hermes 36, Noor 100, Mia 164, No section caption 228,
- * Otto 264, Zed 328, Prive header 392, Kevin 440, Linh 504, Work header 568,
- * end 616.
+ * Hermes (the concierge), Noor and Mia pinned above the rows list; Otto and
+ * Zed without a section; Kevin and Linh in Prive; Work empty. The y of each
+ * line from the top of the rows list: Otto 0, Zed 64, Prive header 128,
+ * Kevin 176, Linh 240, Work header 304, end 352.
  */
 function layout(): EditLayout {
   return {
@@ -55,51 +54,46 @@ function layout(): EditLayout {
   }
 }
 
-const items = buildEditItems(layout())
+const items = listItems(buildEditItems(layout()))
 const lines = swipeLines(items)
 const set = (...profiles: string[]): Selection => new Set(profiles)
 const sorted = (selection: Selection) => [...selection].sort()
 
 describe('the lines the swipe measures', () => {
-  it('lists every item with the fixed height the edit list draws it at', () => {
-    expect(lines.map(l => l.key)).toEqual(items.map(i => i.key))
-    expect(lines[0]).toEqual({ key: 'caption:pinned', height: EDIT_ITEM_HEIGHT.caption })
-    expect(lines[1]).toEqual({ key: 'pinned:hermes', height: EDIT_ITEM_HEIGHT.pinned })
-    expect(lines[5]).toEqual({ key: 'row:otto', height: EDIT_ITEM_HEIGHT.row })
-    expect(lines[7]).toEqual({ key: 'section:prive', height: EDIT_ITEM_HEIGHT.section })
+  it('lists every row and section header with the fixed height the rows list draws it at, and no pin', () => {
+    expect(lines.map(l => l.key)).toEqual(['row:otto', 'row:zed', 'section:prive', 'row:kevin', 'row:linh', 'section:work'])
+    expect(lines[0]).toEqual({ key: 'row:otto', height: EDIT_ITEM_HEIGHT.row })
+    expect(lines[2]).toEqual({ key: 'section:prive', height: EDIT_ITEM_HEIGHT.section })
   })
 
-  it('finds the top of a line, counting the captions and section headers above it', () => {
-    expect(lineTop(lines, 'caption:pinned')).toBe(0)
-    expect(lineTop(lines, 'pinned:hermes')).toBe(36)
-    expect(lineTop(lines, 'row:otto')).toBe(264)
-    expect(lineTop(lines, 'row:kevin')).toBe(440)
+  it('finds the top of a line, counting the section headers above it', () => {
+    expect(lineTop(lines, 'row:otto')).toBe(0)
+    expect(lineTop(lines, 'row:kevin')).toBe(176)
+    expect(lineTop(lines, 'section:work')).toBe(304)
   })
 
   it('has no top for a key the list does not show', () => {
     expect(lineTop(lines, 'row:gone')).toBe(-1)
+    expect(lineTop(lines, 'pinned:noor')).toBe(-1)
   })
 })
 
 describe('lineAt, the line under the finger', () => {
-  it('finds the line at a content y, past the captions and section headers above it', () => {
-    expect(lineAt(lines, 36)).toBe('pinned:hermes')
-    expect(lineAt(lines, 99.5)).toBe('pinned:hermes')
-    expect(lineAt(lines, 100)).toBe('pinned:noor')
-    expect(lineAt(lines, 300)).toBe('row:otto')
-    expect(lineAt(lines, 450)).toBe('row:kevin')
-    expect(lineAt(lines, 567)).toBe('row:linh')
+  it('finds the line at a y in the rows list, past the section headers above it', () => {
+    expect(lineAt(lines, 0)).toBe('row:otto')
+    expect(lineAt(lines, 63.5)).toBe('row:otto')
+    expect(lineAt(lines, 64)).toBe('row:zed')
+    expect(lineAt(lines, 200)).toBe('row:kevin')
+    expect(lineAt(lines, 303)).toBe('row:linh')
   })
 
-  it('reports a caption or section header under the finger as itself; the range skips it', () => {
-    expect(lineAt(lines, 10)).toBe('caption:pinned')
-    expect(lineAt(lines, 240)).toBe('caption:none')
-    expect(lineAt(lines, 400)).toBe('section:prive')
+  it('reports a section header under the finger as itself; the range skips it', () => {
+    expect(lineAt(lines, 140)).toBe('section:prive')
   })
 
   it('takes the first line above the list and the last line below it', () => {
-    expect(lineAt(lines, -40)).toBe('caption:pinned')
-    expect(lineAt(lines, 616)).toBe('section:work')
+    expect(lineAt(lines, -40)).toBe('row:otto')
+    expect(lineAt(lines, 352)).toBe('section:work')
     expect(lineAt(lines, 5000)).toBe('section:work')
   })
 
@@ -115,7 +109,6 @@ describe('swipeMode', () => {
 
   it('deselects when the swipe starts on a selected row', () => {
     expect(swipeMode(items, set('otto'), 'row:otto')).toBe('deselect')
-    expect(swipeMode(items, set('hermes'), 'pinned:hermes')).toBe('deselect')
   })
 })
 
@@ -128,8 +121,8 @@ describe('swipeSelection', () => {
     expect(sorted(swipeSelection(items, set(), 'row:otto', 'row:kevin', 'select'))).toEqual(['kevin', 'otto', 'zed'])
   })
 
-  it('selects upward too, pins and the pinned concierge included, skipping the caption', () => {
-    expect(sorted(swipeSelection(items, set(), 'row:zed', 'pinned:hermes', 'select'))).toEqual(['hermes', 'mia', 'noor', 'otto', 'zed'])
+  it('selects upward too, and leaves the pins as they were', () => {
+    expect(sorted(swipeSelection(items, set('noor'), 'row:linh', 'row:zed', 'select'))).toEqual(['kevin', 'linh', 'noor', 'zed'])
   })
 
   it('stops at the header under the finger: the rows below it and down to the start row', () => {
