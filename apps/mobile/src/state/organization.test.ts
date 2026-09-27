@@ -444,6 +444,26 @@ describe('pin and section order', () => {
       ['prive', 1]
     ])
   })
+
+  it('applyMove pins a row dragged into the pinned area at the spot it was dropped', () => {
+    const org = orgActions.pinMany(orderedOrg(), ['linh', 'kevin'])
+    expect(orgActions.applyMove(org, { kind: 'pinAt', profile: 'otto', before: 'kevin' }).pins).toEqual(['linh', 'otto', 'kevin'])
+    expect(orgActions.applyMove(org, { kind: 'pinAt', profile: 'otto', before: null }).pins).toEqual(['linh', 'kevin', 'otto'])
+    // Its section stays: unpinning it later brings it back there.
+    expect(orgActions.applyMove(org, { kind: 'pinAt', profile: 'mia', before: 'linh' }).membership.mia).toBe('work')
+  })
+
+  it('applyMove unpins a pin dragged into the rows list and places it at the spot it was dropped, in that group', () => {
+    const org = orgActions.pinMany(orderedOrg(), ['linh', 'kevin'])
+    const moved = orgActions.applyMove(org, { kind: 'unpinAt', profile: 'linh', sectionId: 'work', before: 'mia' })
+    expect(moved.pins).toEqual(['kevin'])
+    expect(moved.membership.linh).toBe('work')
+    expect(moved.rowOrder).toEqual(['kevin', 'ghost', 'noor', 'linh', 'mia', 'otto'])
+    const home = orgActions.applyMove(org, { kind: 'unpinAt', profile: 'kevin', sectionId: null, before: null })
+    expect(home.pins).toEqual(['linh'])
+    expect(home.membership.kevin).toBeNull()
+    expect(home.rowOrder.at(-1)).toBe('kevin')
+  })
 })
 
 describe('reading state for several agents', () => {

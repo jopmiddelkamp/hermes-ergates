@@ -85,12 +85,17 @@ export interface HomeLayout {
 
 /**
  * One step of the manual order: a row placed into a group, a pin or a section
- * moved. `before` names the item it lands in front of; `null` means the end.
+ * moved, a row dragged into the pinned area (`pinAt`: pinned, at that spot of
+ * the pin order), or a pin dragged into the rows list (`unpinAt`: unpinned,
+ * and placed into that group at that spot). `before` names the item it lands
+ * in front of; `null` means the end.
  */
 export type OrderMove =
   | { kind: 'row'; profile: string; sectionId: string | null; before: string | null }
   | { kind: 'pin'; profile: string; before: string | null }
   | { kind: 'section'; sectionId: string; before: string | null }
+  | { kind: 'pinAt'; profile: string; before: string | null }
+  | { kind: 'unpinAt'; profile: string; sectionId: string | null; before: string | null }
 
 export function emptyOrganization(): Organization {
   return { pins: [], rowOrder: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {}, outbox: [], firstSync: 'install' }
@@ -254,6 +259,10 @@ export const orgActions = {
         return orgActions.movePin(org, move.profile, move.before)
       case 'section':
         return orgActions.moveSection(org, move.sectionId, move.before)
+      case 'pinAt':
+        return orgActions.movePin(orgActions.pin(org, move.profile), move.profile, move.before)
+      case 'unpinAt':
+        return orgActions.placeRow(orgActions.unpin(org, move.profile), move.profile, move.sectionId, move.before)
     }
   },
 

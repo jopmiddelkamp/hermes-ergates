@@ -30,10 +30,18 @@
  * pinned skeleton adds one line of pins above the rows list at once, so
  * while Edit mode starts and ends the rows list and the footer slide by it
  * (`below`), from where they were to where they now sit.
+ *
+ * A row dragged out of the rows list and dropped over the pinned area is
+ * pinned at that spot, and a pin dragged into the rows list is unpinned
+ * there (`useCrossDrag`). While a row is over the pinned area the rows list
+ * keeps the order the drag started with, so its gap stays where it was
+ * (`returnToStart` in the sort strategy). Auto-scroll reaches the other
+ * area: a row dragged up scrolls the list up to its very top, the pinned
+ * area included, and a pin dragged down scrolls down to the end of the list.
  */
 
-import { useCallback, useEffect, useMemo, useReducer, type ReactNode } from 'react'
-import { AppState, RefreshControl, View, type AccessibilityActionEvent } from 'react-native'
+import { useCallback, useEffect, useMemo, useReducer, useState, type ReactNode } from 'react'
+import { AppState, RefreshControl, View, type AccessibilityActionEvent, type LayoutChangeEvent } from 'react-native'
 import Animated, { useAnimatedReaction, useAnimatedRef, useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated'
 import Sortable, { useCommonValuesContext, type DragStartParams, type SortableGridDragEndParams, type SortableGridRenderItem, type SortStrategyFactory } from 'react-native-sortables'
 
@@ -49,11 +57,13 @@ import {
   nextOrder,
   nextSectionDrag,
   pinnedItems,
+  returnToStart,
   sectionDragItems,
   slotMeta,
   useAvatar,
   withSectionGhosts,
   type Bot,
+  type CrossSlot,
   type DragItem,
   type EditItem,
   type ListItem,
@@ -66,10 +76,12 @@ import type { OrderMove } from '@/state/organization'
 import type { AnchorRect } from '../ActionMenu'
 import { bleed } from '../page-padding'
 import { usePagePadding } from '../Screen'
+import { RowsMarker } from './CrossMarkers'
 import { HomeRow } from './HomeRow'
 import { HomeSectionHeader } from './HomeSectionHeader'
-import { PINNED_SKELETON_HEIGHT, PinnedArea } from './PinnedArea'
+import { PINNED_SKELETON_HEIGHT, PinnedArea, pinAreaGeometry } from './PinnedArea'
 import { SectionGhostRow } from './SectionGhostRow'
+import { useCrossDrag } from './use-cross-drag'
 import { useSwipeSelect } from './use-swipe-select'
 
 /**
@@ -80,6 +92,15 @@ import { useSwipeSelect } from './use-swipe-select'
  * pick-up then landed on another row. A flick on a handle still scrolls.
  */
 const DRAG_ACTIVATION_DELAY = 0
+
+/**
+ * The library's own auto-scroll overscroll (50 pt), kept where the drag
+ * does not need to reach the other area: under the rows list and above the
+ * pins. Toward the other area each list gets the exact distance to the
+ * content's end instead; a larger value would let the list scroll past its
+ * content into blank space.
+ */
+const OVERSCROLL = 50
 
 export interface HomeListProps {
   /** `buildEditItems` over the Home layout: the pins, then the rows list. */
@@ -119,9 +140,11 @@ export interface HomeListProps {
 /**
  * The one-column sort strategy with the drop rules applied while the finger
  * moves: a slot the rules forbid is refused, and the item slides back to where
- * the drag started. `meta` must keep its identity: a new strategy remounts the grid.
+ * the drag started. While the dragged row is over the pinned area (`cross`),
+ * the list shows the order the drag started with. `meta` and `cross` must keep
+ * their identity: a new strategy remounts the grid.
  */
-function makeGuardedStrategy(meta: SharedValue<SlotMeta>): SortStrategyFactory {
+function makeGuardedStrategy(meta: SharedValue<SlotMeta>, cross: SharedValue<CrossSlot>): SortStrategyFactory {
   return function useGuardedStrategy() {
     const { indexToKey, itemHeights, activeItemKey } = useCommonValuesContext()
     const startOrder = useSharedValue<string[] | null>(null)
@@ -138,6 +161,9 @@ function makeGuardedStrategy(meta: SharedValue<SlotMeta>): SortStrategyFactory {
       const order = indexToKey.value
       const start = startOrder.value ?? order
       startOrder.value = start
+      if (cross.value?.area === 'pinned') {
+        return returnToStart(order, start)
+      }
       return nextOrder({ order, startOrder: start, activeKey, activeIndex, activeHeight: dimensions.height, centerY: position.y, heights: itemHeights.value, meta: meta.value })
     }
   }
@@ -160,6 +186,32 @@ export function HomeList(props: HomeListProps) {
   // The pinned skeleton's line appears and leaves at once; the rows below slide by it instead of jumping.
   const pinnedSkeleton = layoutEditing && pins.length === 0
   const below = useAnimatedStyle(() => ({ transform: [{ translateY: pinnedSkeleton ? (progress.get() - 1) * PINNED_SKELETON_HEIGHT : 0 }] }))
+
+  // Where the rows list starts in the scroll content (right under the pinned
+  // area), and the content's height: the auto-scroll reach of both drag lists.
+  const [listTop, setListTop] = useState(0)
+  const [contentHeight, setContentHeight] = useState(0)
+  const { onListLayout, onContentSizeChange } = swipe
+  const onRowsLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      onListLayout(event)
+      setListTop(event.nativeEvent.layout.y)
+    },
+    [onListLayout]
+  )
+  const onContentSize = useCallback(
+    (width: number, height: number) => {
+      onContentSizeChange(width, height)
+      setContentHeight(height)
+    },
+    [onContentSizeChange]
+  )
+  // A row dragged up may scroll the list to its very top, where the pinned area shows.
+  const rowsOverscroll = useMemo<[number, number]>(() => [listTop, OVERSCROLL], [listTop])
+  // A pin dragged down may scroll to the end of the content, past the rows on the first screen.
+  const pinsOverscroll = useMemo<[number, number]>(() => [OVERSCROLL, Math.max(0, contentHeight - listTop)], [contentHeight, listTop])
+  const pinGeometry = useMemo(() => pinAreaGeometry(gutter), [gutter])
+  const cross = useCrossDrag({ scrollRef, pins, shown, lines: swipe.lines, pinGeometry, onMove })
   // A touch the system cancels (the app goes to the background, an alert
   // shows) never reaches the handle's touch-up, so show the whole list again
   // when the app is back: a list switched while the app is away draws blank.
@@ -177,7 +229,7 @@ export function HomeList(props: HomeListProps) {
   useEffect(() => {
     meta.value = slotMeta(data)
   }, [data, meta])
-  const strategy = useMemo(() => makeGuardedStrategy(meta), [meta])
+  const strategy = useMemo(() => makeGuardedStrategy(meta, cross.slot), [meta, cross.slot])
 
   // `useCallback` here only helps across a Home render that keeps the same
   // `onOpen`, `onMenu`, `onToggle`, `onToggleCollapsed` and `onEditSection`
@@ -199,12 +251,16 @@ export function HomeList(props: HomeListProps) {
     ({ key, data: dropped }: SortableGridDragEndParams<DragItem>) => {
       lightTap(haptics)
       dispatch({ type: 'drop' })
+      // Dropped over the pinned area: pinned there, so the rows list keeps its order.
+      if (cross.end(key)) {
+        return
+      }
       const move = dropMove(list, dropped.map(keyOf), key)
       if (move) {
         onMove(move)
       }
     },
-    [haptics, list, onMove]
+    [haptics, list, onMove, cross]
   )
 
   const act = useCallback(
@@ -277,7 +333,7 @@ export function HomeList(props: HomeListProps) {
       style={bleed(gutter)}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       onLayout={swipe.onLayout}
-      onContentSizeChange={swipe.onContentSizeChange}
+      onContentSizeChange={onContentSize}
       // A swipe that starts on a section handle and scrolls is no drag: show the whole list again.
       onScrollBeginDrag={() => dispatch({ type: 'release' })}
       contentContainerStyle={{ paddingBottom: bottomPadding }}
@@ -300,9 +356,11 @@ export function HomeList(props: HomeListProps) {
         onMove={onMove}
         onSelectionChange={onSelectionChange}
         gutter={gutter}
+        cross={cross}
+        overscroll={pinsOverscroll}
       />
       {/* Keeps the rows list as tall as the whole list while only headers show and while it comes back, so the scroll position holds. */}
-      <Animated.View onLayout={swipe.onListLayout} style={[{ minHeight: listMinHeight(shown) }, below]}>
+      <Animated.View ref={cross.rowsRef} collapsable={false} onLayout={onRowsLayout} style={[{ minHeight: listMinHeight(shown) }, below]}>
         <Sortable.Grid
           columns={1}
           data={data}
@@ -316,9 +374,13 @@ export function HomeList(props: HomeListProps) {
           dragActivationDelay={DRAG_ACTIVATION_DELAY}
           activeItemScale={1.02}
           inactiveItemOpacity={1}
+          autoScrollMaxOverscroll={rowsOverscroll}
           onDragStart={onDragStart}
+          onDragMove={cross.onDragMove}
           onDragEnd={onDragEnd}
+          onActiveItemDropped={cross.dropped}
         />
+        <RowsMarker slot={cross.slot} gutter={gutter} />
       </Animated.View>
       {footer ? <Animated.View style={below}>{footer}</Animated.View> : null}
     </Animated.ScrollView>

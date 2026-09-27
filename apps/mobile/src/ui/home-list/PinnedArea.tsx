@@ -30,6 +30,16 @@
  * pins. It is there while the static Edit layout is (`layoutEditing`) and
  * fades in and out with Edit mode's progress; outside Edit mode an empty
  * pinned area draws nothing, as before.
+ *
+ * A pin dragged by its move handle and dropped over the rows list is
+ * unpinned there, and a row dragged over this area is pinned at the slot
+ * under the finger (`use-cross-drag.ts`): the outer view carries the
+ * measured `pinnedRef`, `PinsMarker` (or the skeleton's middle ghost avatar)
+ * marks the slot, and `onDragEnd` asks `cross.end` before its own drop. The
+ * whole area sits in a `Sortable.Layer`: the pins' own drag layer only
+ * raises the pins above each other, inside this area, and a pin dragged out
+ * over the rows list must draw above them too, so the layer raises the whole
+ * area above its later sibling, the rows list, while a pin is dragged.
  */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react'
@@ -38,16 +48,31 @@ import { GestureDetector } from 'react-native-gesture-handler'
 import Animated, { useAnimatedStyle, type AnimatedRef, type SharedValue } from 'react-native-reanimated'
 import Sortable, { type SortableFlexDragEndParams } from 'react-native-sortables'
 
-import { editRowLabel, moveActions, moveDirection, moveStep, pinDropMove, useAvatar, type Bot, type EditItem, type PinnedItem, type Selection } from '@/features/agents'
+import {
+  editRowLabel,
+  moveActions,
+  moveDirection,
+  moveStep,
+  pinDropMove,
+  useAvatar,
+  type Bot,
+  type CrossSlot,
+  type EditItem,
+  type PinAreaLayout,
+  type PinnedItem,
+  type Selection
+} from '@/features/agents'
 import { lightTap } from '@/lib/haptics'
 import type { OrderMove } from '@/state/organization'
 import { useTheme } from '@/theme/provider'
 
 import type { AnchorRect } from '../ActionMenu'
 import { Avatar } from '../Avatar'
+import { PinsMarker } from './CrossMarkers'
 import { Grip } from './Grip'
 import { SKELETON_RING_OPACITY } from './SectionGhostRow'
 import { SelectionCircle } from './SelectionCircle'
+import type { CrossDrag } from './use-cross-drag'
 import { usePinSwipeSelect, type PinSwipeSelect } from './use-swipe-select'
 
 const AVATAR_SIZE = 84
@@ -74,6 +99,8 @@ export const PINNED_SKELETON_HEIGHT = 2 * PIN_PADDING_TOP + PIN_CELL_HEIGHT
 /** The ghost avatars of the skeleton, spaced like real pins: their centers `PIN_WIDTH + PIN_GAP` apart. */
 const SKELETON_PINS = [0, 1, 2]
 const SKELETON_PIN_GAP = PIN_WIDTH + PIN_GAP - AVATAR_SIZE
+/** The ghost avatar that turns `primary` while a dragged row is over the skeleton: the one a first pin lands on, in the middle. */
+const SKELETON_MIDDLE = 1
 const BADGE_SIZE = 32
 /** The move handle's touch area around its badge (44 pt, the minimum touch target). */
 const MOVE_TOUCH = 44
@@ -109,6 +136,11 @@ const MOVE_CENTER_X = AVATAR_CENTER_X + CORNER_OFFSET
  */
 const BADGE_OFFSET = { x: SELECTION_CENTER_X - BADGE_SIZE / 2, y: BADGE_CENTER_Y - BADGE_SIZE / 2 }
 
+/** The pinned area's own fixed geometry for `pinCells`, at page gutter `gutter`: everything but its width, which only a measurement gives. */
+export function pinAreaGeometry(gutter: number): Omit<PinAreaLayout, 'width'> {
+  return { gutter, cellWidth: PIN_WIDTH, cellHeight: PIN_CELL_HEIGHT, gap: PIN_GAP, paddingTop: PIN_PADDING_TOP }
+}
+
 export interface PinnedAreaProps {
   pins: PinnedItem[]
   /** The whole Home list, for Move left and Move right. */
@@ -132,27 +164,36 @@ export interface PinnedAreaProps {
   /** Sets the whole selection: a swipe across the selection badges selects or deselects several pins at once. */
   onSelectionChange(selection: Selection): void
   gutter: number
+  /** Dragging between this area and the rows list (`useCrossDrag`, owned by `HomeList`). */
+  cross: CrossDrag
+  /** The pins' `autoScrollMaxOverscroll`: 50 pt above, and down to the end of the scroll content below. */
+  overscroll: [number, number]
 }
 
-export function PinnedArea({ pins, items, editing, layoutEditing, progress, selection, gateway, connectionId, haptics, scrollRef, unread, onPress, onLongPress, onMove, onSelectionChange, gutter }: PinnedAreaProps) {
+export function PinnedArea(props: PinnedAreaProps) {
+  const { pins, items, editing, layoutEditing, progress, selection, gateway, connectionId, haptics, scrollRef, unread, onPress, onLongPress, onMove, onSelectionChange, gutter, cross, overscroll } = props
   // Stable across renders that do not change the pins or the handlers, for
   // the same reason `HomeList` memoizes its own `Sortable.Grid` props. Kept
   // above the empty-pins return below: every hook here must run every render.
   const onDragStart = useCallback(() => lightTap(haptics), [haptics])
   // The pinned area's own fixed geometry, for `pinCells`: stable unless `gutter` changes, so
   // `usePinSwipeSelect`'s effect that recomputes the cells does not fire on every render.
-  const pinLayout = useMemo(() => ({ gutter, cellWidth: PIN_WIDTH, cellHeight: PIN_CELL_HEIGHT, gap: PIN_GAP, paddingTop: PIN_PADDING_TOP }), [gutter])
+  const pinLayout = useMemo(() => pinAreaGeometry(gutter), [gutter])
   const swipe = usePinSwipeSelect(pins, selection, onSelectionChange, BADGE_OFFSET, pinLayout)
 
   const onDragEnd = useCallback(
     ({ key, indexToKey }: SortableFlexDragEndParams) => {
       lightTap(haptics)
+      // Dropped over the rows list: unpinned there, so the order among the pins does not count.
+      if (cross.end(key)) {
+        return
+      }
       const move = pinDropMove(pins, indexToKey, key)
       if (move) {
         onMove(move)
       }
     },
-    [haptics, pins, onMove]
+    [haptics, pins, onMove, cross]
   )
 
   const act = useCallback(
@@ -167,61 +208,88 @@ export function PinnedArea({ pins, items, editing, layoutEditing, progress, sele
   )
 
   if (pins.length === 0) {
-    return layoutEditing ? <PinnedSkeleton progress={progress} /> : null
+    return layoutEditing ? <PinnedSkeleton progress={progress} areaRef={cross.pinnedRef} slot={cross.slot} /> : null
   }
 
   return (
-    // `Sortable.Flex` does not forward its own `onLayout`, and `pinCells` needs the pinned
-    // area's own width, so this outer `View` measures it instead; a plain `View` here stretches
-    // to the same width `Sortable.Flex` would have, so it changes nothing else about the layout.
-    <View onLayout={swipe.onLayout}>
-      <Sortable.Flex
-        flexDirection="row"
-        flexWrap="wrap"
-        justifyContent="center"
-        gap={PIN_GAP}
-        paddingHorizontal={gutter}
-        paddingVertical={PIN_PADDING_TOP}
-        customHandle
-        sortEnabled={editing}
-        scrollableRef={scrollRef}
-        dragActivationDelay={0}
-        activeItemScale={1.05}
-        inactiveItemOpacity={1}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
-      >
-        {pins.map(item => (
-          <PinnedAvatar
-            key={item.key}
-            item={item}
-            editing={editing}
-            progress={progress}
-            selected={selection.has(item.bot.profile)}
-            unread={unread(item.bot.profile)}
-            actions={editing ? moveActions(items, item.key) : []}
-            onAction={act(item)}
-            gateway={gateway}
-            connectionId={connectionId}
-            onPress={() => onPress(item.bot)}
-            onLongPress={anchor => onLongPress(item.bot, anchor)}
-            swipe={swipe}
-          />
-        ))}
-      </Sortable.Flex>
-    </View>
+    <Sortable.Layer>
+      {/* `Sortable.Flex` does not forward its own `onLayout`, and `pinCells` needs the pinned
+          area's own width, so this outer view measures it instead; it stretches to the same width
+          `Sortable.Flex` would have, so it changes nothing else about the layout. */}
+      <Animated.View ref={cross.pinnedRef} collapsable={false} onLayout={swipe.onLayout}>
+        <Sortable.Flex
+          flexDirection="row"
+          flexWrap="wrap"
+          justifyContent="center"
+          gap={PIN_GAP}
+          paddingHorizontal={gutter}
+          paddingVertical={PIN_PADDING_TOP}
+          customHandle
+          sortEnabled={editing}
+          scrollableRef={scrollRef}
+          dragActivationDelay={0}
+          activeItemScale={1.05}
+          inactiveItemOpacity={1}
+          autoScrollMaxOverscroll={overscroll}
+          onDragStart={onDragStart}
+          onDragMove={cross.onDragMove}
+          onDragEnd={onDragEnd}
+          onActiveItemDropped={cross.dropped}
+        >
+          {pins.map(item => (
+            <PinnedAvatar
+              key={item.key}
+              item={item}
+              editing={editing}
+              progress={progress}
+              selected={selection.has(item.bot.profile)}
+              unread={unread(item.bot.profile)}
+              actions={editing ? moveActions(items, item.key) : []}
+              onAction={act(item)}
+              gateway={gateway}
+              connectionId={connectionId}
+              onPress={() => onPress(item.bot)}
+              onLongPress={anchor => onLongPress(item.bot, anchor)}
+              swipe={swipe}
+            />
+          ))}
+        </Sortable.Flex>
+        <PinsMarker slot={cross.slot} height={AVATAR_SIZE} />
+      </Animated.View>
+    </Sortable.Layer>
   )
 }
 
-/** The empty pinned area in Edit mode: three dashed ghost avatars and a caption, fading with Edit mode's progress. */
-function PinnedSkeleton({ progress }: { progress: SharedValue<number> }) {
+interface PinnedSkeletonProps {
+  progress: SharedValue<number>
+  /** The pinned area's measured view (`CrossDrag.pinnedRef`): the whole skeleton is a drop target for rows. */
+  areaRef: CrossDrag['pinnedRef']
+  slot: SharedValue<CrossSlot>
+}
+
+/**
+ * The empty pinned area in Edit mode: three dashed ghost avatars and a
+ * caption, fading with Edit mode's progress. While a dragged row is over
+ * it, the middle ghost avatar, where a first pin lands, turns `primary`.
+ */
+function PinnedSkeleton({ progress, areaRef, slot }: PinnedSkeletonProps) {
   const theme = useTheme()
   const fade = useAnimatedStyle(() => ({ opacity: progress.get() }))
+  const marker = useAnimatedStyle(() => ({ opacity: slot.get()?.area === 'pinned' ? 1 : 0 }))
   return (
-    <Animated.View accessible accessibilityLabel="Pinned agents, empty. Drag an agent here, or select one and choose Pin." style={[styles.skeleton, fade]}>
+    <Animated.View
+      ref={areaRef}
+      collapsable={false}
+      accessible
+      accessibilityLabel="Pinned agents, empty. Drag an agent here, or select one and choose Pin."
+      style={[styles.skeleton, fade]}
+    >
       <View style={styles.skeletonPins}>
         {SKELETON_PINS.map(i => (
-          <View key={i} style={[styles.ghostPin, { borderColor: theme.colors.mutedForeground }]} />
+          <View key={i} style={styles.ghostSlot}>
+            <View style={[styles.ghostPin, { borderColor: theme.colors.mutedForeground }]} />
+            {i === SKELETON_MIDDLE ? <Animated.View style={[styles.ghostMarker, { borderColor: theme.colors.primary }, marker]} /> : null}
+          </View>
         ))}
       </View>
       <Text numberOfLines={1} style={[styles.label, { color: theme.colors.mutedForeground }]}>
@@ -309,5 +377,7 @@ const styles = StyleSheet.create({
   // The caption sits where a pin's name would, 8 pt under the ghost avatars (`styles.pin`'s gap).
   skeleton: { height: PINNED_SKELETON_HEIGHT, paddingTop: PIN_PADDING_TOP, alignItems: 'center', gap: 8 },
   skeletonPins: { flexDirection: 'row', gap: SKELETON_PIN_GAP },
-  ghostPin: { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2, borderWidth: 1.5, borderStyle: 'dashed', opacity: SKELETON_RING_OPACITY }
+  ghostSlot: { width: AVATAR_SIZE, height: AVATAR_SIZE },
+  ghostPin: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: AVATAR_SIZE / 2, borderWidth: 1.5, borderStyle: 'dashed', opacity: SKELETON_RING_OPACITY },
+  ghostMarker: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: AVATAR_SIZE / 2, borderWidth: 2 }
 })

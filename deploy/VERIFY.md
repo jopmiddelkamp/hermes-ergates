@@ -612,6 +612,22 @@ to scroll:
     the collapsed section shows none. Tap ✕: both fade out and the list
     looks as it did before Edit mode; tap the edit icon again: they fade
     back in.
+20. Row into the pinned area, with Hermes Desktop connected to the same
+    gateway (as in V25): in a list long enough to scroll, scroll down, then
+    drag a No section row by its ≡ up to the top edge: the list scrolls up
+    until the pinned area shows. Over the avatars a thin vertical bar marks
+    the spot, and it hides when the finger moves back over the rows. Drop
+    between the first and second avatar: the row fades out, the avatar grows
+    in at that spot, and after one roster refresh Desktop shows the agent
+    pinned. Drop a row onto the empty pinned skeleton too (after step 19):
+    it becomes the first pin.
+21. Pin into a section: drag an avatar by its move handle down over the
+    rows, past the first screen (the list scrolls down by itself), and drop
+    it where the thin line sits in front of a row of a section: the avatar
+    fades out, the row grows in there, and Desktop shows the agent unpinned
+    and in that section. Drop another avatar on the empty section's "Drag
+    agents here" row: it joins that section. Drop one right under the
+    collapsed section's header: it joins that section at its top.
 
 Result:
 

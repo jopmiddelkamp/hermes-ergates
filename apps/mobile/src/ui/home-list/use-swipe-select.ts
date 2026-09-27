@@ -195,6 +195,8 @@ export function useSwipeSelect(scrollRef: AnimatedRef<Animated.ScrollView>, item
 
   return {
     select,
+    /** The rows list's lines as it shows; the drag between the pinned area and the rows list finds its slot in them too. */
+    lines,
     /** The scroll view's own layout: its height is the viewport the auto-scroll edges are measured in. */
     onLayout: (event: LayoutChangeEvent) => {
       viewportHeight.set(event.nativeEvent.layout.height)

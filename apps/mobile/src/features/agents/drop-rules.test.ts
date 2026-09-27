@@ -6,6 +6,8 @@ import {
   EDIT_ITEM_HEIGHT,
   NO_SECTION_DRAG,
   SPACER_KEY,
+  crossMove,
+  crossSlot,
   dragItemHeight,
   dropMove,
   listMinHeight,
@@ -13,14 +15,17 @@ import {
   nextSectionDrag,
   orderIsLegal,
   pinDropMove,
+  returnToStart,
   sectionDragItems,
   slotMeta,
   withSectionGhosts,
+  type CrossQuery,
   type DragItem,
   type SlotQuery
 } from './drop-rules'
 import { buildEditItems, listItems, pinnedItems, type EditLayout, type ListItem } from './edit-mode'
 import type { Bot } from './roster'
+import { pinCells, swipeLines } from './swipe-select'
 
 function bot(profile: string, extra: Partial<Bot> = {}): Bot {
   return {
@@ -294,6 +299,127 @@ describe('the drop skeleton under an empty section in Edit mode', () => {
     // Above Archive: 4 rows and the ghost (5 × 64) and 2 headers (2 × 48), 416 pt, minus the 2 headers that stay above it.
     expect(sectionDragItems(shown, 'section:archive')[0]).toEqual({ kind: 'spacer', key: SPACER_KEY, height: 416 - 96 })
     expect(keysOf(sectionDragItems(shown, 'section:archive'))).toEqual([SPACER_KEY, 'section:prive', 'section:work', 'section:archive'])
+  })
+})
+
+describe('returnToStart, the rows list while a dragged row is over the pinned area', () => {
+  const start = keysOf(list())
+
+  it('shows the order the drag started with again, so the row keeps its own gap', () => {
+    expect(returnToStart(moved(start, 'row:otto', 3), start)).toEqual(start)
+  })
+
+  it('keeps the order when it already is the start order, or when the list changed during the drag', () => {
+    expect(returnToStart(start, start)).toBeNull()
+    expect(returnToStart(moved(start, 'row:otto', 3), [...start, 'row:new'])).toBeNull()
+  })
+})
+
+describe('dragging between the pinned area and the rows list', () => {
+  /** Hermes, Noor and Mia on one line: 96 pt cells 24 pt apart, centered in 402 − 2·20 pt, so the line starts at x 33. */
+  const geometry = { width: 402, gutter: 20, cellWidth: 96, cellHeight: 110, gap: 24, paddingTop: 20 }
+  const pinned = pins()
+  const cells = pinCells(keysOf(pinned), geometry)
+  /** Window boxes: the pinned area under a 100 pt top bar, then the rows list right under it. */
+  const pinnedArea = { x: 0, y: 100, width: 402, height: 150 }
+  const shown = withSectionGhosts(list())
+  // Line tops in the rows list: Otto 0, Zed 64, Prive 128, Kevin 176, Linh 240, Work 304, the Work ghost 352, Archive 416, end 464.
+  const rowsList = { x: 0, y: 250, width: 402, height: 464 }
+  const query = (key: string, x: number, y: number, extra: Partial<CrossQuery> = {}): CrossQuery => ({
+    key,
+    finger: { x, y },
+    pinnedArea,
+    rowsList,
+    cells,
+    pinGap: geometry.gap,
+    lines: swipeLines(shown),
+    ...extra
+  })
+  /** The move for a drop with the finger at (x, y) in the window. */
+  const drop = (key: string, x: number, y: number, extra: Partial<CrossQuery> = {}) => crossMove(crossSlot(query(key, x, y, extra)), key, extra.cells ? [] : pinned, shown)
+
+  it('lays out the fixture pins on one line from x 33', () => {
+    expect(cells.map(c => [c.key, c.x, c.y])).toEqual([
+      ['pinned:hermes', 33, 20],
+      ['pinned:noor', 153, 20],
+      ['pinned:mia', 273, 20]
+    ])
+  })
+
+  it('pins a row dropped over the pinned area at the slot under the finger: first, second or last', () => {
+    expect(crossSlot(query('row:otto', 40, 160))).toEqual({ area: 'pinned', index: 0, x: 21, y: 20 })
+    expect(drop('row:otto', 40, 160)).toEqual({ kind: 'pinAt', profile: 'otto', before: 'hermes' })
+    expect(crossSlot(query('row:otto', 120, 160))).toEqual({ area: 'pinned', index: 1, x: 141, y: 20 })
+    expect(drop('row:otto', 120, 160)).toEqual({ kind: 'pinAt', profile: 'otto', before: 'noor' })
+    expect(crossSlot(query('row:otto', 380, 160))).toEqual({ area: 'pinned', index: 3, x: 381, y: 20 })
+    expect(drop('row:kevin', 380, 160)).toEqual({ kind: 'pinAt', profile: 'kevin', before: null })
+  })
+
+  it('takes the nearest slot for a finger on the gap between two pins, or in the padding around them', () => {
+    // 141 is on the gap between Hermes (33 to 129) and Noor (153 to 249): the slot between them.
+    expect(drop('row:otto', 141, 160)).toEqual({ kind: 'pinAt', profile: 'otto', before: 'noor' })
+    // In the padding under the pins (past Noor's center at 201), and left of the first one.
+    expect(drop('row:otto', 220, 245)).toEqual({ kind: 'pinAt', profile: 'otto', before: 'mia' })
+    expect(drop('row:otto', 2, 105)).toEqual({ kind: 'pinAt', profile: 'otto', before: 'hermes' })
+  })
+
+  it('finds the line under the finger when the pins wrap: the nearest line, then the slot on it', () => {
+    // A fourth pin wraps to a second line, centered alone at x 153 and 134 pt lower (y 154).
+    const four = pins({ ...layout(), pinned: [...layout().pinned, bot('ada')] })
+    const wrapped = pinCells(keysOf(four), geometry)
+    const tall = { ...pinnedArea, height: 284 }
+    const slot = (x: number, y: number) => crossSlot(query('row:otto', x, y, { cells: wrapped, pinnedArea: tall }))
+    // Line centers at local y 75 and 209: local 130 is nearer the first, local 150 the second.
+    expect(slot(300, 230)).toEqual({ area: 'pinned', index: 2, x: 261, y: 20 })
+    expect(slot(100, 250)).toEqual({ area: 'pinned', index: 3, x: 141, y: 154 })
+    expect(slot(300, 250)).toEqual({ area: 'pinned', index: 4, x: 261, y: 154 })
+    expect(crossMove(slot(100, 250), 'row:otto', four, shown)).toEqual({ kind: 'pinAt', profile: 'otto', before: 'ada' })
+  })
+
+  it('pins a row dropped anywhere on the empty pinned area skeleton first', () => {
+    const empty = { cells: [] }
+    expect(crossSlot(query('row:zed', 300, 200, empty))).toEqual({ area: 'pinned', index: 0, x: 201, y: 0 })
+    expect(drop('row:zed', 300, 200, empty)).toEqual({ kind: 'pinAt', profile: 'zed', before: null })
+  })
+
+  it('unpins a pin dropped over a row: in front of that row, in its section', () => {
+    // Local y 180, just inside Kevin (176): the gap above Kevin is nearest.
+    expect(crossSlot(query('pinned:noor', 200, 250 + 180))).toEqual({ area: 'rows', index: 3, y: 176 })
+    expect(drop('pinned:noor', 200, 250 + 180)).toEqual({ kind: 'unpinAt', profile: 'noor', sectionId: 'prive', before: 'kevin' })
+    // Local y 230: the gap between Kevin and Linh.
+    expect(drop('pinned:noor', 200, 250 + 230)).toEqual({ kind: 'unpinAt', profile: 'noor', sectionId: 'prive', before: 'linh' })
+    // Local y 10: above Otto, into No section.
+    expect(drop('pinned:mia', 200, 250 + 10)).toEqual({ kind: 'unpinAt', profile: 'mia', sectionId: null, before: 'otto' })
+  })
+
+  it('unpins a pin dropped right under a header into that section: at its top, also when the section is collapsed', () => {
+    // Local y 170: on the Prive header's lower part (128 to 176), nearest the gap under it.
+    expect(drop('pinned:noor', 200, 250 + 170)).toEqual({ kind: 'unpinAt', profile: 'noor', sectionId: 'prive', before: 'kevin' })
+    // Local y 460: under the collapsed Archive header, the end of the list: it joins Archive in front of Ada.
+    expect(drop('pinned:noor', 200, 250 + 460)).toEqual({ kind: 'unpinAt', profile: 'noor', sectionId: 'archive', before: 'ada' })
+  })
+
+  it('unpins a pin dropped over the empty section ghost row into that section', () => {
+    // The ghost spans 352 to 416: its upper half is nearest the gap above it, its lower half the gap under it; both are in Work.
+    expect(drop('pinned:noor', 200, 250 + 370)).toEqual({ kind: 'unpinAt', profile: 'noor', sectionId: 'work', before: null })
+    expect(drop('pinned:noor', 200, 250 + 400)).toEqual({ kind: 'unpinAt', profile: 'noor', sectionId: 'work', before: null })
+  })
+
+  it('gives no slot for a finger over neither area, over the area the item came from, or for a section header', () => {
+    expect(crossSlot(query('row:otto', 200, 50))).toBeNull()
+    expect(crossSlot(query('pinned:noor', 200, 250 + 500))).toBeNull()
+    expect(crossSlot(query('pinned:noor', 200, 160))).toBeNull()
+    expect(crossSlot(query('row:otto', 200, 250 + 100))).toBeNull()
+    expect(crossSlot(query('section:prive', 200, 160))).toBeNull()
+    expect(crossSlot(query('row:otto', 200, 160, { pinnedArea: null }))).toBeNull()
+    expect(crossSlot(query('pinned:noor', 200, 250 + 100, { rowsList: null }))).toBeNull()
+    expect(crossMove(null, 'row:otto', pinned, shown)).toBeNull()
+  })
+
+  it('moves nothing for an item that is no longer shown', () => {
+    expect(crossMove({ area: 'pinned', index: 0, x: 0, y: 0 }, 'row:gone', pinned, shown)).toBeNull()
+    expect(crossMove({ area: 'rows', index: 0, y: 0 }, 'pinned:gone', pinned, shown)).toBeNull()
+    expect(crossMove({ area: 'pinned', index: 0, x: 0, y: 0 }, 'section:prive', pinned, shown)).toBeNull()
   })
 })
 

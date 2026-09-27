@@ -115,8 +115,11 @@ export interface PinAreaLayout {
  * them go on a line, each line centered on its own; a key past that count
  * wraps to the next line, `cellHeight + gap` further down. Pass the pins in
  * pin order; a pin drag reorders them, so call this again with the new order.
+ * A worklet too: a row dragged over the pinned area finds its slot from
+ * these cells on the UI thread (`use-cross-drag.ts`).
  */
 export function pinCells(keys: readonly string[], layout: PinAreaLayout): PinCell[] {
+  'worklet'
   const { width, gutter, cellWidth, cellHeight, gap, paddingTop } = layout
   const available = width - 2 * gutter
   const perLine = Math.max(1, Math.floor((available + gap) / (cellWidth + gap)))

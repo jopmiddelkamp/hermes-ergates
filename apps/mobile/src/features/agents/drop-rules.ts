@@ -2,10 +2,12 @@
  * Dragging in Home Edit mode as pure functions (docs/10 "Home edit mode"):
  * the live rule the rows list asks while the finger moves, how a finished
  * drop becomes one `OrderMove` (or null: the item goes back), the pinned
- * avatars' drop, and the headers-only list shown while a section header is
- * dragged. No React, React Native or Reanimated, so Node tests cover every
- * rule. The functions marked 'worklet' also run on the UI thread inside the
- * rows list's sort strategy; they call only each other.
+ * avatars' drop, the headers-only list shown while a section header is
+ * dragged, and a drag from one area into the other (a row into the pinned
+ * area, a pin into the rows list). No React, React Native or Reanimated, so
+ * Node tests cover every rule. The functions marked 'worklet' also run on
+ * the UI thread, inside the rows list's sort strategy and while a finger
+ * drags an item over the other area; they call only each other.
  */
 
 import type { OrderMove } from '@/state/organization'
@@ -104,6 +106,26 @@ function sameKeys(a: readonly string[], b: readonly string[]): boolean {
     }
   }
   return true
+}
+
+/**
+ * The rows list's order while a dragged row is over the pinned area: the
+ * order the drag started with, so the row's own gap shows where it was and
+ * nothing shuffles under a row that has left the list. Null when that is
+ * already the order, or when the list changed during the drag (the start
+ * order would then drop or add an item).
+ */
+export function returnToStart(order: readonly string[], startOrder: readonly string[]): string[] | null {
+  'worklet'
+  if (!sameKeys(startOrder, order)) {
+    return null
+  }
+  for (let i = 0; i < order.length; i++) {
+    if (order[i] !== startOrder[i]) {
+      return [...startOrder]
+    }
+  }
+  return null
 }
 
 /**
@@ -222,6 +244,172 @@ export function pinDropMove(pins: readonly PinnedItem[], order: readonly string[
   const nextKey = known[known.indexOf(key) + 1]
   const before = pins.find(p => p.key === nextKey)?.bot.profile ?? null
   return before === (pins[pins.indexOf(item) + 1]?.bot.profile ?? null) ? null : { kind: 'pin', profile: item.bot.profile, before }
+}
+
+// Dragging between the pinned area and the rows list. Each area keeps its
+// own drag list; where the finger is decides, at the drop, whether the item
+// landed in the other area. `crossSlot` finds the slot under the finger on
+// the UI thread while it moves (it also places the insertion marker), and
+// `crossMove` turns that slot into one `OrderMove` at the drop. As above,
+// the worklet helpers are declared before `crossSlot`, which closes over them.
+
+/** A point in window coordinates: the finger (react-native-gesture-handler's `absoluteX` and `absoluteY`). */
+export interface Point {
+  x: number
+  y: number
+}
+
+/** A box in window coordinates: an area as Reanimated's `measure` reports it (`pageX`, `pageY`, `width`, `height`). */
+export interface Rect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** A pin's cell relative to the pinned area's own top left, in pin order (`pinCells`). */
+export interface CrossCell {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/**
+ * Where a drop over the other area would land, or null for none. Over the
+ * pinned area: the slot in the pin order, with the insertion bar's center
+ * `x` and its line's top `y`, both in the pinned area. Over the rows list:
+ * the slot among the lines it shows, with the gap's `y` from the list's top.
+ */
+export type CrossSlot = { area: 'pinned'; index: number; x: number; y: number } | { area: 'rows'; index: number; y: number } | null
+
+export interface CrossQuery {
+  /** The dragged item's key: a row (`row:`), a pin (`pinned:`) or a section header. */
+  key: string
+  finger: Point
+  /** The pinned area, pins or skeleton; null while it is not shown. */
+  pinnedArea: Rect | null
+  rowsList: Rect | null
+  /** The pins' cells at the pinned area's width; none for the empty skeleton. */
+  cells: readonly CrossCell[]
+  /** The gap between two pins. */
+  pinGap: number
+  /** The rows list's lines, top to bottom (`swipeLines` over the list as it shows, ghost rows included). */
+  lines: readonly { height: number }[]
+}
+
+function inside(point: Point, rect: Rect | null): rect is Rect {
+  'worklet'
+  return rect !== null && point.x >= rect.x && point.x < rect.x + rect.width && point.y >= rect.y && point.y < rect.y + rect.height
+}
+
+/**
+ * The pin slot at (x, y) in a pinned area `width` wide: on the line whose
+ * middle is nearest to y (so the padding and the gap between lines count
+ * too), in front of the first pin on it whose middle lies right of x, or
+ * after its last pin. The bar sits in the middle of the gap next to that
+ * pin. With no pins, the one slot there is.
+ */
+function pinSlot(cells: readonly CrossCell[], gap: number, x: number, y: number, width: number): CrossSlot {
+  'worklet'
+  if (cells.length === 0) {
+    return { area: 'pinned', index: 0, x: width / 2, y: 0 }
+  }
+  let lineTop = cells[0]!.y
+  let nearest = Infinity
+  for (const cell of cells) {
+    const distance = Math.abs(cell.y + cell.height / 2 - y)
+    if (distance < nearest) {
+      nearest = distance
+      lineTop = cell.y
+    }
+  }
+  let last = 0
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i]!
+    if (cell.y !== lineTop) {
+      continue
+    }
+    if (cell.x + cell.width / 2 > x) {
+      return { area: 'pinned', index: i, x: cell.x - gap / 2, y: lineTop }
+    }
+    last = i
+  }
+  const end = cells[last]!
+  return { area: 'pinned', index: last + 1, x: end.x + end.width + gap / 2, y: lineTop }
+}
+
+/** The gap between two lines of the rows list (or above the first, or under the last) nearest to y from the list's top. */
+function rowSlot(lines: readonly { height: number }[], y: number): CrossSlot {
+  'worklet'
+  let top = 0
+  let index = 0
+  let at = 0
+  let nearest = Math.abs(y)
+  for (let i = 0; i < lines.length; i++) {
+    top += lines[i]!.height
+    const distance = Math.abs(top - y)
+    if (distance < nearest) {
+      nearest = distance
+      index = i + 1
+      at = top
+    }
+  }
+  return { area: 'rows', index, y: at }
+}
+
+/**
+ * The slot under the finger in the other area: the pin slot for a row over
+ * the pinned area, the gap between lines for a pin over the rows list.
+ * Null for a finger over neither area or over the area the item came from,
+ * for an area that is not shown, and for a section header.
+ */
+export function crossSlot(query: CrossQuery): CrossSlot {
+  'worklet'
+  const { key, finger, pinnedArea, rowsList } = query
+  if (key.startsWith('row:')) {
+    return inside(finger, pinnedArea) ? pinSlot(query.cells, query.pinGap, finger.x - pinnedArea.x, finger.y - pinnedArea.y, pinnedArea.width) : null
+  }
+  if (key.startsWith('pinned:')) {
+    return inside(finger, rowsList) ? rowSlot(query.lines, finger.y - rowsList.y) : null
+  }
+  return null
+}
+
+/** Stands in for the dropped pin in the rows list's keys; no list item has it. */
+const DROPPED_KEY = 'dropped'
+
+const isListItem = (item: DragItem): item is ListItem => item.kind === 'row' || item.kind === 'section'
+
+/**
+ * The move for a drop over the other area, or null when there is none (no
+ * slot, or the dragged item is no longer shown). A row dropped over the
+ * pinned area is pinned in front of the pin at its slot (`pinAt`). A pin
+ * dropped over the rows list is unpinned into the group of its slot, in
+ * front of the row after it (`unpinAt`), by the rules a row drop follows:
+ * right under a header is that section, right under a collapsed header is
+ * that section's top, and right above or below a ghost row is the ghost's
+ * section. `shown` is the rows list the slot was found in, ghost rows included.
+ */
+export function crossMove(slot: CrossSlot, key: string, pins: readonly PinnedItem[], shown: readonly DragItem[]): OrderMove | null {
+  if (slot === null) {
+    return null
+  }
+  if (slot.area === 'pinned') {
+    const row = shown.find(item => item.key === key)
+    return row?.kind === 'row' ? { kind: 'pinAt', profile: row.bot.profile, before: pins[slot.index]?.bot.profile ?? null } : null
+  }
+  const pin = pins.find(item => item.key === key)
+  if (!pin) {
+    return null
+  }
+  const keys = shown.map(item => item.key)
+  const at = Math.min(Math.max(slot.index, 0), keys.length)
+  const order = [...keys.slice(0, at), DROPPED_KEY, ...keys.slice(at)]
+  const known = new Map(shown.filter(isListItem).map(item => [item.key, item]))
+  const where = placement(order, DROPPED_KEY, known)
+  const group = where.group === null ? undefined : known.get(where.group)
+  return { kind: 'unpinAt', profile: pin.bot.profile, sectionId: group?.kind === 'section' ? group.section.id : null, before: landsBefore(where, known) }
 }
 
 /** The fixed height (points) the rows list draws an item at: a ghost row is as high as a row. */

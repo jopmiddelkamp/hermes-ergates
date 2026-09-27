@@ -169,6 +169,26 @@ describe('organizing through the outbox', () => {
     expect(org.outbox).toEqual([{ id: 'o1', profile: 'noor', field: 'section', sectionId: 'prive', sectionName: 'Prive', status: 'queued' }])
   })
 
+  it('a row dragged into the pinned area queues only pinned, and takes its spot in the pin order on this phone', () => {
+    const org = organize(base, rows, next => orgActions.applyMove(next, { kind: 'pinAt', profile: 'noor', before: 'kevin' }), ids())
+    expect(org.pins).toEqual(['linh', 'noor', 'kevin'])
+    expect(org.outbox).toEqual([{ id: 'o1', profile: 'noor', field: 'pinned', pinned: true, status: 'queued' }])
+  })
+
+  it('a pin dragged into the rows list queues pinned, and its section only when the section changed', () => {
+    // Linh is in Prive already: only the unpin goes to Hermes.
+    const same = organize(base, rows, next => orgActions.applyMove(next, { kind: 'unpinAt', profile: 'linh', sectionId: 'prive', before: 'mia' }), ids())
+    expect(same.outbox).toEqual([{ id: 'o1', profile: 'linh', field: 'pinned', pinned: false, status: 'queued' }])
+    expect(same.pins).toEqual(['kevin'])
+    // Kevin has no section: the unpin and the move into Prive both go.
+    const moved = organize(base, rows, next => orgActions.applyMove(next, { kind: 'unpinAt', profile: 'kevin', sectionId: 'prive', before: 'mia' }), ids())
+    expect(moved.outbox).toEqual([
+      { id: 'o1', profile: 'kevin', field: 'pinned', pinned: false, status: 'queued' },
+      { id: 'o2', profile: 'kevin', field: 'section', sectionId: 'prive', sectionName: 'Prive', status: 'queued' }
+    ])
+    expect(moved.rowOrder).toEqual(['linh', 'kevin', 'mia', 'noor'])
+  })
+
   it('returns the same organization when the action changes nothing, and a newer change replaces a queued one', () => {
     expect(organize(base, rows, org => orgActions.pin(org, 'linh'), ids())).toBe(base)
     const next = ids()
