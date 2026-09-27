@@ -15,6 +15,7 @@ import { persist, type PersistStorage } from 'zustand/middleware'
 
 import type { SecretStore } from '@/gateway/secrets'
 
+import { recoverOrgOutbox, type OrgOutboxItem } from './org-outbox'
 import { emptyOrganization, orgActions, type BotRow, type Organization, type OrderMove, type Section } from './organization'
 import { expired, recoverAfterRestart, type OutboxItem } from './outbox'
 import type { ProvisioningRun } from './provisioning'
@@ -103,6 +104,8 @@ export interface DeviceState extends PersistedDeviceState {
   markManyUnread(connectionId: string, profiles: string[]): void
   markManyRead(connectionId: string, profiles: string[], now: number): void
   acknowledgeExchanges(connectionId: string, profile: string, identities: string[]): void
+  /** Applies one of the pure `org-outbox.ts` functions to this connection's organization outbox. */
+  updateOrgOutbox(connectionId: string, fn: (outbox: OrgOutboxItem[]) => OrgOutboxItem[]): void
 }
 
 export interface CreateDeviceStoreOptions {
@@ -110,7 +113,11 @@ export interface CreateDeviceStoreOptions {
   skipHydration?: boolean
 }
 
-/** Fields added after the first release: a blob without them, or with a wrong-type `rowOrder`, loads with empty ones. */
+/**
+ * Fields added after the first release: a blob without them, or with a
+ * wrong-type `rowOrder` or `outbox`, loads with empty ones. A pin or section
+ * write whose answer never came goes out again (`recoverOrgOutbox`).
+ */
 function withOrganizationDefaults(organization: Record<string, Organization>): Record<string, Organization> {
   return Object.fromEntries(
     Object.entries(organization).map(([id, org]) => [
@@ -118,7 +125,8 @@ function withOrganizationDefaults(organization: Record<string, Organization>): R
       {
         ...org,
         exchangeAcks: org.exchangeAcks ?? {},
-        rowOrder: Array.isArray(org.rowOrder) ? org.rowOrder.filter((p): p is string => typeof p === 'string') : []
+        rowOrder: Array.isArray(org.rowOrder) ? org.rowOrder.filter((p): p is string => typeof p === 'string') : [],
+        outbox: Array.isArray(org.outbox) ? recoverOrgOutbox(org.outbox) : []
       }
     ])
   )
@@ -234,7 +242,12 @@ export function createDeviceStore(storage: PersistStorage<PersistedDeviceState>,
           markRead: (connectionId, profile, now) => updateOrg(connectionId, org => orgActions.markRead(org, profile, now)),
           markManyUnread: (connectionId, profiles) => updateOrg(connectionId, org => orgActions.markManyUnread(org, profiles)),
           markManyRead: (connectionId, profiles, now) => updateOrg(connectionId, org => orgActions.markManyRead(org, profiles, now)),
-          acknowledgeExchanges: (connectionId, profile, identities) => updateOrg(connectionId, org => orgActions.acknowledgeExchanges(org, profile, identities))
+          acknowledgeExchanges: (connectionId, profile, identities) => updateOrg(connectionId, org => orgActions.acknowledgeExchanges(org, profile, identities)),
+          updateOrgOutbox: (connectionId, fn) =>
+            updateOrg(connectionId, org => {
+              const outbox = fn(org.outbox)
+              return outbox === org.outbox ? org : { ...org, outbox }
+            })
         }
       },
       {

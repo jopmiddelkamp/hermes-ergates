@@ -16,6 +16,8 @@
  *   the whole connection, and activity never reorders it.
  */
 
+import type { OrgOutboxItem } from './org-outbox'
+
 export interface Section {
   id: string
   name: string
@@ -42,6 +44,8 @@ export interface Organization {
    * evicted: an acknowledged identity must never turn back into new activity.
    */
   exchangeAcks: Record<string, string[]>
+  /** Pin and section changes on their way to Hermes (`org-outbox.ts`). */
+  outbox: OrgOutboxItem[]
 }
 
 export interface BotRow {
@@ -71,7 +75,7 @@ export type OrderMove =
   | { kind: 'section'; sectionId: string; before: string | null }
 
 export function emptyOrganization(): Organization {
-  return { pins: [], rowOrder: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {} }
+  return { pins: [], rowOrder: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {}, outbox: [] }
 }
 
 function byActivityDescending(rows: BotRow[]): BotRow[] {
@@ -257,7 +261,8 @@ export const orgActions = {
       rowOrder: org.rowOrder.filter(p => p !== profile),
       membership,
       manualUnread,
-      lastOpenedAt: { ...org.lastOpenedAt, [profile]: now }
+      lastOpenedAt: { ...org.lastOpenedAt, [profile]: now },
+      outbox: org.outbox.filter(item => item.profile !== profile)
     }
   },
 

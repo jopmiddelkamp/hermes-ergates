@@ -352,7 +352,7 @@ describe('the device blob at rest', () => {
   const legacyDraft: OutboxItem = { localId: 'l1', connectionId: 'c1', profile: 'linh', text: 'call Dirk back', createdAt: Date.now(), status: 'draft' }
   const legacyState: PersistedDeviceState = {
     connections: [conn1],
-    organization: { c1: { pins: ['linh'], rowOrder: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {} } },
+    organization: { c1: { pins: ['linh'], rowOrder: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {}, outbox: [] } },
     prefs: { ...defaultPrefs, themeName: 'dark' },
     drafts: { 'c1:linh': 'the invoice from Dirk' },
     outbox: [legacyDraft],
@@ -436,5 +436,62 @@ describe('deleting a section', () => {
     expect(s().organization.c1.membership.linh).toBeNull()
     expect(s().organization.c1.rowOrder).toEqual(['kevin', 'linh'])
     expect(s().organization.c2).toBeUndefined()
+  })
+})
+
+describe('the organization outbox', () => {
+  const pinLinh = { id: 'o1', profile: 'linh', field: 'pinned', pinned: true, status: 'queued' } as const
+
+  it('changes one connection outbox through one action, and leaves the state alone when nothing changes', () => {
+    const store = newStore()
+    store.getState().updateOrgOutbox('c1', outbox => [...outbox, pinLinh])
+    expect(store.getState().organization.c1.outbox).toEqual([pinLinh])
+    expect(store.getState().organization.c2).toBeUndefined()
+    const before = store.getState()
+    store.getState().updateOrgOutbox('c1', outbox => outbox)
+    store.getState().updateOrgOutbox('c2', outbox => outbox)
+    expect(store.getState()).toBe(before)
+  })
+
+  it('keeps queued changes across a restart, and sends an unanswered write again', async () => {
+    const storage = createMemoryStorageJson<PersistedDeviceState>()
+    const secrets = new MemorySecretStore()
+    const first = createDeviceStore(storage, secrets)
+    await waitForHydration(first)
+    first.getState().updateOrgOutbox('c1', () => [
+      { ...pinLinh, status: 'sending' },
+      { id: 'o2', profile: 'kevin', field: 'section', sectionId: 'prive', sectionName: 'Prive', status: 'sent', revision: 4 }
+    ])
+
+    const second = createDeviceStore(storage, secrets)
+    await waitForHydration(second)
+    expect(second.getState().organization.c1.outbox.map(item => [item.id, item.status])).toEqual([
+      ['o1', 'queued'],
+      ['o2', 'sent']
+    ])
+  })
+
+  it('hydrates an organization from before the outbox with an empty one', async () => {
+    const storage = createMemoryStorageJson<PersistedDeviceState>()
+    const org = { pins: ['kevin'], rowOrder: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {} }
+    await storage.setItem('ergates-device-v1', {
+      state: { connections: [conn1], organization: { c1: org, c2: { ...org, outbox: 'o1' } } as never, prefs: defaultPrefs, drafts: {}, outbox: [], provisioning: [] },
+      version: 1
+    })
+    const store = createDeviceStore(storage, new MemorySecretStore())
+    await waitForHydration(store)
+    expect(store.getState().organization.c1.outbox).toEqual([])
+    expect(store.getState().organization.c2.outbox).toEqual([])
+  })
+
+  it('clears queued changes with the connection, and a deleted agent takes its changes along', async () => {
+    const store = newStore()
+    store.getState().updateOrgOutbox('c1', () => [pinLinh])
+    store.getState().updateOrgOutbox('c2', () => [{ ...pinLinh, profile: 'kevin' }, pinLinh])
+    store.getState().forgetProfile('c2', 'linh', 5)
+    expect(store.getState().organization.c2.outbox.map(item => item.profile)).toEqual(['kevin'])
+    await store.getState().removeConnection('c1')
+    expect(store.getState().organization.c1).toBeUndefined()
+    expect(store.getState().organization.c2.outbox).toHaveLength(1)
   })
 })
