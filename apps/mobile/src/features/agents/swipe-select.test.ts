@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { Section } from '@/state/organization'
 
-import { EDIT_ITEM_HEIGHT } from './drop-rules'
+import { EDIT_ITEM_HEIGHT, withSectionGhosts } from './drop-rules'
 import { buildEditItems, listItems, pinnedItems, type EditLayout, type Selection } from './edit-mode'
 import type { Bot } from './roster'
 import {
@@ -99,6 +99,22 @@ describe('the lines the swipe measures', () => {
   it('has no top for a key the list does not show', () => {
     expect(lineTop(lines, 'row:gone')).toBe(-1)
     expect(lineTop(lines, 'pinned:noor')).toBe(-1)
+  })
+})
+
+describe('swipe to select over the empty-section ghost row', () => {
+  const shown = withSectionGhosts(items)
+  const ghostLines = swipeLines(shown)
+
+  it('measures the ghost as a row-high line under its header', () => {
+    expect(ghostLines.map(l => l.key)).toEqual(['row:otto', 'row:zed', 'section:prive', 'row:kevin', 'row:linh', 'section:work', 'ghost:work'])
+    expect(ghostLines[6]).toEqual({ key: 'ghost:work', height: EDIT_ITEM_HEIGHT.row })
+    expect(lineAt(ghostLines, 360)).toBe('ghost:work')
+  })
+
+  it('skips the ghost in the range, the way it skips a header', () => {
+    expect(sorted(swipeSelection(shown, set(), 'row:linh', 'ghost:work', 'select'))).toEqual(['linh'])
+    expect(sorted(swipeSelection(shown, set('otto', 'kevin', 'linh'), 'row:kevin', 'ghost:work', 'deselect'))).toEqual(['otto'])
   })
 })
 

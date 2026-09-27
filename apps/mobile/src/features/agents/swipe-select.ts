@@ -23,8 +23,8 @@
  * pins; it never continues into the rows list, or the other way.
  */
 
-import { EDIT_ITEM_HEIGHT } from './drop-rules'
-import type { EditItem, ListItem, Selection } from './edit-mode'
+import { dragItemHeight, type DragItem } from './drop-rules'
+import type { EditItem, Selection } from './edit-mode'
 
 // Declared above the worklets that read them: the worklets Babel plugin
 // evaluates each worklet's closure at module load (see drop-rules.ts).
@@ -45,9 +45,12 @@ export interface SwipeLine {
 /** Starting on an unselected row selects; starting on a selected row deselects. */
 export type SwipeMode = 'select' | 'deselect'
 
-/** Every line of the rows list with the fixed height the list draws it at, top to bottom. */
-export function swipeLines(items: readonly ListItem[]): SwipeLine[] {
-  return items.map(item => ({ key: item.key, height: EDIT_ITEM_HEIGHT[item.kind] }))
+/** What a swipe ranges over: the pins, or the rows list with its headers and ghost rows. Only pins and rows take a selection. */
+export type SwipeItem = EditItem | DragItem
+
+/** Every line of the rows list with the fixed height the list draws it at, top to bottom; an empty section's ghost row is a line too. */
+export function swipeLines(items: readonly DragItem[]): SwipeLine[] {
+  return items.map(item => ({ key: item.key, height: dragItemHeight(item) }))
 }
 
 /** The content y of a line's top edge, or -1 for a key the list does not show. */
@@ -145,11 +148,11 @@ export function pinAt(cells: readonly PinCell[], x: number, y: number): string |
   return null
 }
 
-function profileOf(item: EditItem | undefined): string | null {
+function profileOf(item: SwipeItem | undefined): string | null {
   return item?.kind === 'pinned' || item?.kind === 'row' ? item.bot.profile : null
 }
 
-export function swipeMode(items: readonly EditItem[], selection: Selection, startKey: string): SwipeMode {
+export function swipeMode(items: readonly SwipeItem[], selection: Selection, startKey: string): SwipeMode {
   const profile = profileOf(items.find(item => item.key === startKey))
   return profile !== null && selection.has(profile) ? 'deselect' : 'select'
 }
@@ -157,12 +160,12 @@ export function swipeMode(items: readonly EditItem[], selection: Selection, star
 /**
  * The selection while the finger is on `currentKey`: every row from the start
  * line to the current one, in either direction, selected or deselected by
- * `mode`; section headers in the range are skipped.
+ * `mode`; section headers and ghost rows in the range are skipped.
  * Everything else keeps its state from `base`, the selection when the swipe
  * started, so moving back returns a row to how it was. A key the list no
  * longer shows changes nothing.
  */
-export function swipeSelection(items: readonly EditItem[], base: Selection, startKey: string, currentKey: string, mode: SwipeMode): Selection {
+export function swipeSelection(items: readonly SwipeItem[], base: Selection, startKey: string, currentKey: string, mode: SwipeMode): Selection {
   const start = items.findIndex(item => item.key === startKey)
   const current = items.findIndex(item => item.key === currentKey)
   if (start === -1 || current === -1) {

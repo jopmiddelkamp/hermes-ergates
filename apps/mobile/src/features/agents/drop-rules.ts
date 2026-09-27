@@ -24,11 +24,24 @@ export interface DragSpacer {
   height: number
 }
 
-/** One line of the rows list: a row or a section header, or the spacer while a section header is dragged. */
-export type DragItem = ListItem | DragSpacer
+/**
+ * The drop skeleton under an empty, expanded section's header in Edit mode:
+ * a dashed row that says "Drag agents here". It is an item of the rows list,
+ * so a row dropped right above or right below it lands in that section. It
+ * has no handle, so it is never dragged itself; the drop rules skip its key
+ * (it is not a row or a header), and swipe to select skips it like a header.
+ */
+export interface SectionGhost {
+  kind: 'ghost'
+  key: string
+  sectionId: string
+}
+
+/** One line of the rows list: a row or a section header, the ghost row of an empty section, or the spacer while a section header is dragged. */
+export type DragItem = ListItem | DragSpacer | SectionGhost
 
 /** What the slot rule needs to know about each key, as plain data a worklet can read. */
-export type SlotKind = 'section' | 'row' | 'spacer'
+export type SlotKind = 'section' | 'row' | 'spacer' | 'ghost'
 
 export type SlotMeta = Record<string, SlotKind>
 
@@ -130,7 +143,7 @@ export function nextOrder(query: SlotQuery): string[] | null {
 
 type SectionItem = Extract<ListItem, { kind: 'section' }>
 
-const isSection = (item: ListItem): item is SectionItem => item.kind === 'section'
+const isSection = (item: DragItem): item is SectionItem => item.kind === 'section'
 
 /** Where a key sits in an order: the key of the section header above it (null: No section), and the item right after it. */
 function placement(order: readonly string[], key: string, known: ReadonlyMap<string, ListItem>): { group: string | null; next: ListItem | undefined } {
@@ -167,7 +180,8 @@ function landsBefore(where: { group: string | null; next: ListItem | undefined }
  * moves: a drop in the same place, a drop the rules forbid, or an item that
  * disappeared during the drag. `items` is the rows list as it is now; `order`
  * is the keys after the drop (the full list, or the headers-only list of a
- * section drag). Keys no longer in `items` are skipped.
+ * section drag). Keys no longer in `items` are skipped, and so are ghost
+ * rows: a row right above or right below one is in that ghost's section.
  */
 export function dropMove(items: readonly ListItem[], order: readonly string[], key: string): OrderMove | null {
   const item = items.find(i => i.key === key)
@@ -210,20 +224,44 @@ export function pinDropMove(pins: readonly PinnedItem[], order: readonly string[
   return before === (pins[pins.indexOf(item) + 1]?.bot.profile ?? null) ? null : { kind: 'pin', profile: item.bot.profile, before }
 }
 
-function heightOf(item: DragItem): number {
-  return item.kind === 'spacer' ? item.height : EDIT_ITEM_HEIGHT[item.kind]
+/** The fixed height (points) the rows list draws an item at: a ghost row is as high as a row. */
+export function dragItemHeight(item: DragItem): number {
+  switch (item.kind) {
+    case 'spacer':
+      return item.height
+    case 'ghost':
+      return EDIT_ITEM_HEIGHT.row
+    default:
+      return EDIT_ITEM_HEIGHT[item.kind]
+  }
 }
 
 function listHeight(items: readonly DragItem[]): number {
-  return items.reduce((sum, item) => sum + heightOf(item), 0)
+  return items.reduce((sum, item) => sum + dragItemHeight(item), 0)
+}
+
+/**
+ * The rows list as Edit mode shows it: a ghost row right under the header of
+ * every expanded section without rows. A collapsed section gets none; a row
+ * dropped right under its header still joins it (`dropMove`).
+ */
+export function withSectionGhosts(items: readonly ListItem[]): DragItem[] {
+  const shown: DragItem[] = []
+  for (const item of items) {
+    shown.push(item)
+    if (item.kind === 'section' && !item.section.collapsed && item.topRow === null) {
+      shown.push({ kind: 'ghost', key: `ghost:${item.section.id}`, sectionId: item.section.id })
+    }
+  }
+  return shown
 }
 
 /**
  * The list while a section header is dragged: only the section headers, under
- * a spacer whose height keeps the dragged header at the same place on screen.
- * A key that names no section shows the whole list.
+ * a spacer whose height keeps the dragged header at the same place on screen
+ * (ghost rows above it count). A key that names no section shows the whole list.
  */
-export function sectionDragItems(items: readonly ListItem[], sectionKey: string): DragItem[] {
+export function sectionDragItems(items: readonly DragItem[], sectionKey: string): DragItem[] {
   const at = items.findIndex(i => i.kind === 'section' && i.key === sectionKey)
   if (at === -1) {
     return [...items]
@@ -235,12 +273,12 @@ export function sectionDragItems(items: readonly ListItem[], sectionKey: string)
 }
 
 /**
- * The least height of the rows list: the whole list. It stays the same while
- * only the headers show and while the whole list comes back (the drag list
- * draws its new height a few frames after the data changes), so the scroll
- * content never gets shorter than the scroll position needs.
+ * The least height of the rows list: the whole list, ghost rows included. It
+ * stays the same while only the headers show and while the whole list comes
+ * back (the drag list draws its new height a few frames after the data
+ * changes), so the scroll content never gets shorter than the scroll position needs.
  */
-export function listMinHeight(items: readonly ListItem[]): number {
+export function listMinHeight(items: readonly DragItem[]): number {
   return listHeight(items)
 }
 

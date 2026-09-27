@@ -6,6 +6,7 @@ import {
   EDIT_ITEM_HEIGHT,
   NO_SECTION_DRAG,
   SPACER_KEY,
+  dragItemHeight,
   dropMove,
   listMinHeight,
   nextOrder,
@@ -14,6 +15,7 @@ import {
   pinDropMove,
   sectionDragItems,
   slotMeta,
+  withSectionGhosts,
   type DragItem,
   type SlotQuery
 } from './drop-rules'
@@ -124,7 +126,7 @@ describe('nextOrder, the live rule while the finger moves', () => {
   it('refuses a slot above the spacer: the header stays, or slides back to where the drag started', () => {
     const headers = sectionDragItems(list(), 'section:work')
     const order = keysOf(headers)
-    const headerHeights = Object.fromEntries(headers.map(i => [i.key, i.kind === 'spacer' ? i.height : EDIT_ITEM_HEIGHT[i.kind]]))
+    const headerHeights = Object.fromEntries(headers.map(i => [i.key, dragItemHeight(i)]))
     const work = { order, startOrder: order, activeKey: 'section:work', activeIndex: 2, activeHeight: 48, heights: headerHeights, meta: slotMeta(headers) }
     expect(nextOrder(query(10, work))).toBeNull()
     const away = moved(order, 'section:work', 1)
@@ -249,6 +251,49 @@ describe('the headers-only list for a section drag', () => {
     // Rows 4 × 64, headers 3 × 48.
     expect(listMinHeight(list())).toBe(256 + 144)
     expect(listMinHeight([])).toBe(0)
+  })
+})
+
+describe('the drop skeleton under an empty section in Edit mode', () => {
+  const shown = withSectionGhosts(list())
+
+  it('puts one ghost row under each expanded section without rows, and none under a collapsed one', () => {
+    expect(keysOf(shown)).toEqual(['row:otto', 'row:zed', 'section:prive', 'row:kevin', 'row:linh', 'section:work', 'ghost:work', 'section:archive'])
+    expect(shown[6]).toEqual({ kind: 'ghost', key: 'ghost:work', sectionId: 'work' })
+    const closedEmpty = list({ ...layout(), sections: [{ section: { ...work, collapsed: true }, rows: [] }] })
+    expect(withSectionGhosts(closedEmpty)).toEqual(closedEmpty)
+  })
+
+  it('knows the ghost as its own slot kind', () => {
+    expect(slotMeta(shown)['ghost:work']).toBe('ghost')
+  })
+
+  it('lets a row land right above or right below the ghost, and both join that section at its end', () => {
+    const order = keysOf(shown)
+    expect(dropMove(list(), moved(order, 'row:otto', 5), 'row:otto')).toEqual({ kind: 'row', profile: 'otto', sectionId: 'work', before: null })
+    expect(dropMove(list(), moved(order, 'row:otto', 6), 'row:otto')).toEqual({ kind: 'row', profile: 'otto', sectionId: 'work', before: null })
+  })
+
+  it('leaves every other drop as it was with the ghost in the list', () => {
+    const order = keysOf(shown)
+    expect(dropMove(list(), moved(order, 'row:linh', 3), 'row:linh')).toEqual({ kind: 'row', profile: 'linh', sectionId: 'prive', before: 'kevin' })
+    expect(dropMove(list(), moved(order, 'row:otto', 7), 'row:otto')).toEqual({ kind: 'row', profile: 'otto', sectionId: 'archive', before: 'ada' })
+    expect(dropMove(list(), order, 'row:otto')).toBeNull()
+  })
+
+  it('lets the live rule move a row past the ghost', () => {
+    const order = keysOf(shown)
+    const heights = Object.fromEntries(shown.map(i => [i.key, dragItemHeight(i)]))
+    // Tops without Otto: Zed 0, Prive 64, Kevin 112, Linh 176, Work 240, ghost 288, Archive 352; slot 6 (under the ghost) is centered at 384.
+    const next = nextOrder({ order, startOrder: order, activeKey: 'row:otto', activeIndex: 0, activeHeight: 64, centerY: 384, heights, meta: slotMeta(shown) })
+    expect(next).toEqual(moved(order, 'row:otto', 6))
+  })
+
+  it('counts the ghost in the list height and in the spacer of a section drag', () => {
+    expect(listMinHeight(shown)).toBe(256 + 144 + 64)
+    // Above Archive: 4 rows and the ghost (5 × 64) and 2 headers (2 × 48), 416 pt, minus the 2 headers that stay above it.
+    expect(sectionDragItems(shown, 'section:archive')[0]).toEqual({ kind: 'spacer', key: SPACER_KEY, height: 416 - 96 })
+    expect(keysOf(sectionDragItems(shown, 'section:archive'))).toEqual([SPACER_KEY, 'section:prive', 'section:work', 'section:archive'])
   })
 })
 

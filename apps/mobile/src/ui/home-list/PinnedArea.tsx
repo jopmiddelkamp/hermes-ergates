@@ -23,6 +23,13 @@
  * inside a cell, used to seed the swipe at the touch's real spot. This is
  * also why the badge needs react-native-gesture-handler (`GestureDetector`):
  * see the dependency-cruiser rule this file is named in.
+ *
+ * With nothing pinned, Edit mode shows a drop skeleton in the pinned area's
+ * place (`PinnedSkeleton`): three dashed ghost avatars where real pins would
+ * sit and "Drag an agent here to pin it" under them, as high as one line of
+ * pins. It is there while the static Edit layout is (`layoutEditing`) and
+ * fades in and out with Edit mode's progress; outside Edit mode an empty
+ * pinned area draws nothing, as before.
  */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react'
@@ -39,6 +46,7 @@ import { useTheme } from '@/theme/provider'
 import type { AnchorRect } from '../ActionMenu'
 import { Avatar } from '../Avatar'
 import { Grip } from './Grip'
+import { SKELETON_RING_OPACITY } from './SectionGhostRow'
 import { SelectionCircle } from './SelectionCircle'
 import { usePinSwipeSelect, type PinSwipeSelect } from './use-swipe-select'
 
@@ -56,6 +64,16 @@ const PIN_PADDING_TOP = 20
  * `styles.label`'s `numberOfLines={1}` keeps it to one line regardless.
  */
 const PIN_CELL_HEIGHT = AVATAR_SIZE + 8 + 18
+/**
+ * The empty pinned area's drop skeleton in Edit mode is exactly one line of
+ * pins high (150 pt), so the list below does not move when the last pin
+ * leaves or the first one arrives. `HomeList` slides the rows by it while
+ * Edit mode starts and ends.
+ */
+export const PINNED_SKELETON_HEIGHT = 2 * PIN_PADDING_TOP + PIN_CELL_HEIGHT
+/** The ghost avatars of the skeleton, spaced like real pins: their centers `PIN_WIDTH + PIN_GAP` apart. */
+const SKELETON_PINS = [0, 1, 2]
+const SKELETON_PIN_GAP = PIN_WIDTH + PIN_GAP - AVATAR_SIZE
 const BADGE_SIZE = 32
 /** The move handle's touch area around its badge (44 pt, the minimum touch target). */
 const MOVE_TOUCH = 44
@@ -96,6 +114,8 @@ export interface PinnedAreaProps {
   /** The whole Home list, for Move left and Move right. */
   items: EditItem[]
   editing: boolean
+  /** The static Edit-mode layout (`useLayoutEditing`): while it is on and nothing is pinned, the drop skeleton shows. */
+  layoutEditing: boolean
   /** Edit mode's progress, 0 to 1. */
   progress: SharedValue<number>
   selection: Selection
@@ -114,7 +134,7 @@ export interface PinnedAreaProps {
   gutter: number
 }
 
-export function PinnedArea({ pins, items, editing, progress, selection, gateway, connectionId, haptics, scrollRef, unread, onPress, onLongPress, onMove, onSelectionChange, gutter }: PinnedAreaProps) {
+export function PinnedArea({ pins, items, editing, layoutEditing, progress, selection, gateway, connectionId, haptics, scrollRef, unread, onPress, onLongPress, onMove, onSelectionChange, gutter }: PinnedAreaProps) {
   // Stable across renders that do not change the pins or the handlers, for
   // the same reason `HomeList` memoizes its own `Sortable.Grid` props. Kept
   // above the empty-pins return below: every hook here must run every render.
@@ -147,7 +167,7 @@ export function PinnedArea({ pins, items, editing, progress, selection, gateway,
   )
 
   if (pins.length === 0) {
-    return null
+    return layoutEditing ? <PinnedSkeleton progress={progress} /> : null
   }
 
   return (
@@ -190,6 +210,24 @@ export function PinnedArea({ pins, items, editing, progress, selection, gateway,
         ))}
       </Sortable.Flex>
     </View>
+  )
+}
+
+/** The empty pinned area in Edit mode: three dashed ghost avatars and a caption, fading with Edit mode's progress. */
+function PinnedSkeleton({ progress }: { progress: SharedValue<number> }) {
+  const theme = useTheme()
+  const fade = useAnimatedStyle(() => ({ opacity: progress.get() }))
+  return (
+    <Animated.View accessible accessibilityLabel="Pinned agents, empty. Drag an agent here, or select one and choose Pin." style={[styles.skeleton, fade]}>
+      <View style={styles.skeletonPins}>
+        {SKELETON_PINS.map(i => (
+          <View key={i} style={[styles.ghostPin, { borderColor: theme.colors.mutedForeground }]} />
+        ))}
+      </View>
+      <Text numberOfLines={1} style={[styles.label, { color: theme.colors.mutedForeground }]}>
+        Drag an agent here to pin it
+      </Text>
+    </Animated.View>
   )
 }
 
@@ -267,5 +305,9 @@ const styles = StyleSheet.create({
   badge: { position: 'absolute', top: BADGE_OFFSET.y, left: BADGE_OFFSET.x },
   move: { position: 'absolute', top: BADGE_CENTER_Y - MOVE_TOUCH / 2, left: MOVE_CENTER_X - MOVE_TOUCH / 2 },
   moveTouch: { width: MOVE_TOUCH, height: MOVE_TOUCH, alignItems: 'center', justifyContent: 'center' },
-  moveBadge: { width: BADGE_SIZE, height: BADGE_SIZE, borderRadius: BADGE_SIZE / 2, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' }
+  moveBadge: { width: BADGE_SIZE, height: BADGE_SIZE, borderRadius: BADGE_SIZE / 2, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  // The caption sits where a pin's name would, 8 pt under the ghost avatars (`styles.pin`'s gap).
+  skeleton: { height: PINNED_SKELETON_HEIGHT, paddingTop: PIN_PADDING_TOP, alignItems: 'center', gap: 8 },
+  skeletonPins: { flexDirection: 'row', gap: SKELETON_PIN_GAP },
+  ghostPin: { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2, borderWidth: 1.5, borderStyle: 'dashed', opacity: SKELETON_RING_OPACITY }
 })

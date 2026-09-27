@@ -38,12 +38,29 @@ export {
   pinDropMove,
   sectionDragItems,
   slotMeta,
+  withSectionGhosts,
   type DragItem,
   type SectionDrag,
   type SectionDragEvent,
+  type SectionGhost,
   type SlotMeta
 } from './drop-rules'
-export { autoScrollOffset, autoScrollSpeed, lineAt, lineTop, pinAt, pinCells, swipeLines, swipeMode, swipeSelection, type PinAreaLayout, type PinCell, type SwipeLine, type SwipeMode } from './swipe-select'
+export {
+  autoScrollOffset,
+  autoScrollSpeed,
+  lineAt,
+  lineTop,
+  pinAt,
+  pinCells,
+  swipeLines,
+  swipeMode,
+  swipeSelection,
+  type PinAreaLayout,
+  type PinCell,
+  type SwipeItem,
+  type SwipeLine,
+  type SwipeMode
+} from './swipe-select'
 export {
   canCreateSection,
   membershipChanged,

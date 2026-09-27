@@ -30,7 +30,7 @@ import {
   swipeLines,
   swipeMode,
   swipeSelection,
-  type ListItem,
+  type DragItem,
   type PinAreaLayout,
   type PinCell,
   type PinnedItem,
@@ -54,7 +54,8 @@ interface SwipeStart {
   mode: SwipeMode
 }
 
-export function useSwipeSelect(scrollRef: AnimatedRef<Animated.ScrollView>, items: ListItem[], selection: Selection, onSelectionChange: (selection: Selection) => void) {
+/** `items` is the rows list as it shows: rows, section headers and the ghost rows of empty sections. */
+export function useSwipeSelect(scrollRef: AnimatedRef<Animated.ScrollView>, items: DragItem[], selection: Selection, onSelectionChange: (selection: Selection) => void) {
   const lines = useSharedValue<SwipeLine[]>([])
   useEffect(() => {
     lines.set(swipeLines(items))

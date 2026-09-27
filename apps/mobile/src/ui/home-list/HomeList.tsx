@@ -22,11 +22,19 @@
  * closures whenever its state changes, so `renderItem` is a new function on
  * most Home renders too. Do not chase full stability by wrapping those five
  * handlers in `useCallback` inside `index.tsx`.
+ *
+ * Edit mode also shows drop skeletons: a ghost row under every expanded
+ * section without rows (`withSectionGhosts`; an item of the rows list), and
+ * the pinned area's skeleton when nothing is pinned (`PinnedArea`). Both are
+ * there while `layoutEditing` is, and fade with Edit mode's progress. The
+ * pinned skeleton adds one line of pins above the rows list at once, so
+ * while Edit mode starts and ends the rows list and the footer slide by it
+ * (`below`), from where they were to where they now sit.
  */
 
 import { useCallback, useEffect, useMemo, useReducer, type ReactNode } from 'react'
 import { AppState, RefreshControl, View, type AccessibilityActionEvent } from 'react-native'
-import Animated, { useAnimatedReaction, useAnimatedRef, useSharedValue, type SharedValue } from 'react-native-reanimated'
+import Animated, { useAnimatedReaction, useAnimatedRef, useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated'
 import Sortable, { useCommonValuesContext, type DragStartParams, type SortableGridDragEndParams, type SortableGridRenderItem, type SortStrategyFactory } from 'react-native-sortables'
 
 import {
@@ -44,6 +52,7 @@ import {
   sectionDragItems,
   slotMeta,
   useAvatar,
+  withSectionGhosts,
   type Bot,
   type DragItem,
   type EditItem,
@@ -59,7 +68,8 @@ import { bleed } from '../page-padding'
 import { usePagePadding } from '../Screen'
 import { HomeRow } from './HomeRow'
 import { HomeSectionHeader } from './HomeSectionHeader'
-import { PinnedArea } from './PinnedArea'
+import { PINNED_SKELETON_HEIGHT, PinnedArea } from './PinnedArea'
+import { SectionGhostRow } from './SectionGhostRow'
 import { useSwipeSelect } from './use-swipe-select'
 
 /**
@@ -141,10 +151,15 @@ export function HomeList(props: HomeListProps) {
   const gutter = usePagePadding()
   const pins = useMemo(() => pinnedItems(items), [items])
   const list = useMemo(() => listItems(items), [items])
-  const swipe = useSwipeSelect(scrollRef, list, selection, onSelectionChange)
+  // The rows list as it shows: in Edit mode with a ghost row under each empty section.
+  const shown = useMemo<DragItem[]>(() => (layoutEditing ? withSectionGhosts(list) : list), [layoutEditing, list])
+  const swipe = useSwipeSelect(scrollRef, shown, selection, onSelectionChange)
   // While a section handle is touched or dragged, the rows list shows only the section headers.
   const [sectionDrag, dispatch] = useReducer(nextSectionDrag, NO_SECTION_DRAG)
-  const data = useMemo<DragItem[]>(() => (sectionDrag.key ? sectionDragItems(list, sectionDrag.key) : list), [list, sectionDrag.key])
+  const data = useMemo<DragItem[]>(() => (sectionDrag.key ? sectionDragItems(shown, sectionDrag.key) : shown), [shown, sectionDrag.key])
+  // The pinned skeleton's line appears and leaves at once; the rows below slide by it instead of jumping.
+  const pinnedSkeleton = layoutEditing && pins.length === 0
+  const below = useAnimatedStyle(() => ({ transform: [{ translateY: pinnedSkeleton ? (progress.get() - 1) * PINNED_SKELETON_HEIGHT : 0 }] }))
   // A touch the system cancels (the app goes to the background, an alert
   // shows) never reaches the handle's touch-up, so show the whole list again
   // when the app is back: a list switched while the app is away draws blank.
@@ -212,6 +227,8 @@ export function HomeList(props: HomeListProps) {
       switch (item.kind) {
         case 'spacer':
           return <View style={{ height: item.height }} />
+        case 'ghost':
+          return <SectionGhostRow progress={progress} gutter={gutter} />
         case 'section':
           return (
             <HomeSectionHeader
@@ -270,6 +287,7 @@ export function HomeList(props: HomeListProps) {
         pins={pins}
         items={items}
         editing={editing}
+        layoutEditing={layoutEditing}
         progress={progress}
         selection={selection}
         gateway={gateway}
@@ -284,7 +302,7 @@ export function HomeList(props: HomeListProps) {
         gutter={gutter}
       />
       {/* Keeps the rows list as tall as the whole list while only headers show and while it comes back, so the scroll position holds. */}
-      <View onLayout={swipe.onListLayout} style={{ minHeight: listMinHeight(list) }}>
+      <Animated.View onLayout={swipe.onListLayout} style={[{ minHeight: listMinHeight(shown) }, below]}>
         <Sortable.Grid
           columns={1}
           data={data}
@@ -301,8 +319,8 @@ export function HomeList(props: HomeListProps) {
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
         />
-      </View>
-      {footer}
+      </Animated.View>
+      {footer ? <Animated.View style={below}>{footer}</Animated.View> : null}
     </Animated.ScrollView>
   )
 }

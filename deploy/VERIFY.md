@@ -604,6 +604,14 @@ to scroll:
     circle and move down: the swipe deselects instead. A plain tap on a
     circle still toggles only that row, a swipe on a row body still scrolls
     the list, and the ≡ handles still drag.
+19. Drop skeletons: unpin every agent and stay in Edit mode: the pinned
+    area shows three dashed ghost avatars with "Drag an agent here to pin
+    it", and the rows below do not move. With TalkBack on it reads "Pinned
+    agents, empty. Drag an agent here, or select one and choose Pin." The
+    empty section shows a dashed "Drag agents here" row under its header;
+    the collapsed section shows none. Tap ✕: both fade out and the list
+    looks as it did before Edit mode; tap the edit icon again: they fade
+    back in.
 
 Result:
 
