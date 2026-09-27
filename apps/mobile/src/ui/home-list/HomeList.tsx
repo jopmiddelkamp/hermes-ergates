@@ -35,7 +35,8 @@
  * pinned at that spot, and a pin dragged into the rows list is unpinned
  * there (`useCrossDrag`). While a row is over the pinned area the rows list
  * keeps the order the drag started with, so its gap stays where it was
- * (`returnToStart` in the sort strategy). Auto-scroll reaches the other
+ * (`returnToStart` in the sort strategy), and the lifted row fades so the
+ * avatars and the marker show through it. Auto-scroll reaches the other
  * area: a row dragged up scrolls the list up to its very top, the pinned
  * area included, and a pin dragged down scrolls down to the end of the list.
  */
@@ -135,6 +136,8 @@ export interface HomeListProps {
   footer?: ReactNode
   /** Bottom padding of the scroll content, the home indicator inset included. */
   bottomPadding: number
+  /** How much of the list's bottom an overlay covers (the Edit bar while it shows): a drag between the pinned area and the list does not land there. */
+  bottomCover: number
 }
 
 /**
@@ -172,7 +175,7 @@ function makeGuardedStrategy(meta: SharedValue<SlotMeta>, cross: SharedValue<Cro
 const keyOf = (item: DragItem) => item.key
 
 export function HomeList(props: HomeListProps) {
-  const { items, selection, editing, layoutEditing, progress, gateway, connectionId, haptics, unread, refreshing, onRefresh, onOpen, onMenu, onToggle, onSelectionChange, onMove, onToggleCollapsed, onEditSection, header, footer, bottomPadding } = props
+  const { items, selection, editing, layoutEditing, progress, gateway, connectionId, haptics, unread, refreshing, onRefresh, onOpen, onMenu, onToggle, onSelectionChange, onMove, onToggleCollapsed, onEditSection, header, footer, bottomPadding, bottomCover } = props
   const scrollRef = useAnimatedRef<Animated.ScrollView>()
   const gutter = usePagePadding()
   const pins = useMemo(() => pinnedItems(items), [items])
@@ -211,7 +214,7 @@ export function HomeList(props: HomeListProps) {
   // A pin dragged down may scroll to the end of the content, past the rows on the first screen.
   const pinsOverscroll = useMemo<[number, number]>(() => [OVERSCROLL, Math.max(0, contentHeight - listTop)], [contentHeight, listTop])
   const pinGeometry = useMemo(() => pinAreaGeometry(gutter), [gutter])
-  const cross = useCrossDrag({ scrollRef, pins, shown, lines: swipe.lines, pinGeometry, onMove })
+  const cross = useCrossDrag({ scrollRef, pins, shown, lines: swipe.lines, pinGeometry, bottomCover, onMove })
   // A touch the system cancels (the app goes to the background, an alert
   // shows) never reaches the handle's touch-up, so show the whole list again
   // when the app is back: a list switched while the app is away draws blank.
@@ -242,9 +245,10 @@ export function HomeList(props: HomeListProps) {
   const onDragStart = useCallback(
     ({ key }: DragStartParams) => {
       lightTap(haptics)
+      cross.begin(key)
       dispatch({ type: 'start', key })
     },
-    [haptics]
+    [haptics, cross]
   )
 
   const onDragEnd = useCallback(
@@ -320,11 +324,12 @@ export function HomeList(props: HomeListProps) {
               rowKey={item.key}
               swipe={swipe.select}
               gutter={gutter}
+              hovering={cross.hovering}
             />
           )
       }
     },
-    [editing, layoutEditing, progress, items, selection, gutter, act, onToggleCollapsed, onEditSection, gateway, connectionId, unread, onOpen, onToggle, onMenu, swipe.select]
+    [editing, layoutEditing, progress, items, selection, gutter, act, onToggleCollapsed, onEditSection, gateway, connectionId, unread, onOpen, onToggle, onMenu, swipe.select, cross.hovering]
   )
 
   return (
@@ -373,6 +378,8 @@ export function HomeList(props: HomeListProps) {
           overDrag="vertical"
           dragActivationDelay={DRAG_ACTIVATION_DELAY}
           activeItemScale={1.02}
+          activeItemOpacity={cross.rowOpacity}
+          activeItemShadowOpacity={cross.rowShadow}
           inactiveItemOpacity={1}
           autoScrollMaxOverscroll={rowsOverscroll}
           onDragStart={onDragStart}

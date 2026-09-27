@@ -11,7 +11,7 @@ import { useDeviceStore } from '@/state/device-store'
 import { sharedView } from '@/state/org-sync'
 import { deriveHome, emptyOrganization, isUnread, type BotRow, type Organization, type Section } from '@/state/organization'
 
-import { createOrganizer, type Organizer } from './organizer'
+import { connectionOrganizer, type Organizer } from './organizer'
 import { useRoster, type Bot } from './roster'
 
 export interface HomeSection {
@@ -94,5 +94,5 @@ export function useHome(port: GatewayPort, connectionId: string): HomeModel {
 /** The organizing actions for this connection, run on the organization as Home shows it (`rows` is `HomeModel.rows`). */
 export function useOrganizer(connectionId: string, rows: BotRow[]): Organizer {
   const organize = useDeviceStore(s => s.organize)
-  return useMemo(() => createOrganizer(action => organize(connectionId, rows, action)), [organize, connectionId, rows])
+  return useMemo(() => connectionOrganizer(organize, connectionId, rows), [organize, connectionId, rows])
 }

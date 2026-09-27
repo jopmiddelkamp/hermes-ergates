@@ -20,6 +20,11 @@
  * rebuilding the gesture: see `swipeGesture` below). The row has a fixed
  * height (the section drag and swipe to select measure with it), so its
  * text grows with the system text size only up to 1.4 times, in both modes.
+ *
+ * The row's background is its own bottom layer, not its root's color: while
+ * the lifted row is over the pinned avatars (`hovering`, from
+ * `use-cross-drag.ts`) the layer fades out, so the avatars show through
+ * the row, which the rows list fades at the same time.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -65,9 +70,12 @@ export interface HomeRowProps {
   rowKey: string
   swipe: SwipeSelect
   gutter: number
+  /** The key of the lifted row while it is over the pinned area, else null. */
+  hovering: SharedValue<string | null>
 }
 
-export function HomeRow({ bot, gateway, connectionId, unread, editing, layoutEditing, progress, selected, actions, onAction, onPress, onLongPress, rowKey, swipe, gutter }: HomeRowProps) {
+export function HomeRow(props: HomeRowProps) {
+  const { bot, gateway, connectionId, unread, editing, layoutEditing, progress, selected, actions, onAction, onPress, onLongPress, rowKey, swipe, gutter, hovering } = props
   const theme = useTheme()
   const avatar = useAvatar(gateway, connectionId, bot.profile, bot.hasAvatar)
   const ref = useRef<View>(null)
@@ -82,6 +90,7 @@ export function HomeRow({ bot, gateway, connectionId, unread, editing, layoutEdi
   const timeDot = useAnimatedStyle(() => ({ transform: [{ translateX: rowOffsets(progress.get(), gutter, layoutEditing).timeDot }] }))
   const circle = useAnimatedStyle(() => ({ opacity: progress.get(), transform: [{ translateX: (progress.get() - 1) * CIRCLE_COLUMN }] }))
   const handle = useAnimatedStyle(() => ({ opacity: progress.get(), transform: [{ translateX: handleOffset(progress.get(), gutter, layoutEditing) }] }))
+  const background = useAnimatedStyle(() => ({ opacity: hovering.get() === rowKey ? 0 : 1 }))
 
   const time = formatRowTime(bot.lastActivityAt)
   const preview = bot.preview || bot.description
@@ -90,7 +99,8 @@ export function HomeRow({ bot, gateway, connectionId, unread, editing, layoutEdi
   const measure = () => ref.current?.measureInWindow((x, y, width, height) => onLongPress({ x, y, width, height }))
 
   return (
-    <View ref={ref} collapsable={false} style={[styles.row, { backgroundColor: pressed ? theme.colors.muted : theme.colors.background }]}>
+    <View ref={ref} collapsable={false} style={styles.row}>
+      <Animated.View pointerEvents="none" style={[styles.background, { backgroundColor: pressed ? theme.colors.muted : theme.colors.background }, background]} />
       <Pressable
         onPress={onPress}
         onLongPress={editing ? undefined : measure}
@@ -155,6 +165,7 @@ export function HomeRow({ bot, gateway, connectionId, unread, editing, layoutEdi
 
 const styles = StyleSheet.create({
   row: { height: EDIT_ITEM_HEIGHT.row, flexDirection: 'row', alignItems: 'center' },
+  background: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   body: { flex: 1, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center' },
   bodyContent: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   circleColumn: { position: 'absolute', left: 0, top: 0, bottom: 0, justifyContent: 'center' },

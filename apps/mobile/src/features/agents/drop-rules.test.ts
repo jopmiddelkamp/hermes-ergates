@@ -6,6 +6,7 @@ import {
   EDIT_ITEM_HEIGHT,
   NO_SECTION_DRAG,
   SPACER_KEY,
+  crossDrop,
   crossMove,
   crossSlot,
   dragItemHeight,
@@ -14,10 +15,13 @@ import {
   nextOrder,
   nextSectionDrag,
   orderIsLegal,
+  pageRect,
   pinDropMove,
   returnToStart,
   sectionDragItems,
+  sameSlot,
   slotMeta,
+  visibleArea,
   withSectionGhosts,
   type CrossQuery,
   type DragItem,
@@ -264,7 +268,7 @@ describe('the drop skeleton under an empty section in Edit mode', () => {
 
   it('puts one ghost row under each expanded section without rows, and none under a collapsed one', () => {
     expect(keysOf(shown)).toEqual(['row:otto', 'row:zed', 'section:prive', 'row:kevin', 'row:linh', 'section:work', 'ghost:work', 'section:archive'])
-    expect(shown[6]).toEqual({ kind: 'ghost', key: 'ghost:work', sectionId: 'work' })
+    expect(shown[6]).toEqual({ kind: 'ghost', key: 'ghost:work' })
     const closedEmpty = list({ ...layout(), sections: [{ section: { ...work, collapsed: true }, rows: [] }] })
     expect(withSectionGhosts(closedEmpty)).toEqual(closedEmpty)
   })
@@ -322,6 +326,8 @@ describe('dragging between the pinned area and the rows list', () => {
   const cells = pinCells(keysOf(pinned), geometry)
   /** Window boxes: the pinned area under a 100 pt top bar, then the rows list right under it. */
   const pinnedArea = { x: 0, y: 100, width: 402, height: 150 }
+  /** The scroll view the owner sees: from under the 100 pt top bar to the bottom of an 874 pt screen. */
+  const visible = { x: 0, y: 100, width: 402, height: 774 }
   const shown = withSectionGhosts(list())
   // Line tops in the rows list: Otto 0, Zed 64, Prive 128, Kevin 176, Linh 240, Work 304, the Work ghost 352, Archive 416, end 464.
   const rowsList = { x: 0, y: 250, width: 402, height: 464 }
@@ -333,6 +339,7 @@ describe('dragging between the pinned area and the rows list', () => {
     cells,
     pinGap: geometry.gap,
     lines: swipeLines(shown),
+    visible,
     ...extra
   })
   /** The move for a drop with the finger at (x, y) in the window. */
@@ -405,9 +412,35 @@ describe('dragging between the pinned area and the rows list', () => {
     expect(drop('pinned:noor', 200, 250 + 400)).toEqual({ kind: 'unpinAt', profile: 'noor', sectionId: 'work', before: null })
   })
 
+  it('unpins a pin dropped anywhere under the last row at the end of the list, in the last group', () => {
+    // Local y 500 and 600: past the end of the rows list (464), still on screen.
+    expect(crossSlot(query('pinned:noor', 200, 250 + 500))).toEqual({ area: 'rows', index: 8, y: 464 })
+    expect(drop('pinned:noor', 200, 250 + 600)).toEqual({ kind: 'unpinAt', profile: 'noor', sectionId: 'archive', before: 'ada' })
+    const noSections = listItems(buildEditItems({ ...layout(), sections: [] }))
+    const slot = crossSlot(query('pinned:mia', 200, 250 + 400, { lines: swipeLines(noSections) }))
+    expect(crossMove(slot, 'pinned:mia', pinned, noSections)).toEqual({ kind: 'unpinAt', profile: 'mia', sectionId: null, before: null })
+  })
+
+  it('lets a pin leave when every agent is pinned: the empty list takes it into No section', () => {
+    const slot = crossSlot(query('pinned:noor', 200, 300, { lines: [], rowsList: { x: 0, y: 250, width: 402, height: 0 } }))
+    expect(slot).toEqual({ area: 'rows', index: 0, y: 0 })
+    expect(crossMove(slot, 'pinned:noor', pinned, [])).toEqual({ kind: 'unpinAt', profile: 'noor', sectionId: null, before: null })
+  })
+
+  it('gives no slot for a finger outside the part of the list the owner sees: over the top bar, or over the bar at the bottom', () => {
+    // The pinned area scrolled partly under the top bar: its top 40 pt are hidden.
+    const scrolled = { pinnedArea: { x: 0, y: 60, width: 402, height: 150 } }
+    expect(crossSlot(query('row:otto', 200, 80, scrolled))).toBeNull()
+    expect(crossSlot(query('row:otto', 200, 120, scrolled))).toEqual({ area: 'pinned', index: 1, x: 141, y: 20 })
+    // The Edit bar covers the bottom 90 pt of the scroll view.
+    const covered = { visible: { ...visible, height: 774 - 90 } }
+    expect(crossSlot(query('pinned:noor', 200, 874 - 40, covered))).toBeNull()
+    expect(crossSlot(query('pinned:noor', 200, 874 - 100, covered))).toEqual({ area: 'rows', index: 8, y: 464 })
+    expect(crossSlot(query('pinned:noor', 200, 430, { visible: null }))).toBeNull()
+  })
+
   it('gives no slot for a finger over neither area, over the area the item came from, or for a section header', () => {
     expect(crossSlot(query('row:otto', 200, 50))).toBeNull()
-    expect(crossSlot(query('pinned:noor', 200, 250 + 500))).toBeNull()
     expect(crossSlot(query('pinned:noor', 200, 160))).toBeNull()
     expect(crossSlot(query('row:otto', 200, 250 + 100))).toBeNull()
     expect(crossSlot(query('section:prive', 200, 160))).toBeNull()
@@ -420,6 +453,56 @@ describe('dragging between the pinned area and the rows list', () => {
     expect(crossMove({ area: 'pinned', index: 0, x: 0, y: 0 }, 'row:gone', pinned, shown)).toBeNull()
     expect(crossMove({ area: 'rows', index: 0, y: 0 }, 'pinned:gone', pinned, shown)).toBeNull()
     expect(crossMove({ area: 'pinned', index: 0, x: 0, y: 0 }, 'section:prive', pinned, shown)).toBeNull()
+  })
+})
+
+describe('the end of a drag that may have crossed into the other area', () => {
+  const pinned = pins()
+  const shown = withSectionGhosts(list())
+  const overPins = { area: 'pinned', index: 1, x: 141, y: 20 } as const
+
+  it('ends over the other area with its move: the caller skips its own drop', () => {
+    expect(crossDrop('row:otto', 'row:otto', overPins, pinned, shown)).toEqual({ over: true, move: { kind: 'pinAt', profile: 'otto', before: 'noor' } })
+    expect(crossDrop('pinned:noor', 'pinned:noor', { area: 'rows', index: 3, y: 176 }, pinned, shown)).toEqual({
+      over: true,
+      move: { kind: 'unpinAt', profile: 'noor', sectionId: 'prive', before: 'kevin' }
+    })
+  })
+
+  it('ends over the other area without a move when the item is no longer shown, so the caller still skips its own drop', () => {
+    expect(crossDrop('row:gone', 'row:gone', overPins, pinned, shown)).toEqual({ over: true, move: null })
+  })
+
+  it('ends in its own area when no slot was found: the caller drops it there', () => {
+    expect(crossDrop('row:otto', 'row:otto', null, pinned, shown)).toEqual({ over: false, move: null })
+    expect(crossDrop(null, 'row:otto', null, pinned, shown)).toEqual({ over: false, move: null })
+  })
+
+  it('leaves a drag it does not follow alone, such as a second finger dragging in the other area', () => {
+    expect(crossDrop('pinned:noor', 'row:otto', overPins, pinned, shown)).toBeNull()
+  })
+})
+
+describe('the geometry helpers of the drag between the two areas', () => {
+  it('turns a measured view into a window box, and nothing into nothing', () => {
+    expect(pageRect({ pageX: 0, pageY: 100, width: 402, height: 150 })).toEqual({ x: 0, y: 100, width: 402, height: 150 })
+    expect(pageRect(null)).toBeNull()
+  })
+
+  it('takes an overlay at the bottom off the scroll view', () => {
+    expect(visibleArea({ x: 0, y: 100, width: 402, height: 774 }, 90)).toEqual({ x: 0, y: 100, width: 402, height: 684 })
+    expect(visibleArea({ x: 0, y: 100, width: 402, height: 60 }, 90)).toEqual({ x: 0, y: 100, width: 402, height: 0 })
+    expect(visibleArea(null, 90)).toBeNull()
+  })
+
+  it('knows when two slots put the marker in the same place', () => {
+    expect(sameSlot(null, null)).toBe(true)
+    expect(sameSlot({ area: 'rows', index: 3, y: 176 }, { area: 'rows', index: 3, y: 176 })).toBe(true)
+    expect(sameSlot({ area: 'rows', index: 3, y: 176 }, { area: 'rows', index: 4, y: 240 })).toBe(false)
+    expect(sameSlot({ area: 'pinned', index: 1, x: 141, y: 20 }, { area: 'pinned', index: 1, x: 141, y: 20 })).toBe(true)
+    expect(sameSlot({ area: 'pinned', index: 1, x: 141, y: 20 }, { area: 'pinned', index: 1, x: 261, y: 20 })).toBe(false)
+    expect(sameSlot({ area: 'pinned', index: 0, x: 0, y: 0 }, { area: 'rows', index: 0, y: 0 })).toBe(false)
+    expect(sameSlot(null, { area: 'rows', index: 0, y: 0 })).toBe(false)
   })
 })
 

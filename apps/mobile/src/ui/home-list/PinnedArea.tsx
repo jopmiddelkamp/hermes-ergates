@@ -46,7 +46,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { Pressable, StyleSheet, Text, View, type AccessibilityActionEvent } from 'react-native'
 import { GestureDetector } from 'react-native-gesture-handler'
 import Animated, { useAnimatedStyle, type AnimatedRef, type SharedValue } from 'react-native-reanimated'
-import Sortable, { type SortableFlexDragEndParams } from 'react-native-sortables'
+import Sortable, { type DragStartParams, type SortableFlexDragEndParams } from 'react-native-sortables'
 
 import {
   editRowLabel,
@@ -70,6 +70,7 @@ import type { AnchorRect } from '../ActionMenu'
 import { Avatar } from '../Avatar'
 import { PinsMarker } from './CrossMarkers'
 import { Grip } from './Grip'
+import { MAX_FONT_SCALE } from './HomeRow'
 import { SKELETON_RING_OPACITY } from './SectionGhostRow'
 import { SelectionCircle } from './SelectionCircle'
 import type { CrossDrag } from './use-cross-drag'
@@ -175,7 +176,13 @@ export function PinnedArea(props: PinnedAreaProps) {
   // Stable across renders that do not change the pins or the handlers, for
   // the same reason `HomeList` memoizes its own `Sortable.Grid` props. Kept
   // above the empty-pins return below: every hook here must run every render.
-  const onDragStart = useCallback(() => lightTap(haptics), [haptics])
+  const onDragStart = useCallback(
+    ({ key }: DragStartParams) => {
+      lightTap(haptics)
+      cross.begin(key)
+    },
+    [haptics, cross]
+  )
   // The pinned area's own fixed geometry, for `pinCells`: stable unless `gutter` changes, so
   // `usePinSwipeSelect`'s effect that recomputes the cells does not fire on every render.
   const pinLayout = useMemo(() => pinAreaGeometry(gutter), [gutter])
@@ -292,7 +299,7 @@ function PinnedSkeleton({ progress, areaRef, slot }: PinnedSkeletonProps) {
           </View>
         ))}
       </View>
-      <Text numberOfLines={1} style={[styles.label, { color: theme.colors.mutedForeground }]}>
+      <Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.label, { color: theme.colors.mutedForeground }]}>
         Drag an agent here to pin it
       </Text>
     </Animated.View>
@@ -374,8 +381,9 @@ const styles = StyleSheet.create({
   move: { position: 'absolute', top: BADGE_CENTER_Y - MOVE_TOUCH / 2, left: MOVE_CENTER_X - MOVE_TOUCH / 2 },
   moveTouch: { width: MOVE_TOUCH, height: MOVE_TOUCH, alignItems: 'center', justifyContent: 'center' },
   moveBadge: { width: BADGE_SIZE, height: BADGE_SIZE, borderRadius: BADGE_SIZE / 2, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
-  // The caption sits where a pin's name would, 8 pt under the ghost avatars (`styles.pin`'s gap).
-  skeleton: { height: PINNED_SKELETON_HEIGHT, paddingTop: PIN_PADDING_TOP, alignItems: 'center', gap: 8 },
+  // The caption sits where a pin's name would, 8 pt under the ghost avatars (`styles.pin`'s gap). At the
+  // largest text size its one line (15 pt × MAX_FONT_SCALE) still fits the 38 pt under them; the box clips anything past its height.
+  skeleton: { height: PINNED_SKELETON_HEIGHT, paddingTop: PIN_PADDING_TOP, alignItems: 'center', gap: 8, overflow: 'hidden' },
   skeletonPins: { flexDirection: 'row', gap: SKELETON_PIN_GAP },
   ghostSlot: { width: AVATAR_SIZE, height: AVATAR_SIZE },
   ghostPin: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: AVATAR_SIZE / 2, borderWidth: 1.5, borderStyle: 'dashed', opacity: SKELETON_RING_OPACITY },

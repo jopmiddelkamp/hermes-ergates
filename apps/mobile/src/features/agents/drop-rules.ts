@@ -36,7 +36,6 @@ export interface DragSpacer {
 export interface SectionGhost {
   kind: 'ghost'
   key: string
-  sectionId: string
 }
 
 /** One line of the rows list: a row or a section header, the ghost row of an empty section, or the spacer while a section header is dragged. */
@@ -296,6 +295,8 @@ export interface CrossQuery {
   pinGap: number
   /** The rows list's lines, top to bottom (`swipeLines` over the list as it shows, ghost rows included). */
   lines: readonly { height: number }[]
+  /** The part of the scroll view the owner sees (`visibleArea`); a finger outside it is over neither area. */
+  visible: Rect | null
 }
 
 function inside(point: Point, rect: Rect | null): rect is Rect {
@@ -360,20 +361,50 @@ function rowSlot(lines: readonly { height: number }[], y: number): CrossSlot {
 
 /**
  * The slot under the finger in the other area: the pin slot for a row over
- * the pinned area, the gap between lines for a pin over the rows list.
- * Null for a finger over neither area or over the area the item came from,
- * for an area that is not shown, and for a section header.
+ * the pinned area, the gap between lines for a pin anywhere below the top of
+ * the rows list (under its last row is the end of the list, and an empty
+ * list, every agent pinned, still takes it). Null for a finger outside the
+ * part of the scroll view the owner sees (over the top bar, or over the bar
+ * at the bottom), over neither area or over the area the item came from, for
+ * an area that is not shown, and for a section header.
  */
 export function crossSlot(query: CrossQuery): CrossSlot {
   'worklet'
   const { key, finger, pinnedArea, rowsList } = query
+  if (!inside(finger, query.visible)) {
+    return null
+  }
   if (key.startsWith('row:')) {
     return inside(finger, pinnedArea) ? pinSlot(query.cells, query.pinGap, finger.x - pinnedArea.x, finger.y - pinnedArea.y, pinnedArea.width) : null
   }
   if (key.startsWith('pinned:')) {
-    return inside(finger, rowsList) ? rowSlot(query.lines, finger.y - rowsList.y) : null
+    return rowsList !== null && finger.y >= rowsList.y ? rowSlot(query.lines, finger.y - rowsList.y) : null
   }
   return null
+}
+
+/** Whether two slots put the marker in the same place, so an unchanged slot is not written again on every frame. */
+export function sameSlot(a: CrossSlot, b: CrossSlot): boolean {
+  'worklet'
+  if (a === null || b === null) {
+    return a === b
+  }
+  if (a.area === 'pinned' && b.area === 'pinned') {
+    return a.index === b.index && a.x === b.x && a.y === b.y
+  }
+  return a.area === b.area && a.index === b.index && a.y === b.y
+}
+
+/** A measured view (Reanimated's `measure`: `pageX`, `pageY`, `width`, `height`) as a window box; null when it could not be measured. */
+export function pageRect(measured: { pageX: number; pageY: number; width: number; height: number } | null): Rect | null {
+  'worklet'
+  return measured ? { x: measured.pageX, y: measured.pageY, width: measured.width, height: measured.height } : null
+}
+
+/** The part of the scroll view the owner sees: the scroll view's window box without the `bottomCover` points an overlay (the Edit bar) covers at its bottom. */
+export function visibleArea(scrollView: Rect | null, bottomCover: number): Rect | null {
+  'worklet'
+  return scrollView ? { ...scrollView, height: Math.max(0, scrollView.height - bottomCover) } : null
 }
 
 /** Stands in for the dropped pin in the rows list's keys; no list item has it. */
@@ -412,6 +443,27 @@ export function crossMove(slot: CrossSlot, key: string, pins: readonly PinnedIte
   return { kind: 'unpinAt', profile: pin.bot.profile, sectionId: group?.kind === 'section' ? group.section.id : null, before: landsBefore(where, known) }
 }
 
+/**
+ * What the end of a drag does about the other area. `followed` is the key of
+ * the drag whose finger was followed (null: none yet) and `slot` the slot it
+ * was over. Null when the drag that ended is not the followed one (a second
+ * finger's drag): nothing changes. Otherwise `over` says whether it ended
+ * over the other area, so the caller skips its own drop, and `move` is the
+ * move to apply (null when the item is no longer shown).
+ */
+export function crossDrop(
+  followed: string | null,
+  key: string,
+  slot: CrossSlot,
+  pins: readonly PinnedItem[],
+  shown: readonly DragItem[]
+): { over: boolean; move: OrderMove | null } | null {
+  if (followed !== null && followed !== key) {
+    return null
+  }
+  return { over: slot !== null, move: crossMove(slot, key, pins, shown) }
+}
+
 /** The fixed height (points) the rows list draws an item at: a ghost row is as high as a row. */
 export function dragItemHeight(item: DragItem): number {
   switch (item.kind) {
@@ -438,7 +490,7 @@ export function withSectionGhosts(items: readonly ListItem[]): DragItem[] {
   for (const item of items) {
     shown.push(item)
     if (item.kind === 'section' && !item.section.collapsed && item.topRow === null) {
-      shown.push({ kind: 'ghost', key: `ghost:${item.section.id}`, sectionId: item.section.id })
+      shown.push({ kind: 'ghost', key: `ghost:${item.section.id}` })
     }
   }
   return shown

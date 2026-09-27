@@ -6,7 +6,7 @@
  * queues the pin and section changes for Hermes). Pure, so Node tests cover it.
  */
 
-import { orgActions, type Organization, type OrderMove } from '@/state/organization'
+import { orgActions, type BotRow, type Organization, type OrderMove } from '@/state/organization'
 
 import { newSection } from './move-to-section'
 
@@ -40,4 +40,15 @@ export function createOrganizer(organize: (action: OrganizeAction) => void): Org
     deleteSection: sectionId => organize(view => orgActions.deleteSection(view, sectionId)),
     applyMove: move => organize(view => orgActions.applyMove(view, move))
   }
+}
+
+/**
+ * The organizer Home uses (`useOrganizer`): every action runs through the
+ * device store's `organize` with this connection's roster rows, so the
+ * pinned flags and sections it changes are queued for Hermes, whether it
+ * came from the bottom bar, the menu, a drop or a drag between the pinned
+ * area and the list.
+ */
+export function connectionOrganizer(organize: (connectionId: string, rows: BotRow[], action: OrganizeAction) => void, connectionId: string, rows: BotRow[]): Organizer {
+  return createOrganizer(action => organize(connectionId, rows, action))
 }

@@ -604,9 +604,9 @@ to scroll:
     circle and move down: the swipe deselects instead. A plain tap on a
     circle still toggles only that row, a swipe on a row body still scrolls
     the list, and the ≡ handles still drag.
-19. Drop skeletons: unpin every agent and stay in Edit mode: the pinned
-    area shows three dashed ghost avatars with "Drag an agent here to pin
-    it", and the rows below do not move. With TalkBack on it reads "Pinned
+19. Drop skeletons: in Edit mode, unpin the agents one at a time: when
+    the last one leaves, the pinned area shows three dashed ghost avatars
+    with "Drag an agent here to pin it", and the rows below do not move. With TalkBack on it reads "Pinned
     agents, empty. Drag an agent here, or select one and choose Pin." The
     empty section shows a dashed "Drag agents here" row under its header;
     the collapsed section shows none. Tap ✕: both fade out and the list
@@ -615,11 +615,11 @@ to scroll:
 20. Row into the pinned area, with Hermes Desktop connected to the same
     gateway (as in V25): in a list long enough to scroll, scroll down, then
     drag a No section row by its ≡ up to the top edge: the list scrolls up
-    until the pinned area shows. Over the avatars a thin vertical bar marks
-    the spot, and it hides when the finger moves back over the rows. Drop
-    between the first and second avatar: the row fades out, the avatar grows
-    in at that spot, and after one roster refresh Desktop shows the agent
-    pinned. Drop a row onto the empty pinned skeleton too (after step 19):
+    until the pinned area shows. Over the avatars the row fades so the
+    avatars show through it, and a thin vertical bar marks the spot; both
+    go back when the finger moves back over the rows. Drop between the
+    first and second avatar: the row cross-fades into the avatar at that
+    spot, and after one roster refresh Desktop shows the agent pinned. Drop a row onto the empty pinned skeleton too (after step 19):
     it becomes the first pin.
 21. Pin into a section: drag an avatar by its move handle down over the
     rows, past the first screen (the list scrolls down by itself), and drop
@@ -627,7 +627,9 @@ to scroll:
     fades out, the row grows in there, and Desktop shows the agent unpinned
     and in that section. Drop another avatar on the empty section's "Drag
     agents here" row: it joins that section. Drop one right under the
-    collapsed section's header: it joins that section at its top.
+    collapsed section's header: it joins that section at its top. Drop one
+    in the space under the last row: it lands at the end of the list.
+    Release one over the Edit bar: it stays pinned.
 
 Result:
 

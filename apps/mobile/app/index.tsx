@@ -273,6 +273,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
         }}
         onEditSection={editSection}
         bottomPadding={editing && selection.size > 0 ? editBarHeight(theme, barBottomInset) + LIST_BOTTOM_PADDING : listBottomInset}
+        bottomCover={editing && selection.size > 0 ? editBarHeight(theme, barBottomInset) : 0}
         header={
           home.error ? (
             <Text style={[styles.line, { color: theme.colors.destructive, paddingHorizontal: gutter }]} accessibilityRole="alert">

@@ -31,16 +31,20 @@ export { EDIT_SECTION_ACTION, canSaveSectionName, deleteSectionPrompt, shownSect
 export {
   EDIT_ITEM_HEIGHT,
   NO_SECTION_DRAG,
+  crossDrop,
   crossMove,
   crossSlot,
   dropMove,
   listMinHeight,
   nextOrder,
   nextSectionDrag,
+  pageRect,
   pinDropMove,
   returnToStart,
+  sameSlot,
   sectionDragItems,
   slotMeta,
+  visibleArea,
   withSectionGhosts,
   type CrossSlot,
   type DragItem,
@@ -48,7 +52,6 @@ export {
   type Rect,
   type SectionDrag,
   type SectionDragEvent,
-  type SectionGhost,
   type SlotMeta
 } from './drop-rules'
 export {
@@ -63,7 +66,6 @@ export {
   swipeSelection,
   type PinAreaLayout,
   type PinCell,
-  type SwipeItem,
   type SwipeLine,
   type SwipeMode
 } from './swipe-select'
