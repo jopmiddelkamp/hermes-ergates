@@ -44,7 +44,10 @@ export interface HermesBotsMeta {
   custom?: boolean
   hidden?: boolean
   pinned?: boolean
-  sectionId?: string
+  /** Desktop writes null when an agent leaves its section. */
+  sectionId?: string | null
+  /** Written next to `sectionId` by newer Hermes Desktop and by this app. */
+  sectionName?: string | null
   [k: string]: unknown
 }
 

@@ -8,7 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import React, { useRef, useState } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 
-import { deleteAgent, newSection, useAvatar, useHome, useSetHidden, type Bot } from '@/features/agents'
+import { deleteAgent, useAvatar, useHome, useOrganizer, useSetHidden, type Bot } from '@/features/agents'
 import { usePrimaryConnection } from '@/features/settings'
 import { userMessage } from '@/gateway/errors'
 import { useGateway } from '@/gateway/registry'
@@ -45,12 +45,9 @@ function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId
   const home = useHome(gateway, connectionId)
   // Per-action selectors, never `useDeviceStore()`: a whole-store subscription
   // re-rendered this screen on every unrelated store write.
-  const pin = useDeviceStore(s => s.pin)
-  const unpin = useDeviceStore(s => s.unpin)
+  const organizer = useOrganizer(connectionId, home.rows)
   const markRead = useDeviceStore(s => s.markRead)
   const markUnread = useDeviceStore(s => s.markUnread)
-  const moveRowsToSection = useDeviceStore(s => s.moveRowsToSection)
-  const createSection = useDeviceStore(s => s.createSection)
   const forgetProfile = useDeviceStore(s => s.forgetProfile)
   const clearDraft = useDeviceStore(s => s.clearDraft)
   const haptics = useDeviceStore(s => s.prefs.haptics)
@@ -76,13 +73,9 @@ function AgentDetails({ connectionId, connectionLabel, profile }: { connectionId
   const handlers = {
     edit: (b: Bot) => router.push({ pathname: '/agent/[profile]/edit', params: { profile: b.profile } }),
     toggleUnread: (b: Bot, unread: boolean) => (unread ? markUnread(connectionId, b.profile) : markRead(connectionId, b.profile, Date.now())),
-    togglePin: (b: Bot, pinned: boolean) => (pinned ? pin(connectionId, b.profile) : unpin(connectionId, b.profile)),
-    moveToSection: (b: Bot, sectionId: string | null) => moveRowsToSection(connectionId, [b.profile], sectionId),
-    createSection: (b: Bot, name: string) => {
-      const section = newSection(home.organization.sections, name)
-      createSection(connectionId, section)
-      moveRowsToSection(connectionId, [b.profile], section.id)
-    },
+    togglePin: (b: Bot, pinned: boolean) => (pinned ? organizer.pin([b.profile]) : organizer.unpin([b.profile])),
+    moveToSection: (b: Bot, sectionId: string | null) => organizer.moveToSection([b.profile], sectionId),
+    createSection: (b: Bot, name: string) => organizer.createSectionWith([b.profile], name),
     toggleHidden: (b: Bot, hidden: boolean) => setHidden.mutate({ bot: b, hidden }, { onError: err => Alert.alert('Could not update', userMessage(err)) }),
     remove: async (b: Bot) => {
       const result = await deleteAgent(gateway, b.profile, b.isDefault)

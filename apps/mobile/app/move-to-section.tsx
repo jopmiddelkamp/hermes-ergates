@@ -8,10 +8,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import React, { useMemo, useRef, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 
-import { canCreateSection, newSection, parseProfiles, sectionChoices } from '@/features/agents'
+import { canCreateSection, parseProfiles, sectionChoices, useHome, useOrganizer } from '@/features/agents'
 import { usePrimaryConnection } from '@/features/settings'
-import { useDeviceStore } from '@/state/device-store'
-import { emptyOrganization } from '@/state/organization'
+import { useGateway } from '@/gateway/registry'
+import type { Connection } from '@/state/device-store'
 import { useTheme } from '@/theme/provider'
 import { Button } from '@/ui/Button'
 import { Field } from '@/ui/Field'
@@ -19,8 +19,6 @@ import { Group } from '@/ui/Group'
 import { Icon } from '@/ui/icons'
 import { ListRow } from '@/ui/ListRow'
 import { Page } from '@/ui/Page'
-
-const EMPTY_ORG = emptyOrganization()
 
 export default function MoveToSectionScreen() {
   const router = useRouter()
@@ -30,14 +28,13 @@ export default function MoveToSectionScreen() {
   if (!connection) {
     return null
   }
-  return <MoveToSection connectionId={connection.id} profiles={profiles} onDone={() => router.back()} />
+  return <MoveToSection connection={connection} profiles={profiles} onDone={() => router.back()} />
 }
 
-function MoveToSection({ connectionId, profiles, onDone }: { connectionId: string; profiles: string[]; onDone: () => void }) {
+function MoveToSection({ connection, profiles, onDone }: { connection: Connection; profiles: string[]; onDone: () => void }) {
   const theme = useTheme()
-  const organization = useDeviceStore(s => s.organization[connectionId]) ?? EMPTY_ORG
-  const moveRowsToSection = useDeviceStore(s => s.moveRowsToSection)
-  const createSection = useDeviceStore(s => s.createSection)
+  const home = useHome(useGateway(connection), connection.id)
+  const organizer = useOrganizer(connection.id, home.rows)
   const [name, setName] = useState('')
   // A ref, not state: state only takes effect on the next render, so a second
   // tap landing in the same frame (before the pop transition unmounts this
@@ -57,15 +54,13 @@ function MoveToSection({ connectionId, profiles, onDone }: { connectionId: strin
 
   const moveTo = (sectionId: string | null) =>
     runOnce(() => {
-      moveRowsToSection(connectionId, profiles, sectionId)
+      organizer.moveToSection(profiles, sectionId)
       onDone()
     })
 
   const create = () =>
     runOnce(() => {
-      const section = newSection(organization.sections, name)
-      createSection(connectionId, section)
-      moveRowsToSection(connectionId, profiles, section.id)
+      organizer.createSectionWith(profiles, name)
       onDone()
     })
 
@@ -73,7 +68,7 @@ function MoveToSection({ connectionId, profiles, onDone }: { connectionId: strin
     <Page title="Move to Section" onBack={() => runOnce(onDone)}>
       <Text style={[styles.hint, { color: theme.colors.mutedForeground }]}>Sections organize Home on this phone. A pinned agent stays pinned.</Text>
       <Group>
-        {sectionChoices(organization, profiles).map(choice => (
+        {sectionChoices(home.organization, profiles).map(choice => (
           <ListRow
             key={choice.id ?? 'none'}
             title={choice.name}

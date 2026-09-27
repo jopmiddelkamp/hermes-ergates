@@ -54,4 +54,5 @@ export { provisionAgent, provisionDeps, provisionOnce, type OpenBotChat, type Pr
 export { AVATAR_MAX_BYTES, botsMeta, instructionsSummary, modelSummary, type SaveOutcome, type SaveSection } from './editor'
 export { EditBotProvider, useEditBotContext } from './editor-context'
 export { rosterKey, searchBots, useAvatar, useDescribe, useModelOptions, useRoster, useSetHidden, type Bot } from './roster'
-export { useHome } from './use-home'
+export { createOrganizer, type Organizer, type OrganizeAction } from './organizer'
+export { useHome, useOrganizer } from './use-home'

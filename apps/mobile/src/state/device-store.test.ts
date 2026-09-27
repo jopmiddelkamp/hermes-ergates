@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { createDeviceStore, defaultPrefs, draftKey, waitForHydration, type Connection, type PersistedDeviceState } from './device-store'
+import { orgActions, type BotRow } from './organization'
 import { UNSENT_RETENTION_MS, type OutboxItem } from './outbox'
 import type { ProvisioningRun } from './provisioning'
 import { NodeCipher } from '@test/node-cipher'
@@ -19,6 +20,20 @@ function newStore() {
 
 const conn1: Connection = { id: 'c1', label: 'A', baseUrl: 'http://a.example', authMode: 'token', primary: true, createdAt: 1 }
 const conn2: Connection = { id: 'c2', label: 'B', baseUrl: 'http://b.example', authMode: 'password', primary: false, createdAt: 2 }
+
+/** Linh is pinned in Hermes; Kevin and Mia have no Hermes values yet. */
+const roster: BotRow[] = [
+  { profile: 'linh', hidden: false, lastActivityAt: 300, pinned: true, revision: 1 },
+  { profile: 'kevin', hidden: false, lastActivityAt: 200 },
+  { profile: 'mia', hidden: false, lastActivityAt: 100 }
+]
+
+const prive = { id: 'prive', name: 'Prive', collapsed: false, order: 0 }
+
+function counter() {
+  let n = 0
+  return () => String(++n)
+}
 
 describe('connections', () => {
   it('adds and updates connections', () => {
@@ -39,88 +54,45 @@ describe('connections', () => {
 })
 
 describe('organization actions', () => {
-  it('wraps orgActions, scoped per connection id', () => {
-    const store = newStore()
-
-    store.getState().createSection('c1', { id: 'prive', name: 'Prive', collapsed: false, order: 0 })
-    store.getState().moveRowsToSection('c1', ['linh'], 'prive')
-    store.getState().pin('c1', 'linh')
-
-    let org = store.getState().organization.c1
-    expect(org.sections).toEqual([{ id: 'prive', name: 'Prive', collapsed: false, order: 0 }])
-    expect(org.membership.linh).toBe('prive')
-    expect(org.pins).toEqual(['linh'])
-
-    store.getState().unpin('c1', 'linh')
-    org = store.getState().organization.c1
-    expect(org.pins).toEqual([])
-    expect(org.membership.linh).toBe('prive')
-
-    store.getState().markUnread('c1', 'kevin')
-    expect(store.getState().organization.c1.manualUnread.kevin).toBe(true)
-    store.getState().markRead('c1', 'kevin', 500)
-    expect(store.getState().organization.c1.manualUnread.kevin).toBeFalsy()
-    expect(store.getState().organization.c1.lastOpenedAt.kevin).toBe(500)
-
-    store.getState().toggleCollapsed('c1', 'prive')
-    expect(store.getState().organization.c1.sections[0].collapsed).toBe(true)
-
-    store.getState().renameSection('c1', 'prive', 'Private')
-    expect(store.getState().organization.c1.sections[0].name).toBe('Private')
-
-    store.getState().deleteSection('c1', 'prive')
-    expect(store.getState().organization.c1.sections).toEqual([])
-    expect(store.getState().organization.c1.membership.linh).toBeNull()
-  })
-
-  it('never touches another connection organization', () => {
-    const store = newStore()
-    store.getState().pin('c1', 'linh')
-    expect(store.getState().organization.c2).toBeUndefined()
-  })
-
-  it('wraps the manual order actions, scoped per connection id', () => {
-    const store = newStore()
+  it('runs organizing actions on the shared view, keeps the order here and queues pins and sections, per connection id', () => {
+    const store = createDeviceStore(createMemoryStorageJson<PersistedDeviceState>(), new MemorySecretStore(), { newId: counter() })
     const s = () => store.getState()
-    s().createSection('c1', { id: 'prive', name: 'Prive', collapsed: false, order: 0 })
-    s().adoptProfiles('c1', [
-      { profile: 'linh', hidden: false, lastActivityAt: 300 },
-      { profile: 'kevin', hidden: false, lastActivityAt: 200 },
-      { profile: 'mia', hidden: false, lastActivityAt: 100 }
-    ])
+    s().syncWithHermes('c1', roster)
     expect(s().organization.c1.rowOrder).toEqual(['linh', 'kevin', 'mia'])
+    expect(s().organization.c1.pins).toEqual(['linh'])
 
-    s().moveRowsToSection('c1', ['mia', 'linh'], 'prive')
-    expect(s().organization.c1.membership).toEqual({ linh: 'prive', mia: 'prive' })
-    expect(s().organization.c1.rowOrder).toEqual(['kevin', 'linh', 'mia'])
+    s().organize('c1', roster, view => orgActions.moveRowsToSection(orgActions.createSection(view, prive), ['mia', 'kevin'], 'prive'))
+    s().organize('c1', roster, view => orgActions.pinMany(view, ['kevin']))
+    s().organize('c1', roster, view => orgActions.applyMove(view, { kind: 'pin', profile: 'kevin', before: 'linh' }))
+    let org = s().organization.c1
+    expect(org.sections).toEqual([prive])
+    expect(org.rowOrder).toEqual(['linh', 'kevin', 'mia'])
+    expect(org.pins).toEqual(['kevin', 'linh'])
+    expect(org.outbox.map(item => [item.id, item.profile, item.field, item.status])).toEqual([
+      ['1', 'kevin', 'section', 'queued'],
+      ['2', 'mia', 'section', 'queued'],
+      ['3', 'kevin', 'pinned', 'queued']
+    ])
 
-    s().applyMove('c1', { kind: 'row', profile: 'mia', sectionId: 'prive', before: 'linh' })
-    expect(s().organization.c1.rowOrder).toEqual(['kevin', 'mia', 'linh'])
-
-    s().pinMany('c1', ['kevin', 'mia'])
-    s().applyMove('c1', { kind: 'pin', profile: 'mia', before: 'kevin' })
-    expect(s().organization.c1.pins).toEqual(['mia', 'kevin'])
-    s().unpinMany('c1', ['mia'])
-    expect(s().organization.c1.pins).toEqual(['kevin'])
-
-    s().markManyUnread('c1', ['kevin', 'linh'])
-    expect(s().organization.c1.manualUnread).toEqual({ kevin: true, linh: true })
-    s().markManyRead('c1', ['kevin', 'linh'], 900)
-    expect(s().organization.c1.manualUnread).toEqual({})
-
-    s().forgetProfile('c1', 'kevin', 950)
-    expect(s().organization.c1.pins).toEqual([])
-    expect(s().organization.c1.rowOrder).toEqual(['mia', 'linh'])
-    expect(s().organization.c1.lastOpenedAt.kevin).toBe(950)
+    s().toggleCollapsed('c1', 'prive')
+    s().markUnread('c1', 'kevin')
+    org = s().organization.c1
+    expect(org.sections[0].collapsed).toBe(true)
+    expect(org.manualUnread.kevin).toBe(true)
+    expect(s().organization.c2).toBeUndefined()
   })
 
   it('leaves the state object alone when an action changes nothing, and creates no organization', () => {
     const store = newStore()
     const before = store.getState()
-    store.getState().adoptProfiles('c1', [])
-    store.getState().unpin('c1', 'linh')
+    store.getState().syncWithHermes('c1', [])
+    store.getState().organize('c1', roster, view => orgActions.unpin(view, 'mia'))
     expect(store.getState()).toBe(before)
     expect(store.getState().organization.c1).toBeUndefined()
+    store.getState().syncWithHermes('c1', roster)
+    const synced = store.getState()
+    store.getState().syncWithHermes('c1', roster)
+    expect(store.getState()).toBe(synced)
   })
 
   it('leaves the state object alone when marking already-set profiles unread or read again', () => {
@@ -134,6 +106,18 @@ describe('organization actions', () => {
     const afterRead = store.getState()
     store.getState().markManyRead('c1', ['kevin', 'linh'], 900)
     expect(store.getState()).toBe(afterRead)
+  })
+
+  it('hydrates an organization from before shared pins and sections for its first sync, and keeps a later state', async () => {
+    const storage = createMemoryStorageJson<PersistedDeviceState>()
+    const org = { pins: ['kevin'], rowOrder: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {}, outbox: [] }
+    await storage.setItem('ergates-device-v1', {
+      state: { connections: [conn1], organization: { c1: org, c2: { ...org, firstSync: 'done' }, c3: { ...org, firstSync: 'install' } } as never, prefs: defaultPrefs, drafts: {}, outbox: [], provisioning: [] },
+      version: 1
+    })
+    const store = createDeviceStore(storage, new MemorySecretStore())
+    await waitForHydration(store)
+    expect(['c1', 'c2', 'c3'].map(id => store.getState().organization[id].firstSync)).toEqual(['update', 'done', 'install'])
   })
 
   it('hydrates an organization without a row order, or with a wrong-type one, with an empty order', async () => {
@@ -183,7 +167,7 @@ describe('removeConnection', () => {
     const store = createDeviceStore(createMemoryStorageJson<PersistedDeviceState>(), secrets)
     store.getState().addConnection(conn1)
     store.getState().addConnection(conn2)
-    store.getState().pin('c1', 'linh')
+    store.getState().markUnread('c1', 'linh')
     store.getState().setDraft('c1', 'linh', 'hi')
     store.getState().setDraft('c2', 'kevin', 'yo')
     store.getState().addOutboxItem({ localId: 'l1', connectionId: 'c1', profile: 'linh', text: 'x', createdAt: Date.now(), status: 'draft' })
@@ -214,7 +198,7 @@ describe('persistence', () => {
     const store1 = createDeviceStore(storage, secrets)
     await waitForHydration(store1)
     store1.getState().addConnection(conn1)
-    store1.getState().pin('c1', 'linh')
+    store1.getState().organize('c1', roster, view => orgActions.pin(view, 'kevin'))
     store1.getState().setDraft('c1', 'linh', 'hello')
     store1.getState().setPrefs({ themeName: 'dark' })
 
@@ -223,7 +207,8 @@ describe('persistence', () => {
     const state2 = store2.getState()
 
     expect(state2.connections).toEqual([conn1])
-    expect(state2.organization.c1.pins).toEqual(['linh'])
+    expect(state2.organization.c1.pins).toEqual(['linh', 'kevin'])
+    expect(state2.organization.c1.outbox).toMatchObject([{ profile: 'kevin', field: 'pinned', pinned: true, status: 'queued' }])
     expect(state2.drafts[draftKey('c1', 'linh')]).toBe('hello')
     expect(state2.prefs.themeName).toBe('dark')
   })
@@ -352,7 +337,7 @@ describe('the device blob at rest', () => {
   const legacyDraft: OutboxItem = { localId: 'l1', connectionId: 'c1', profile: 'linh', text: 'call Dirk back', createdAt: Date.now(), status: 'draft' }
   const legacyState: PersistedDeviceState = {
     connections: [conn1],
-    organization: { c1: { pins: ['linh'], rowOrder: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {}, outbox: [] } },
+    organization: { c1: { pins: ['linh'], rowOrder: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {}, outbox: [], firstSync: 'update' } },
     prefs: { ...defaultPrefs, themeName: 'dark' },
     drafts: { 'c1:linh': 'the invoice from Dirk' },
     outbox: [legacyDraft],
@@ -422,76 +407,16 @@ describe('default useDeviceStore', () => {
 })
 
 describe('deleting a section', () => {
-  it('moves its members to No section and removes it, for that connection only', () => {
+  it('queues No section for its members and removes it, for that connection only', () => {
     const store = newStore()
     const s = () => store.getState()
-    s().createSection('c1', { id: 'prive', name: 'Prive', collapsed: true, order: 0 })
-    s().adoptProfiles('c1', [
-      { profile: 'linh', hidden: false, lastActivityAt: 300 },
-      { profile: 'kevin', hidden: false, lastActivityAt: 200 }
-    ])
-    s().moveRowsToSection('c1', ['linh'], 'prive')
-    s().deleteSection('c1', 'prive')
+    const inPrive = roster.map(row => (row.profile === 'kevin' ? { ...row, sectionId: 'prive', sectionName: 'Prive' } : row))
+    s().syncWithHermes('c1', inPrive)
+    expect(s().organization.c1.sections).toEqual([prive])
+    s().organize('c1', inPrive, view => orgActions.deleteSection(view, 'prive'))
     expect(s().organization.c1.sections).toEqual([])
-    expect(s().organization.c1.membership.linh).toBeNull()
-    expect(s().organization.c1.rowOrder).toEqual(['kevin', 'linh'])
+    expect(s().organization.c1.rowOrder).toEqual(['linh', 'mia', 'kevin'])
+    expect(s().organization.c1.outbox).toMatchObject([{ profile: 'kevin', field: 'section', sectionId: null, sectionName: null }])
     expect(s().organization.c2).toBeUndefined()
-  })
-})
-
-describe('the organization outbox', () => {
-  const pinLinh = { id: 'o1', profile: 'linh', field: 'pinned', pinned: true, status: 'queued' } as const
-
-  it('changes one connection outbox through one action, and leaves the state alone when nothing changes', () => {
-    const store = newStore()
-    store.getState().updateOrgOutbox('c1', outbox => [...outbox, pinLinh])
-    expect(store.getState().organization.c1.outbox).toEqual([pinLinh])
-    expect(store.getState().organization.c2).toBeUndefined()
-    const before = store.getState()
-    store.getState().updateOrgOutbox('c1', outbox => outbox)
-    store.getState().updateOrgOutbox('c2', outbox => outbox)
-    expect(store.getState()).toBe(before)
-  })
-
-  it('keeps queued changes across a restart, and sends an unanswered write again', async () => {
-    const storage = createMemoryStorageJson<PersistedDeviceState>()
-    const secrets = new MemorySecretStore()
-    const first = createDeviceStore(storage, secrets)
-    await waitForHydration(first)
-    first.getState().updateOrgOutbox('c1', () => [
-      { ...pinLinh, status: 'sending' },
-      { id: 'o2', profile: 'kevin', field: 'section', sectionId: 'prive', sectionName: 'Prive', status: 'sent', revision: 4 }
-    ])
-
-    const second = createDeviceStore(storage, secrets)
-    await waitForHydration(second)
-    expect(second.getState().organization.c1.outbox.map(item => [item.id, item.status])).toEqual([
-      ['o1', 'queued'],
-      ['o2', 'sent']
-    ])
-  })
-
-  it('hydrates an organization from before the outbox with an empty one', async () => {
-    const storage = createMemoryStorageJson<PersistedDeviceState>()
-    const org = { pins: ['kevin'], rowOrder: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {} }
-    await storage.setItem('ergates-device-v1', {
-      state: { connections: [conn1], organization: { c1: org, c2: { ...org, outbox: 'o1' } } as never, prefs: defaultPrefs, drafts: {}, outbox: [], provisioning: [] },
-      version: 1
-    })
-    const store = createDeviceStore(storage, new MemorySecretStore())
-    await waitForHydration(store)
-    expect(store.getState().organization.c1.outbox).toEqual([])
-    expect(store.getState().organization.c2.outbox).toEqual([])
-  })
-
-  it('clears queued changes with the connection, and a deleted agent takes its changes along', async () => {
-    const store = newStore()
-    store.getState().updateOrgOutbox('c1', () => [pinLinh])
-    store.getState().updateOrgOutbox('c2', () => [{ ...pinLinh, profile: 'kevin' }, pinLinh])
-    store.getState().forgetProfile('c2', 'linh', 5)
-    expect(store.getState().organization.c2.outbox.map(item => item.profile)).toEqual(['kevin'])
-    await store.getState().removeConnection('c1')
-    expect(store.getState().organization.c1).toBeUndefined()
-    expect(store.getState().organization.c2.outbox).toHaveLength(1)
   })
 })

@@ -9,9 +9,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import React, { useRef, useState } from 'react'
 import { Alert, StyleSheet, Text, View } from 'react-native'
 
-import { canSaveSectionName, deleteSectionPrompt } from '@/features/agents'
+import { canSaveSectionName, deleteSectionPrompt, useHome, useOrganizer } from '@/features/agents'
 import { usePrimaryConnection } from '@/features/settings'
-import { useDeviceStore } from '@/state/device-store'
+import { useGateway } from '@/gateway/registry'
+import { useDeviceStore, type Connection } from '@/state/device-store'
 import type { Section } from '@/state/organization'
 import { useTheme } from '@/theme/provider'
 import { Button } from '@/ui/Button'
@@ -37,12 +38,12 @@ export default function SectionScreen() {
       </Page>
     )
   }
-  return <SectionEditor connectionId={connection.id} section={opened} onDone={onDone} />
+  return <SectionEditor connection={connection} section={opened} onDone={onDone} />
 }
 
-function SectionEditor({ connectionId, section, onDone }: { connectionId: string; section: Section; onDone: () => void }) {
-  const renameSection = useDeviceStore(s => s.renameSection)
-  const deleteSection = useDeviceStore(s => s.deleteSection)
+function SectionEditor({ connection, section, onDone }: { connection: Connection; section: Section; onDone: () => void }) {
+  const home = useHome(useGateway(connection), connection.id)
+  const organizer = useOrganizer(connection.id, home.rows)
   const [name, setName] = useState(section.name)
   // A ref, not state: a second tap landing before the pop transition unmounts
   // this screen would still read stale state and run again, renaming or
@@ -59,7 +60,7 @@ function SectionEditor({ connectionId, section, onDone }: { connectionId: string
 
   const save = () =>
     runOnce(() => {
-      renameSection(connectionId, section.id, name.trim())
+      organizer.renameSection(section.id, name.trim())
       onDone()
     })
 
@@ -72,7 +73,7 @@ function SectionEditor({ connectionId, section, onDone }: { connectionId: string
         style: 'destructive',
         onPress: () =>
           runOnce(() => {
-            deleteSection(connectionId, section.id)
+            organizer.deleteSection(section.id)
             onDone()
           })
       }

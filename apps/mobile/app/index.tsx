@@ -12,13 +12,13 @@ import {
   liveSelection,
   membershipChanged,
   membershipSnapshot,
-  newSection,
   profilesParam,
   selectedInListOrder,
   selectionTitle,
   toggleSelected,
   useAvatar,
   useHome,
+  useOrganizer,
   useSetHidden,
   type Bot,
   type MembershipSnapshot,
@@ -70,19 +70,13 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   // Per-action selectors, never `useDeviceStore()`: the whole-store selector
   // re-rendered this screen (and its whole roster list) on every keystroke
   // typed in the chat below it. Action references are stable.
-  const pin = useDeviceStore(s => s.pin)
-  const unpin = useDeviceStore(s => s.unpin)
-  const pinMany = useDeviceStore(s => s.pinMany)
-  const unpinMany = useDeviceStore(s => s.unpinMany)
+  const organizer = useOrganizer(connectionId, home.rows)
+  const syncWithHermes = useDeviceStore(s => s.syncWithHermes)
   const markRead = useDeviceStore(s => s.markRead)
   const markUnread = useDeviceStore(s => s.markUnread)
   const markManyRead = useDeviceStore(s => s.markManyRead)
   const markManyUnread = useDeviceStore(s => s.markManyUnread)
-  const moveRowsToSection = useDeviceStore(s => s.moveRowsToSection)
-  const createSection = useDeviceStore(s => s.createSection)
-  const applyMove = useDeviceStore(s => s.applyMove)
   const toggleCollapsed = useDeviceStore(s => s.toggleCollapsed)
-  const adoptProfiles = useDeviceStore(s => s.adoptProfiles)
   const forgetProfile = useDeviceStore(s => s.forgetProfile)
   const clearDraft = useDeviceStore(s => s.clearDraft)
   const haptics = useDeviceStore(s => s.prefs.haptics)
@@ -149,22 +143,13 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
     }, [connectionId, gateway, refetchHome, setActiveConnection])
   )
 
-  // New installs pin the concierge only (docs/10 "Home"): once, when no organization exists for this connection.
-  // Then the manual order records every profile it does not know yet, where it
-  // shows now, so a row never moves by itself (docs/05 section 3). One effect,
-  // so the pin always comes first: adoption creates the organization.
-  const hasOrganization = useDeviceStore(s => Boolean(s.organization[connectionId]))
-  const defaultBot = home.bots.find(b => b.isDefault)
+  // Every roster read (docs/05 section 3): the one-time first sync (on a new
+  // install, the concierge pin when Hermes has no value for it), then new
+  // agents at the top of their group, the pin order and sections only Hermes knows.
   const rows = home.rows
   useEffect(() => {
-    if (rows.length === 0) {
-      return
-    }
-    if (!hasOrganization && defaultBot) {
-      pin(connectionId, defaultBot.profile)
-    }
-    adoptProfiles(connectionId, rows)
-  }, [rows, hasOrganization, defaultBot, connectionId, pin, adoptProfiles])
+    syncWithHermes(connectionId, rows)
+  }, [rows, connectionId, syncWithHermes])
 
   const openChat = (bot: Bot) => {
     markRead(connectionId, bot.profile, Date.now())
@@ -191,13 +176,9 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
       router.push({ pathname: '/agent/[profile]/edit', params: { profile: bot.profile } })
     },
     toggleUnread: (bot: Bot, unread: boolean) => (unread ? markUnread(connectionId, bot.profile) : markRead(connectionId, bot.profile, Date.now())),
-    togglePin: (bot: Bot, pinned: boolean) => (pinned ? pin(connectionId, bot.profile) : unpin(connectionId, bot.profile)),
-    moveToSection: (bot: Bot, sectionId: string | null) => moveRowsToSection(connectionId, [bot.profile], sectionId),
-    createSection: (bot: Bot, name: string) => {
-      const section = newSection(home.organization.sections, name)
-      createSection(connectionId, section)
-      moveRowsToSection(connectionId, [bot.profile], section.id)
-    },
+    togglePin: (bot: Bot, pinned: boolean) => (pinned ? organizer.pin([bot.profile]) : organizer.unpin([bot.profile])),
+    moveToSection: (bot: Bot, sectionId: string | null) => organizer.moveToSection([bot.profile], sectionId),
+    createSection: (bot: Bot, name: string) => organizer.createSectionWith([bot.profile], name),
     select: (bot: Bot) => startEditing(bot.profile),
     toggleHidden: (bot: Bot, hidden: boolean) => setHidden.mutate({ bot, hidden }, { onError: err => Alert.alert('Could not update', userMessage(err)) }),
     remove: async (bot: Bot) => {
@@ -221,9 +202,9 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
     },
     pin: () => {
       if (labels.pin === 'Unpin') {
-        unpinMany(connectionId, selected)
+        organizer.unpin(selected)
       } else {
-        pinMany(connectionId, selected)
+        organizer.pin(selected)
       }
       setPicked(NO_SELECTION)
     },
@@ -297,7 +278,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
           unread={home.unread}
           onToggle={profile => setPicked(toggleSelected(selection, profile))}
           onSelectionChange={setPicked}
-          onMove={move => applyMove(connectionId, move)}
+          onMove={organizer.applyMove}
           onEditSection={editSection}
           barBelow={selection.size > 0}
         />

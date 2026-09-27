@@ -25,10 +25,21 @@ export interface Bot {
   lastActivityAt: number
   preview: string
   canonicalSessionId: string | null
+  /** Shared with Hermes Desktop (`ui_meta['hermes-bots'].pinned`); undefined when Hermes has no value. */
+  pinned?: boolean
+  /** `ui_meta['hermes-bots'].sectionId`: null is No section, undefined is no value. */
+  sectionId?: string | null
+  /** `ui_meta['hermes-bots'].sectionName`, the section's name as the last writer saw it. */
+  sectionName?: string | null
+  /** The `hermes-bots` metadata revision a write must name (0 when Hermes has none). */
+  revision?: number
   summary: ProfileSummary
 }
 
 const seconds = (v: number | undefined | null) => (typeof v === 'number' && v > 0 ? Math.round(v * 1000) : 0)
+
+/** A trimmed non-empty string, or null (an empty or non-string value means none). */
+const textOrNull = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null)
 
 export function toBot(p: ProfileSummary): Bot {
   const meta = botsMeta(p)
@@ -47,6 +58,10 @@ export function toBot(p: ProfileSummary): Bot {
     lastActivityAt: Math.max(seconds(cs?.last_active), seconds(cs?.started_at), seconds((p.last_session as { last_active?: number } | null)?.last_active)),
     preview: cs?.preview ?? (p.last_session as { preview?: string } | null)?.preview ?? '',
     canonicalSessionId: cs ? cs.resolved_id || cs.id : null,
+    pinned: typeof meta.pinned === 'boolean' ? meta.pinned : undefined,
+    sectionId: 'sectionId' in meta ? textOrNull(meta.sectionId) : undefined,
+    sectionName: 'sectionName' in meta ? textOrNull(meta.sectionName) : undefined,
+    revision: p.ui_meta_revisions?.['hermes-bots'] ?? 0,
     summary: p
   }
 }

@@ -1,14 +1,17 @@
 /**
- * Home view model: roster (Hermes-owned) + organization (device-owned)
- * combined into the pinned area, ungrouped rows and sections (FR-13D).
+ * Home view model: roster (Hermes-owned, pins and sections included) + the
+ * organization of this phone (pin order, section list, row order, reading
+ * state) combined into the pinned area, ungrouped rows and sections (FR-13D).
  */
 
 import { useMemo } from 'react'
 
 import type { GatewayPort } from '@/gateway/port'
-import { deriveHome, emptyOrganization, isUnread, type BotRow, type Organization, type Section } from '@/state/organization'
 import { useDeviceStore } from '@/state/device-store'
+import { sharedView } from '@/state/org-sync'
+import { deriveHome, emptyOrganization, isUnread, type BotRow, type Organization, type Section } from '@/state/organization'
 
+import { createOrganizer, type Organizer } from './organizer'
 import { useRoster, type Bot } from './roster'
 
 export interface HomeSection {
@@ -25,6 +28,7 @@ export interface HomeModel {
   ungrouped: Bot[]
   sections: HomeSection[]
   hidden: Bot[]
+  /** The organization as Home shows it: pins and sections from Hermes, with queued changes on top (`sharedView`). */
   organization: Organization
   unread(profile: string): boolean
   isPinned(profile: string): boolean
@@ -38,11 +42,22 @@ const EMPTY_ORG: Organization = emptyOrganization()
 
 export function useHome(port: GatewayPort, connectionId: string): HomeModel {
   const roster = useRoster(port, connectionId)
-  const organization = useDeviceStore(s => s.organization[connectionId]) ?? EMPTY_ORG
+  const stored = useDeviceStore(s => s.organization[connectionId]) ?? EMPTY_ORG
   const rows = useMemo(
-    () => (roster.data ?? []).map(b => ({ profile: b.profile, hidden: b.hidden, lastActivityAt: b.lastActivityAt, isDefault: b.isDefault })),
+    () =>
+      (roster.data ?? []).map(b => ({
+        profile: b.profile,
+        hidden: b.hidden,
+        lastActivityAt: b.lastActivityAt,
+        isDefault: b.isDefault,
+        pinned: b.pinned,
+        sectionId: b.sectionId,
+        sectionName: b.sectionName,
+        revision: b.revision
+      })),
     [roster.data]
   )
+  const organization = useMemo(() => sharedView(stored, rows), [stored, rows])
   return useMemo(() => {
     const bots = roster.data ?? []
     const byProfile = new Map(bots.map(b => [b.profile, b]))
@@ -71,4 +86,10 @@ export function useHome(port: GatewayPort, connectionId: string): HomeModel {
       refetch: roster.refetch
     }
   }, [roster.data, rows, roster.isLoading, roster.error, roster.refetch, organization])
+}
+
+/** The organizing actions for this connection, run on the organization as Home shows it (`rows` is `HomeModel.rows`). */
+export function useOrganizer(connectionId: string, rows: BotRow[]): Organizer {
+  const organize = useDeviceStore(s => s.organize)
+  return useMemo(() => createOrganizer(action => organize(connectionId, rows, action)), [organize, connectionId, rows])
 }

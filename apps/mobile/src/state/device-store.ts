@@ -1,7 +1,8 @@
 /**
  * The device-local store (docs/05 section 3): connections, per-connection roster
- * organization, prefs, drafts, outbox and unfinished agent setups. Everything here is device-local and is
- * never written back to Hermes.
+ * organization, prefs, drafts, outbox and unfinished agent setups. Everything here is device-local; the
+ * only part meant for Hermes is each organization's outbox of pin and section changes, which the agents
+ * feature sends (docs/05 "Organization outbox").
  *
  * `createDeviceStore(storage, secrets)` takes its dependencies as arguments so this
  * module stays importable under plain Node (unit tests inject in-memory fakes from
@@ -16,7 +17,8 @@ import { persist, type PersistStorage } from 'zustand/middleware'
 import type { SecretStore } from '@/gateway/secrets'
 
 import { recoverOrgOutbox, type OrgOutboxItem } from './org-outbox'
-import { emptyOrganization, orgActions, type BotRow, type Organization, type OrderMove, type Section } from './organization'
+import { organize, syncWithHermes } from './org-sync'
+import { emptyOrganization, orgActions, type BotRow, type Organization } from './organization'
 import { expired, recoverAfterRestart, type OutboxItem } from './outbox'
 import type { ProvisioningRun } from './provisioning'
 import { createDeviceBlobStorage, DEVICE_STORAGE_KEY, secretKey, secureSecretStore } from './persistence'
@@ -86,18 +88,17 @@ export interface DeviceState extends PersistedDeviceState {
   saveProvisioningRun(run: ProvisioningRun): void
   removeProvisioningRun(proposalId: string): void
 
-  // orgActions, wrapped and scoped per connection id (docs/10 "Home sections and pinned members").
-  pin(connectionId: string, profile: string): void
-  unpin(connectionId: string, profile: string): void
-  pinMany(connectionId: string, profiles: string[]): void
-  unpinMany(connectionId: string, profiles: string[]): void
-  moveRowsToSection(connectionId: string, profiles: string[], sectionId: string | null): void
-  applyMove(connectionId: string, move: OrderMove): void
-  adoptProfiles(connectionId: string, rows: BotRow[]): void
+  // The organization, scoped per connection id (docs/10 "Home sections and pinned members").
+  /**
+   * Runs one `orgActions` action on the organization as Home shows it
+   * (`sharedView`, from `rows`, the roster as Home reads it): this phone keeps
+   * the pin order, row order and section list, and the pin and section
+   * changes are queued for Hermes (`org-sync.ts`).
+   */
+  organize(connectionId: string, rows: BotRow[], action: (view: Organization) => Organization): void
+  /** After every roster read (`syncWithHermes` in `org-sync.ts`). An empty roster changes nothing. */
+  syncWithHermes(connectionId: string, rows: BotRow[]): void
   forgetProfile(connectionId: string, profile: string, now: number): void
-  createSection(connectionId: string, section: Section): void
-  renameSection(connectionId: string, sectionId: string, name: string): void
-  deleteSection(connectionId: string, sectionId: string): void
   toggleCollapsed(connectionId: string, sectionId: string): void
   markUnread(connectionId: string, profile: string): void
   markRead(connectionId: string, profile: string, now: number): void
@@ -111,12 +112,19 @@ export interface DeviceState extends PersistedDeviceState {
 export interface CreateDeviceStoreOptions {
   /** Defer the initial storage read to an explicit `store.persist.rehydrate()` call. @default false */
   skipHydration?: boolean
+  /** Ids for queued organization changes; tests pass a counter. */
+  newId?: () => string
 }
+
+let changeCounter = 0
+const newChangeId = (): string => `${Date.now().toString(36)}-${++changeCounter}`
 
 /**
  * Fields added after the first release: a blob without them, or with a
  * wrong-type `rowOrder` or `outbox`, loads with empty ones. A pin or section
- * write whose answer never came goes out again (`recoverOrgOutbox`).
+ * write whose answer never came goes out again (`recoverOrgOutbox`). An
+ * organization without `firstSync` was stored before pins and sections were
+ * shared with Hermes: its first roster read writes its values (`update`).
  */
 function withOrganizationDefaults(organization: Record<string, Organization>): Record<string, Organization> {
   return Object.fromEntries(
@@ -126,7 +134,8 @@ function withOrganizationDefaults(organization: Record<string, Organization>): R
         ...org,
         exchangeAcks: org.exchangeAcks ?? {},
         rowOrder: Array.isArray(org.rowOrder) ? org.rowOrder.filter((p): p is string => typeof p === 'string') : [],
-        outbox: Array.isArray(org.outbox) ? recoverOrgOutbox(org.outbox) : []
+        outbox: Array.isArray(org.outbox) ? recoverOrgOutbox(org.outbox) : [],
+        firstSync: org.firstSync === 'install' || org.firstSync === 'done' ? org.firstSync : 'update'
       }
     ])
   )
@@ -149,6 +158,7 @@ function mergeDeviceState(persistedState: unknown, currentState: DeviceState): D
 }
 
 export function createDeviceStore(storage: PersistStorage<PersistedDeviceState>, secrets: SecretStore, options: CreateDeviceStoreOptions = {}) {
+  const newId = options.newId ?? newChangeId
   return create<DeviceState>()(
     persist(
       set => {
@@ -226,17 +236,14 @@ export function createDeviceStore(storage: PersistStorage<PersistedDeviceState>,
 
           removeProvisioningRun: proposalId => set(state => ({ provisioning: state.provisioning.filter(r => r.proposalId !== proposalId) })),
 
-          pin: (connectionId, profile) => updateOrg(connectionId, org => orgActions.pin(org, profile)),
-          unpin: (connectionId, profile) => updateOrg(connectionId, org => orgActions.unpin(org, profile)),
-          pinMany: (connectionId, profiles) => updateOrg(connectionId, org => orgActions.pinMany(org, profiles)),
-          unpinMany: (connectionId, profiles) => updateOrg(connectionId, org => orgActions.unpinMany(org, profiles)),
-          moveRowsToSection: (connectionId, profiles, sectionId) => updateOrg(connectionId, org => orgActions.moveRowsToSection(org, profiles, sectionId)),
-          applyMove: (connectionId, move) => updateOrg(connectionId, org => orgActions.applyMove(org, move)),
-          adoptProfiles: (connectionId, rows) => updateOrg(connectionId, org => orgActions.adoptProfiles(org, rows)),
+          organize: (connectionId, rows, action) => updateOrg(connectionId, org => organize(org, rows, action, newId)),
+          syncWithHermes: (connectionId, rows) =>
+            set(state => {
+              const current = state.organization[connectionId]
+              const next = rows.length === 0 ? current : syncWithHermes(current, rows, newId)
+              return next === current || next === undefined ? state : { organization: { ...state.organization, [connectionId]: next } }
+            }),
           forgetProfile: (connectionId, profile, now) => updateOrg(connectionId, org => orgActions.forget(org, profile, now)),
-          createSection: (connectionId, section) => updateOrg(connectionId, org => orgActions.createSection(org, section)),
-          renameSection: (connectionId, sectionId, name) => updateOrg(connectionId, org => orgActions.renameSection(org, sectionId, name)),
-          deleteSection: (connectionId, sectionId) => updateOrg(connectionId, org => orgActions.deleteSection(org, sectionId)),
           toggleCollapsed: (connectionId, sectionId) => updateOrg(connectionId, org => orgActions.toggleCollapsed(org, sectionId)),
           markUnread: (connectionId, profile) => updateOrg(connectionId, org => orgActions.markUnread(org, profile)),
           markRead: (connectionId, profile, now) => updateOrg(connectionId, org => orgActions.markRead(org, profile, now)),

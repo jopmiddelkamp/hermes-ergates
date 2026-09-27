@@ -2,8 +2,12 @@
  * Home roster organization: pins, sections, the manual row order and reading
  * state (docs/05 section 3, docs/10 "Home sections and pinned members").
  *
- * Pure, device-local logic — no React/RN imports, no persistence. Never mixes in
- * Hermes-owned bot metadata (hidden/title/etc); callers pass that in via `BotRow`.
+ * Pure logic — no React/RN imports, no persistence. Which agents are pinned
+ * and which section each is in belong to Hermes (`ui_meta['hermes-bots']`,
+ * shared with Hermes Desktop); callers pass them in via `BotRow`, and
+ * `org-sync.ts` lays them over this phone's own parts: the pin order, the
+ * section list, the row order, collapse and reading state. The actions here
+ * work on that combined view.
  *
  * Independence rules this module enforces:
  * - Pin state (`pins`) and section membership (`membership`) are separate fields;
@@ -46,6 +50,12 @@ export interface Organization {
   exchangeAcks: Record<string, string[]>
   /** Pin and section changes on their way to Hermes (`org-outbox.ts`). */
   outbox: OrgOutboxItem[]
+  /**
+   * The one-time step of the first roster read (`org-sync.ts`): `install`
+   * for an organization this phone made itself, `update` for one stored
+   * before pins and sections were shared with Hermes, `done` afterwards.
+   */
+  firstSync: 'install' | 'update' | 'done'
 }
 
 export interface BotRow {
@@ -54,6 +64,14 @@ export interface BotRow {
   lastActivityAt: number
   /** The Hermes concierge: while it is pinned it is always the first pin. */
   isDefault?: boolean
+  /** `ui_meta['hermes-bots'].pinned`; undefined when Hermes has no value. */
+  pinned?: boolean
+  /** `ui_meta['hermes-bots'].sectionId`: null is No section, undefined is no value. */
+  sectionId?: string | null
+  /** `ui_meta['hermes-bots'].sectionName`, written next to `sectionId` by newer clients. */
+  sectionName?: string | null
+  /** The `hermes-bots` metadata revision. */
+  revision?: number
 }
 
 export interface HomeLayout {
@@ -75,10 +93,11 @@ export type OrderMove =
   | { kind: 'section'; sectionId: string; before: string | null }
 
 export function emptyOrganization(): Organization {
-  return { pins: [], rowOrder: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {}, outbox: [] }
+  return { pins: [], rowOrder: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {}, outbox: [], firstSync: 'install' }
 }
 
-function byActivityDescending(rows: BotRow[]): BotRow[] {
+/** Latest activity first; the order new agents and new pins join in. */
+export function byActivityDescending(rows: BotRow[]): BotRow[] {
   return [...rows].sort((a, b) => b.lastActivityAt - a.lastActivityAt)
 }
 

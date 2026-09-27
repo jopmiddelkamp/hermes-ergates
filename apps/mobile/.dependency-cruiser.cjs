@@ -12,7 +12,7 @@
 const TEST = '(^test/|\\.test\\.ts$)'
 
 /** Modules that must run unchanged in Node (ADR-029 rule 1, Global Constraints). */
-const PURE_CORE = '^(src/gateway/port\\.ts|src/features/chat/session-reducer\\.ts|src/features/chat/session-controller\\.ts|src/state/organization\\.ts|src/state/org-outbox\\.ts|vendor/hermes/)'
+const PURE_CORE = '^(src/gateway/port\\.ts|src/features/chat/session-reducer\\.ts|src/features/chat/session-controller\\.ts|src/state/organization\\.ts|src/state/org-outbox\\.ts|src/state/org-sync\\.ts|vendor/hermes/)'
 
 /** React, React Native and Expo packages, resolved into node_modules. */
 const REACT_NATIVE_OR_EXPO = '^node_modules/(react|react-native|expo|expo-[^/]+|@expo/[^/]+|react-native-[^/]+|@react-native[^/]*/[^/]+)/'
@@ -24,7 +24,7 @@ module.exports = {
   forbidden: [
     {
       name: 'adr029-1-pure-core-no-react-native',
-      comment: 'The port contract, the session reducer, the session controller, the Home organization and its outbox, and vendor/hermes import no React, React Native or Expo module, directly or through another module.',
+      comment: 'The port contract, the session reducer, the session controller, the Home organization, its outbox and its sync with Hermes, and vendor/hermes import no React, React Native or Expo module, directly or through another module.',
       severity: 'error',
       from: { path: PURE_CORE },
       to: { path: REACT_NATIVE_OR_EXPO, reachable: true }
