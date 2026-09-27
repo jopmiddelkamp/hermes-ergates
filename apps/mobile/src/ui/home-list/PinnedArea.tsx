@@ -23,18 +23,39 @@ import { useTheme } from '@/theme/provider'
 
 import type { AnchorRect } from '../ActionMenu'
 import { Avatar } from '../Avatar'
-import { Icon } from '../icons'
+import { Grip } from './Grip'
 import { SelectionCircle } from './SelectionCircle'
 
 const AVATAR_SIZE = 84
 const PIN_WIDTH = 96
 const PIN_GAP = 24
-const BADGE_SIZE = 24
+const BADGE_SIZE = 48
 /** The move handle's touch area around its badge. */
-const MOVE_TOUCH = 40
+const MOVE_TOUCH = 56
+/** The ≡ glyph inside the move badge, scaled up from the rows' own 22 pt by the same factor as the badge (24 to 48 pt), so it keeps the same proportion inside its circle. */
+const MOVE_GRIP_SIZE = 28
 const DOT_SIZE = 12
 /** How far the unread dot moves down, from its normal-mode spot near the top to clear of the selection badge and the move handle. */
 const DOT_DROP = AVATAR_SIZE - DOT_SIZE - 4
+
+/**
+ * Two 48 pt badges at the avatar's square corners would overlap the next
+ * pin's badge, so each one centers on the avatar's round edge at 45°
+ * instead. The avatar is a circle of radius `AVATAR_RADIUS`, centered at
+ * (`AVATAR_CENTER_X`, `AVATAR_CENTER_Y`) in the column (`styles.pin` centers
+ * it there, top-aligned, so its top edge is the column's own origin). A
+ * point on the circle at 45° is the center offset by `radius · cos45°` on
+ * one axis and `radius · sin45°` on the other; `Math.SQRT1_2` is cos45° (=
+ * sin45°). The selection badge centers on the top-left point, the move
+ * badge on the top-right one.
+ */
+const AVATAR_RADIUS = AVATAR_SIZE / 2
+const AVATAR_CENTER_X = PIN_WIDTH / 2
+const AVATAR_CENTER_Y = AVATAR_RADIUS
+const CORNER_OFFSET = AVATAR_RADIUS * Math.SQRT1_2
+const BADGE_CENTER_Y = AVATAR_CENTER_Y - CORNER_OFFSET
+const SELECTION_CENTER_X = AVATAR_CENTER_X - CORNER_OFFSET
+const MOVE_CENTER_X = AVATAR_CENTER_X + CORNER_OFFSET
 
 export interface PinnedAreaProps {
   pins: PinnedItem[]
@@ -146,10 +167,10 @@ function PinnedAvatar({ item, editing, progress, selected, unread, actions, onAc
   const avatar = useAvatar(gateway, connectionId, bot.profile, bot.hasAvatar)
   const ref = useRef<View>(null)
   const badge = useAnimatedStyle(() => ({ opacity: progress.get(), transform: [{ scale: progress.get() }] }))
-  // The badge and the move handle sit at the avatar's top corners, so the
-  // unread dot moves down to clear them both, the same way for every avatar
-  // (the concierge included, even without a move handle) so it never jumps
-  // between two rules.
+  // The badge and the move handle sit at the avatar's top-left and top-right,
+  // so the unread dot moves down to clear them both, the same way for every
+  // avatar (the concierge included, even without a move handle) so it never
+  // jumps between two rules.
   const dotPosition = useAnimatedStyle(() => ({ transform: [{ translateY: progress.get() * DOT_DROP }] }))
   const measure = () => ref.current?.measureInWindow((x, y, width, height) => onLongPress({ x, y, width, height }))
   const face = (
@@ -179,8 +200,8 @@ function PinnedAvatar({ item, editing, progress, selected, unread, actions, onAc
       {item.locked ? null : (
         <Animated.View pointerEvents={editing ? 'auto' : 'none'} style={[styles.move, badge]}>
           <Sortable.Handle style={styles.moveTouch}>
-            <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.moveBadge, { backgroundColor: theme.colors.background, borderColor: theme.colors.mutedForeground }]}>
-              <Icon name="move" size={14} color={theme.colors.mutedForeground} />
+            <View style={[styles.moveBadge, { backgroundColor: theme.colors.background, borderColor: theme.colors.mutedForeground }]}>
+              <Grip size={MOVE_GRIP_SIZE} />
             </View>
           </Sortable.Handle>
         </Animated.View>
@@ -193,9 +214,9 @@ const styles = StyleSheet.create({
   pin: { alignItems: 'center', gap: 8, width: PIN_WIDTH },
   label: { fontSize: 15 },
   dot: { position: 'absolute', top: 2, right: 10, width: DOT_SIZE, height: DOT_SIZE, borderRadius: DOT_SIZE / 2 },
-  // The badge and the move handle sit on the avatar's top corners (the avatar is centered in the 96 pt column).
-  badge: { position: 'absolute', top: -2, left: 2 },
-  move: { position: 'absolute', top: -2 - (MOVE_TOUCH - BADGE_SIZE) / 2, right: 2 - (MOVE_TOUCH - BADGE_SIZE) / 2 },
+  // The badge and the move handle center on the avatar's round edge at 45°, top left and top right (see the arithmetic above).
+  badge: { position: 'absolute', top: BADGE_CENTER_Y - BADGE_SIZE / 2, left: SELECTION_CENTER_X - BADGE_SIZE / 2 },
+  move: { position: 'absolute', top: BADGE_CENTER_Y - MOVE_TOUCH / 2, left: MOVE_CENTER_X - MOVE_TOUCH / 2 },
   moveTouch: { width: MOVE_TOUCH, height: MOVE_TOUCH, alignItems: 'center', justifyContent: 'center' },
   moveBadge: { width: BADGE_SIZE, height: BADGE_SIZE, borderRadius: BADGE_SIZE / 2, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' }
 })

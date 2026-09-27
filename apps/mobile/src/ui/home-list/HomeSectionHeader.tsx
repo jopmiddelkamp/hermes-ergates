@@ -91,5 +91,5 @@ const styles = StyleSheet.create({
   text: { fontSize: 13, fontWeight: '400' },
   trailing: { alignSelf: 'stretch', overflow: 'hidden', alignItems: 'flex-end' },
   fill: { flex: 1 },
-  handleFill: { flex: 1, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' }
+  handleFill: { flex: 1, alignSelf: 'stretch', alignItems: 'flex-end', justifyContent: 'center' }
 })

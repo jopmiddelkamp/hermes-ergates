@@ -167,5 +167,5 @@ const styles = StyleSheet.create({
   unreadDot: { width: UNREAD_DOT_SIZE, height: UNREAD_DOT_SIZE, borderRadius: UNREAD_DOT_SIZE / 2 },
   trailing: { alignSelf: 'stretch', overflow: 'hidden', alignItems: 'flex-end' },
   fill: { flex: 1 },
-  handle: { flex: 1, alignItems: 'center', justifyContent: 'center' }
+  handle: { flex: 1, alignItems: 'flex-end', justifyContent: 'center' }
 })

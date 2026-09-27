@@ -34,7 +34,7 @@ export const CIRCLE_SIZE = 22
 /** The circle's own box: the circle (`CIRCLE_SIZE`) and the space up to the avatar. */
 export const CIRCLE_COLUMN = CIRCLE_SIZE + 12
 /** The ≡ box, right of a row's or a header's content. */
-export const HANDLE_WIDTH = 52
+export const HANDLE_WIDTH = 44
 
 export interface RowOffsets {
   /** The row body's translateX (avatar, name, preview). */
