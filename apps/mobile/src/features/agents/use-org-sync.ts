@@ -35,8 +35,8 @@ export function useOrgSync(port: GatewayPort, connectionId: string, home: HomeMo
   // The roster read a stalled flush started from (readyToFlush): a ref, not
   // state, so recording a stall does not itself trigger a render. Nothing
   // flushes again until a newer roster read comes in, so a connection that
-  // stays down does not turn into a retry loop.
-  const stalledAt = useRef(0)
+  // stays down does not turn into a retry loop. The value is kept per connection.
+  const stalledAt = useRef<Record<string, number>>({})
 
   const flush = useMemo(
     () =>
@@ -50,7 +50,7 @@ export function useOrgSync(port: GatewayPort, connectionId: string, home: HomeMo
         // `oneAtATime` can start this run right after one that just stalled
         // (a requeued item makes `queuedNow()` true again at once); it must
         // stop here too, not only in the effect below.
-        if (!readyToFlush(queuedNow(), readAt(), stalledAt.current)) {
+        if (!readyToFlush(queuedNow(), readAt(), stalledAt.current[connectionId] ?? 0)) {
           return
         }
         const result = await flushOrgOutbox({
@@ -62,7 +62,7 @@ export function useOrgSync(port: GatewayPort, connectionId: string, home: HomeMo
           }
         })
         if (result.waiting) {
-          stalledAt.current = readAt()
+          stalledAt.current[connectionId] = readAt()
         }
         if (result.sent > 0 || result.refused.length > 0) {
           void client.invalidateQueries({ queryKey: rosterKey(connectionId) })
@@ -74,7 +74,7 @@ export function useOrgSync(port: GatewayPort, connectionId: string, home: HomeMo
     [port, connectionId, updateOrgOutbox, client]
   )
 
-  const ready = readyToFlush(queued, home.updatedAt, stalledAt.current)
+  const ready = readyToFlush(queued, home.updatedAt, stalledAt.current[connectionId] ?? 0)
   useEffect(() => {
     if (ready) {
       void flush()
