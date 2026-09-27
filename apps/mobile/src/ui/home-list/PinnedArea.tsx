@@ -29,11 +29,11 @@ import { SelectionCircle } from './SelectionCircle'
 const AVATAR_SIZE = 84
 const PIN_WIDTH = 96
 const PIN_GAP = 24
-const BADGE_SIZE = 36
+const BADGE_SIZE = 32
 /** The move handle's touch area around its badge (44 pt, the minimum touch target). */
 const MOVE_TOUCH = 44
-/** The ≡ glyph inside the move badge, sized to keep the same proportion inside its circle (7/12 of the badge). */
-const MOVE_GRIP_SIZE = 21
+/** The ≡ glyph inside the move badge: 7/12 of the badge, so it keeps the same proportion inside its circle. */
+const MOVE_GRIP_SIZE = Math.round((BADGE_SIZE * 7) / 12)
 const DOT_SIZE = 12
 /** How far the unread dot moves down, from its normal-mode spot near the top to clear of the selection badge and the move handle. */
 const DOT_DROP = AVATAR_SIZE - DOT_SIZE - 4
