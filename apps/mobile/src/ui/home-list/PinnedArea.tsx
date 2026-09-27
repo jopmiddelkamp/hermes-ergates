@@ -11,7 +11,7 @@
  * instead.
  */
 
-import { useRef } from 'react'
+import { useCallback, useRef } from 'react'
 import { Pressable, StyleSheet, Text, View, type AccessibilityActionEvent } from 'react-native'
 import Animated, { useAnimatedStyle, type AnimatedRef, type SharedValue } from 'react-native-reanimated'
 import Sortable, { type SortableFlexDragEndParams } from 'react-native-sortables'
@@ -58,24 +58,35 @@ export interface PinnedAreaProps {
 }
 
 export function PinnedArea({ pins, items, editing, progress, selection, gateway, connectionId, haptics, scrollRef, unread, onPress, onLongPress, onMove, gutter }: PinnedAreaProps) {
+  // Stable across renders that do not change the pins or the handlers, for
+  // the same reason `HomeList` memoizes its own `Sortable.Grid` props. Kept
+  // above the empty-pins return below: every hook here must run every render.
+  const onDragStart = useCallback(() => lightTap(haptics), [haptics])
+
+  const onDragEnd = useCallback(
+    ({ key, indexToKey }: SortableFlexDragEndParams) => {
+      lightTap(haptics)
+      const move = pinDropMove(pins, indexToKey, key)
+      if (move) {
+        onMove(move)
+      }
+    },
+    [haptics, pins, onMove]
+  )
+
+  const act = useCallback(
+    (item: PinnedItem) => (event: AccessibilityActionEvent) => {
+      const direction = moveDirection(event.nativeEvent.actionName)
+      const move = direction ? moveStep(items, item.key, direction) : null
+      if (move) {
+        onMove(move)
+      }
+    },
+    [items, onMove]
+  )
+
   if (pins.length === 0) {
     return null
-  }
-
-  const onDragEnd = ({ key, indexToKey }: SortableFlexDragEndParams) => {
-    lightTap(haptics)
-    const move = pinDropMove(pins, indexToKey, key)
-    if (move) {
-      onMove(move)
-    }
-  }
-
-  const act = (item: PinnedItem) => (event: AccessibilityActionEvent) => {
-    const direction = moveDirection(event.nativeEvent.actionName)
-    const move = direction ? moveStep(items, item.key, direction) : null
-    if (move) {
-      onMove(move)
-    }
   }
 
   return (
@@ -92,7 +103,7 @@ export function PinnedArea({ pins, items, editing, progress, selection, gateway,
       dragActivationDelay={0}
       activeItemScale={1.05}
       inactiveItemOpacity={1}
-      onDragStart={() => lightTap(haptics)}
+      onDragStart={onDragStart}
       onDragEnd={onDragEnd}
     >
       {pins.map(item => (

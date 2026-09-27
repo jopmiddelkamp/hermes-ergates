@@ -1,14 +1,15 @@
 /**
  * A Home conversation row in both modes (docs/10 "Home", "Home edit mode"):
  * avatar, name, role badge, time, one-line preview and unread dot, the same
- * look in and out of Edit mode. With Edit mode's progress the trailing
- * column widens and the row body slides right by transform, opening a gap
- * at the leading edge where the selection circle, positioned absolutely
- * there, slides in and fades in; the ≡ handle fades in on the right, and the
- * time and unread dot end up left of it. Only two Reanimated styles touch
- * layout (the trailing column's width, and the circle's own fixed-size box);
- * the row body's shift and the circle's slide are transforms, so the row
- * costs one Yoga pass per frame, not two.
+ * look in and out of Edit mode. The ≡ column's static space (`layoutEditing`)
+ * switches once per Edit toggle, not per frame: see `motion.ts`'s
+ * `useLayoutEditing` and `row-offsets.ts`'s arithmetic for why the row still
+ * looks like it slides smoothly across that one switch. Only transforms and
+ * opacity animate: the row body slides right, the selection circle
+ * (positioned absolutely over the leading page padding) slides in and fades
+ * in, the time and the unread dot get their own extra slide so the ≡ never
+ * draws over them, and the ≡ itself slides in from the right and fades in.
+ * None of that costs a Yoga layout pass or a text remeasure per frame.
  *
  * The row runs edge to edge (`page-padding.ts`): its tap highlight spans the
  * whole width, the ≡ column too, and its content is padded by the page
@@ -34,14 +35,11 @@ import { useTheme } from '@/theme/provider'
 import type { AnchorRect } from '../ActionMenu'
 import { Avatar } from '../Avatar'
 import { Grip } from './Grip'
-import { CIRCLE_SIZE, SelectionCircle } from './SelectionCircle'
+import { CIRCLE_COLUMN, HANDLE_WIDTH, handleOffset, rowOffsets } from './row-offsets'
+import { SelectionCircle } from './SelectionCircle'
 import type { SwipeSelect } from './use-swipe-select'
 
 const AVATAR_SIZE = 48
-/** The circle's own box: the circle and the space up to the avatar. With the page padding it is over 44 pt wide and the full row high. */
-export const CIRCLE_COLUMN = CIRCLE_SIZE + 12
-/** The ≡ column, added right of the content in Edit mode. */
-export const HANDLE_WIDTH = 52
 const BADGE_MAX_WIDTH = 113
 const UNREAD_DOT_SIZE = 8
 export const MAX_FONT_SCALE = 1.4
@@ -52,6 +50,8 @@ export interface HomeRowProps {
   connectionId: string
   unread: boolean
   editing: boolean
+  /** The static Edit-mode layout (the circle and the ≡ column reserved): on the instant Edit mode starts, off only once a leave has fully finished. */
+  layoutEditing: boolean
   /** Edit mode's progress, 0 to 1. */
   progress: SharedValue<number>
   selected: boolean
@@ -67,7 +67,7 @@ export interface HomeRowProps {
   gutter: number
 }
 
-export function HomeRow({ bot, gateway, connectionId, unread, editing, progress, selected, actions, onAction, onPress, onLongPress, rowKey, swipe, gutter }: HomeRowProps) {
+export function HomeRow({ bot, gateway, connectionId, unread, editing, layoutEditing, progress, selected, actions, onAction, onPress, onLongPress, rowKey, swipe, gutter }: HomeRowProps) {
   const theme = useTheme()
   const avatar = useAvatar(gateway, connectionId, bot.profile, bot.hasAvatar)
   const ref = useRef<View>(null)
@@ -78,10 +78,10 @@ export function HomeRow({ bot, gateway, connectionId, unread, editing, progress,
   useEffect(() => () => swipe.forget(rowKey), [swipe, rowKey])
   const [pressed, setPressed] = useState(false)
 
-  const body = useAnimatedStyle(() => ({ transform: [{ translateX: progress.get() * CIRCLE_COLUMN }] }))
+  const body = useAnimatedStyle(() => ({ transform: [{ translateX: rowOffsets(progress.get(), gutter).body }] }))
+  const timeDot = useAnimatedStyle(() => ({ transform: [{ translateX: rowOffsets(progress.get(), gutter).timeDot }] }))
   const circle = useAnimatedStyle(() => ({ opacity: progress.get(), transform: [{ translateX: (progress.get() - 1) * CIRCLE_COLUMN }] }))
-  const trailing = useAnimatedStyle(() => ({ width: gutter + progress.get() * (CIRCLE_COLUMN + HANDLE_WIDTH) }))
-  const handle = useAnimatedStyle(() => ({ opacity: progress.get() }))
+  const handle = useAnimatedStyle(() => ({ opacity: progress.get(), transform: [{ translateX: handleOffset(progress.get(), gutter) }] }))
 
   const time = formatRowTime(bot.lastActivityAt)
   const preview = bot.preview || bot.description
@@ -115,10 +115,13 @@ export function HomeRow({ bot, gateway, connectionId, unread, editing, progress,
                   {bot.role}
                 </Text>
               ) : null}
+              {/* Its own extra slide keeps it, and the dot below, from ever sitting under the incoming ≡ (row-offsets.ts). */}
               {time ? (
-                <Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.time, { color: theme.colors.mutedForeground }]}>
-                  {time}
-                </Text>
+                <Animated.View style={timeDot}>
+                  <Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.time, { color: theme.colors.mutedForeground }]}>
+                    {time}
+                  </Text>
+                </Animated.View>
               ) : null}
             </View>
             <View style={styles.line}>
@@ -126,7 +129,7 @@ export function HomeRow({ bot, gateway, connectionId, unread, editing, progress,
                 {preview}
               </Text>
               {/* Decorative: the row's own label says "unread". */}
-              {unread ? <View accessible={false} style={[styles.unreadDot, { backgroundColor: theme.colors.primary }]} /> : null}
+              {unread ? <Animated.View accessible={false} style={[styles.unreadDot, { backgroundColor: theme.colors.primary }, timeDot]} /> : null}
             </View>
           </View>
         </Animated.View>
@@ -137,14 +140,15 @@ export function HomeRow({ bot, gateway, connectionId, unread, editing, progress,
           </Animated.View>
         </GestureDetector>
       </Pressable>
-      <Animated.View pointerEvents={editing ? 'auto' : 'none'} style={[styles.trailing, trailing]}>
+      {/* A plain (not animated) width: it only ever takes one of two values, switched once per toggle by `layoutEditing`, never per frame. */}
+      <View pointerEvents={editing ? 'auto' : 'none'} style={[styles.trailing, { width: gutter + (layoutEditing ? CIRCLE_COLUMN + HANDLE_WIDTH : 0) }]}>
         <Animated.View style={[styles.fill, { width: gutter + HANDLE_WIDTH }, handle]}>
           {/* The drag gesture sits on the view `Sortable.Handle` wraps: it fills the ≡ column, so a touch anywhere on it picks the row up. */}
           <Sortable.Handle style={[styles.handle, { paddingRight: gutter }]}>
             <Grip />
           </Sortable.Handle>
         </Animated.View>
-      </Animated.View>
+      </View>
     </View>
   )
 }

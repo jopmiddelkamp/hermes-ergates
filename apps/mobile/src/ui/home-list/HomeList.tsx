@@ -13,10 +13,15 @@
  * The list runs edge to edge: a lifted row is not clipped, the scroll bar
  * sits at the screen edge and a row's tap highlight spans the whole width.
  * Every row and header pads its own content by the page padding instead
- * (`page-padding.ts`).
+ * (`page-padding.ts`). `layoutEditing` (`useLayoutEditing` in `motion.ts`)
+ * carries the one-time static layout switch down to every row and header,
+ * so it is computed once here, not per item; `renderItem` and the drag
+ * callbacks passed to `Sortable.Grid` are memoized so a Home render that
+ * changes none of their real inputs does not hand the grid new function
+ * identities to react to.
  */
 
-import { useEffect, useMemo, useReducer, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, type ReactNode } from 'react'
 import { AppState, RefreshControl, View, type AccessibilityActionEvent } from 'react-native'
 import Animated, { useAnimatedReaction, useAnimatedRef, useSharedValue, type SharedValue } from 'react-native-reanimated'
 import Sortable, { useCommonValuesContext, type DragStartParams, type SortableGridDragEndParams, type SortableGridRenderItem, type SortStrategyFactory } from 'react-native-sortables'
@@ -68,6 +73,8 @@ export interface HomeListProps {
   items: EditItem[]
   selection: Selection
   editing: boolean
+  /** The static Edit-mode layout (`useLayoutEditing`): on the instant Edit mode starts, off only once a leave has fully finished. */
+  layoutEditing: boolean
   /** Edit mode's progress, 0 to 1 (`useShowProgress`). */
   progress: SharedValue<number>
   gateway: Parameters<typeof useAvatar>[0]
@@ -126,7 +133,7 @@ function makeGuardedStrategy(meta: SharedValue<SlotMeta>): SortStrategyFactory {
 const keyOf = (item: DragItem) => item.key
 
 export function HomeList(props: HomeListProps) {
-  const { items, selection, editing, progress, gateway, connectionId, haptics, unread, refreshing, onRefresh, onOpen, onMenu, onToggle, onSelectionChange, onMove, onToggleCollapsed, onEditSection, header, footer, bottomPadding } = props
+  const { items, selection, editing, layoutEditing, progress, gateway, connectionId, haptics, unread, refreshing, onRefresh, onOpen, onMenu, onToggle, onSelectionChange, onMove, onToggleCollapsed, onEditSection, header, footer, bottomPadding } = props
   const scrollRef = useAnimatedRef<Animated.ScrollView>()
   const gutter = usePagePadding()
   const pins = useMemo(() => pinnedItems(items), [items])
@@ -154,73 +161,92 @@ export function HomeList(props: HomeListProps) {
   }, [data, meta])
   const strategy = useMemo(() => makeGuardedStrategy(meta), [meta])
 
-  const onDragStart = ({ key }: DragStartParams) => {
-    lightTap(haptics)
-    dispatch({ type: 'start', key })
-  }
+  // Stable across renders that do not actually change what a row or a
+  // header needs, so `Sortable.Grid` does not treat every Home render as a
+  // reason to redraw every item: `renderItem` and the drag callbacks used to
+  // be new function literals every time, which doubled the work right at
+  // the Edit toggle (the moment `editing` itself already forces a real redraw).
+  const onDragStart = useCallback(
+    ({ key }: DragStartParams) => {
+      lightTap(haptics)
+      dispatch({ type: 'start', key })
+    },
+    [haptics]
+  )
 
-  const onDragEnd = ({ key, data: dropped }: SortableGridDragEndParams<DragItem>) => {
-    lightTap(haptics)
-    dispatch({ type: 'drop' })
-    const move = dropMove(list, dropped.map(keyOf), key)
-    if (move) {
-      onMove(move)
-    }
-  }
+  const onDragEnd = useCallback(
+    ({ key, data: dropped }: SortableGridDragEndParams<DragItem>) => {
+      lightTap(haptics)
+      dispatch({ type: 'drop' })
+      const move = dropMove(list, dropped.map(keyOf), key)
+      if (move) {
+        onMove(move)
+      }
+    },
+    [haptics, list, onMove]
+  )
 
-  const act = (item: ListItem) => (event: AccessibilityActionEvent) => {
-    if (item.kind === 'section' && event.nativeEvent.actionName === EDIT_SECTION_ACTION.name) {
-      onEditSection(item.section.id)
-      return
-    }
-    const direction = moveDirection(event.nativeEvent.actionName)
-    const move = direction ? moveStep(items, item.key, direction) : null
-    if (move) {
-      onMove(move)
-    }
-  }
+  const act = useCallback(
+    (item: ListItem) => (event: AccessibilityActionEvent) => {
+      if (item.kind === 'section' && event.nativeEvent.actionName === EDIT_SECTION_ACTION.name) {
+        onEditSection(item.section.id)
+        return
+      }
+      const direction = moveDirection(event.nativeEvent.actionName)
+      const move = direction ? moveStep(items, item.key, direction) : null
+      if (move) {
+        onMove(move)
+      }
+    },
+    [items, onMove, onEditSection]
+  )
 
-  const renderItem: SortableGridRenderItem<DragItem> = ({ item }) => {
-    switch (item.kind) {
-      case 'spacer':
-        return <View style={{ height: item.height }} />
-      case 'section':
-        return (
-          <HomeSectionHeader
-            name={item.section.name}
-            expanded={!item.section.collapsed}
-            editing={editing}
-            progress={progress}
-            actions={editing ? moveActions(items, item.key) : []}
-            onAction={act(item)}
-            onToggle={() => onToggleCollapsed(item.section.id)}
-            onEdit={() => onEditSection(item.section.id)}
-            onHandle={dispatch}
-            sectionKey={item.key}
-            gutter={gutter}
-          />
-        )
-      default:
-        return (
-          <HomeRow
-            bot={item.bot}
-            gateway={gateway}
-            connectionId={connectionId}
-            unread={unread(item.bot.profile)}
-            editing={editing}
-            progress={progress}
-            selected={selection.has(item.bot.profile)}
-            actions={editing ? moveActions(items, item.key) : []}
-            onAction={act(item)}
-            onPress={() => (editing ? onToggle(item.bot.profile) : onOpen(item.bot))}
-            onLongPress={anchor => onMenu(item.bot, anchor)}
-            rowKey={item.key}
-            swipe={swipe.select}
-            gutter={gutter}
-          />
-        )
-    }
-  }
+  const renderItem: SortableGridRenderItem<DragItem> = useCallback(
+    ({ item }) => {
+      switch (item.kind) {
+        case 'spacer':
+          return <View style={{ height: item.height }} />
+        case 'section':
+          return (
+            <HomeSectionHeader
+              name={item.section.name}
+              expanded={!item.section.collapsed}
+              editing={editing}
+              layoutEditing={layoutEditing}
+              progress={progress}
+              actions={editing ? moveActions(items, item.key) : []}
+              onAction={act(item)}
+              onToggle={() => onToggleCollapsed(item.section.id)}
+              onEdit={() => onEditSection(item.section.id)}
+              onHandle={dispatch}
+              sectionKey={item.key}
+              gutter={gutter}
+            />
+          )
+        default:
+          return (
+            <HomeRow
+              bot={item.bot}
+              gateway={gateway}
+              connectionId={connectionId}
+              unread={unread(item.bot.profile)}
+              editing={editing}
+              layoutEditing={layoutEditing}
+              progress={progress}
+              selected={selection.has(item.bot.profile)}
+              actions={editing ? moveActions(items, item.key) : []}
+              onAction={act(item)}
+              onPress={() => (editing ? onToggle(item.bot.profile) : onOpen(item.bot))}
+              onLongPress={anchor => onMenu(item.bot, anchor)}
+              rowKey={item.key}
+              swipe={swipe.select}
+              gutter={gutter}
+            />
+          )
+      }
+    },
+    [editing, layoutEditing, progress, items, selection, gutter, act, onToggleCollapsed, onEditSection, gateway, connectionId, unread, onOpen, onToggle, onMenu, swipe.select]
+  )
 
   return (
     <Animated.ScrollView

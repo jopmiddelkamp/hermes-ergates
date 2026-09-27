@@ -4,10 +4,17 @@
  * both ways. Home keeps one for Edit mode and the bottom bar one for being
  * shown. With the system setting Reduce motion on, the value jumps
  * (`ReduceMotion.System`), so every change is instant.
+ *
+ * Rows and section headers also need a one-time layout switch (their static
+ * Edit-mode space), not an animated one: see `useLayoutEditing` and
+ * `layout-editing.ts`'s `nextLayoutEditing` for the rule.
  */
 
-import { useEffect } from 'react'
-import { Easing, ReduceMotion, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Easing, ReduceMotion, useAnimatedReaction, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated'
+import { scheduleOnRN } from 'react-native-worklets'
+
+import { nextLayoutEditing } from './layout-editing'
 
 export const EDIT_MOTION_MS = 250
 
@@ -20,4 +27,41 @@ export function useShowProgress(shown: boolean): SharedValue<number> {
     progress.set(withTiming(shown ? 1 : 0, TIMING))
   }, [shown, progress])
   return progress
+}
+
+/**
+ * Whether rows and section headers should reserve their static Edit-mode
+ * space right now (`nextLayoutEditing`'s rule). It turns on in the same
+ * render `editing` does (with Reduce motion on, `progress` jumps straight to
+ * 0 or 1, so the same rule still applies, just without anything in between)
+ * and turns off only once `progress` actually reaches 0 after a leave; a
+ * `useAnimatedReaction` watches for that on the UI thread and reports it
+ * back with `scheduleOnRN`. A ref holds the latest `editing`, so a leave
+ * that finishes after Edit mode has already turned back on does not switch
+ * the layout back to normal underneath it.
+ */
+export function useLayoutEditing(editing: boolean, progress: SharedValue<number>): boolean {
+  const [layoutEditing, setLayoutEditing] = useState(editing)
+  const applied = nextLayoutEditing(layoutEditing, editing, false)
+  if (applied !== layoutEditing) {
+    setLayoutEditing(applied)
+  }
+
+  const editingRef = useRef(editing)
+  editingRef.current = editing
+  const onLeaveReachedZero = useCallback(() => {
+    setLayoutEditing(current => nextLayoutEditing(current, editingRef.current, true))
+  }, [])
+
+  useAnimatedReaction(
+    () => progress.get(),
+    (value, previous) => {
+      if (value === 0 && previous !== null && previous !== 0) {
+        scheduleOnRN(onLeaveReachedZero)
+      }
+    },
+    [onLeaveReachedZero]
+  )
+
+  return layoutEditing
 }

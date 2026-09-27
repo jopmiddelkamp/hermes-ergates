@@ -3,7 +3,10 @@
  * members"): small grey section name with a chevron, down when expanded,
  * right when collapsed. The name area is the toggle in both modes; a
  * long-press, or the Edit section action for screen readers, opens the
- * Section page. With Edit mode's progress a ≡ handle fades in on the right.
+ * Section page. The name keeps its place; only the ≡ column's static space
+ * (`layoutEditing`) switches once per Edit toggle, not per frame, and the ≡
+ * itself slides in from the right and fades in by transform and opacity
+ * (the same arithmetic a row's ≡ uses, `row-offsets.ts`'s `handleOffset`).
  * The name area and the handle sit side by side, so the two gestures never
  * overlap; touching the handle switches the rows list to headers only
  * before the drag starts. Outside Edit mode a `hitSlop` extends the name
@@ -20,12 +23,15 @@ import { useTheme } from '@/theme/provider'
 
 import { Icon } from '../icons'
 import { Grip } from './Grip'
-import { HANDLE_WIDTH, MAX_FONT_SCALE } from './HomeRow'
+import { MAX_FONT_SCALE } from './HomeRow'
+import { HANDLE_WIDTH, handleOffset } from './row-offsets'
 
 export interface HomeSectionHeaderProps {
   name: string
   expanded: boolean
   editing: boolean
+  /** The static Edit-mode layout (the ≡ column reserved): on the instant Edit mode starts, off only once a leave has fully finished. */
+  layoutEditing: boolean
   /** Edit mode's progress, 0 to 1. */
   progress: SharedValue<number>
   /** Move up and Move down, in Edit mode. */
@@ -39,10 +45,9 @@ export interface HomeSectionHeaderProps {
   gutter: number
 }
 
-export function HomeSectionHeader({ name, expanded, editing, progress, actions, onAction, onToggle, onEdit, onHandle, sectionKey, gutter }: HomeSectionHeaderProps) {
+export function HomeSectionHeader({ name, expanded, editing, layoutEditing, progress, actions, onAction, onToggle, onEdit, onHandle, sectionKey, gutter }: HomeSectionHeaderProps) {
   const theme = useTheme()
-  const trailing = useAnimatedStyle(() => ({ width: gutter + progress.get() * HANDLE_WIDTH }))
-  const handle = useAnimatedStyle(() => ({ opacity: progress.get() }))
+  const handle = useAnimatedStyle(() => ({ opacity: progress.get(), transform: [{ translateX: handleOffset(progress.get(), gutter) }] }))
   return (
     <View style={[styles.header, { backgroundColor: theme.colors.background }]}>
       <Pressable
@@ -61,8 +66,9 @@ export function HomeSectionHeader({ name, expanded, editing, progress, actions, 
         </Text>
         <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={16} color={theme.colors.mutedForeground} />
       </Pressable>
-      <Animated.View pointerEvents={editing ? 'auto' : 'none'} style={[styles.trailing, trailing]}>
-        <Animated.View style={[styles.fill, handle]}>
+      {/* A plain (not animated) width: it only ever takes one of two values, switched once per toggle by `layoutEditing`, never per frame. */}
+      <View pointerEvents={editing ? 'auto' : 'none'} style={[styles.trailing, { width: gutter + (layoutEditing ? HANDLE_WIDTH : 0) }]}>
+        <Animated.View style={[styles.fill, { width: gutter + HANDLE_WIDTH }, handle]}>
           <Sortable.Handle style={styles.fill}>
             {/* The touch area runs to the screen edge; the glyph stays in line with the rows' ≡. */}
             <Sortable.Touchable
@@ -74,7 +80,7 @@ export function HomeSectionHeader({ name, expanded, editing, progress, actions, 
             </Sortable.Touchable>
           </Sortable.Handle>
         </Animated.View>
-      </Animated.View>
+      </View>
     </View>
   )
 }
@@ -83,7 +89,7 @@ const styles = StyleSheet.create({
   header: { height: EDIT_ITEM_HEIGHT.section, flexDirection: 'row', alignItems: 'center' },
   name: { flex: 1, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 4 },
   text: { fontSize: 13, fontWeight: '400' },
-  trailing: { alignSelf: 'stretch', overflow: 'hidden' },
-  fill: { flex: 1, alignSelf: 'stretch' },
+  trailing: { alignSelf: 'stretch', overflow: 'hidden', alignItems: 'flex-end' },
+  fill: { flex: 1 },
   handleFill: { flex: 1, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' }
 })

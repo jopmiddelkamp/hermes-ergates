@@ -36,7 +36,7 @@ import { BotActions } from '@/ui/BotActions'
 import { EditBar, editBarHeight } from '@/ui/home-list/EditBar'
 import { HomeList } from '@/ui/home-list/HomeList'
 import { HomeTopBar } from '@/ui/home-list/HomeTopBar'
-import { useShowProgress } from '@/ui/home-list/motion'
+import { useLayoutEditing, useShowProgress } from '@/ui/home-list/motion'
 import { Screen, usePagePadding } from '@/ui/Screen'
 import { useBottomInset } from '@/ui/use-bottom-inset'
 
@@ -90,6 +90,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
   // list stays on screen: circles, handles and badges animate in and out.
   const [editing, setEditing] = useState(false)
   const progress = useShowProgress(editing)
+  const layoutEditing = useLayoutEditing(editing, progress)
   const [picked, setPicked] = useState<Selection>(NO_SELECTION)
   const items = useMemo(() => buildEditItems(home), [home])
   const selection = liveSelection(picked, items)
@@ -253,6 +254,7 @@ function Home({ connectionId, connectionLabel }: { connectionId: string; connect
         items={items}
         selection={selection}
         editing={editing}
+        layoutEditing={layoutEditing}
         progress={progress}
         gateway={gateway}
         connectionId={connectionId}
