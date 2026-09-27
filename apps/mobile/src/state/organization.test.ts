@@ -301,11 +301,11 @@ describe('the manual row order', () => {
     expect(deriveHome(unhidden, orderedOrg()).ungrouped).toEqual(['ghost', 'noor', 'otto'])
   })
 
-  it('shows a pinned concierge as the first pin, and an unpinned one as an ordinary row', () => {
+  it('shows the pins in the device\'s own order, the default profile included, and an unpinned one as an ordinary row', () => {
     const rows = orderedRows.map(r => (r.profile === 'otto' ? { ...r, isDefault: true } : r))
-    // Noor is pinned first, the concierge second.
+    // Noor is pinned first, the default profile (Otto) second: it stays second.
     const pinned = orgActions.pinMany(orderedOrg(), ['noor', 'otto'])
-    expect(deriveHome(rows, pinned).pinned).toEqual(['otto', 'noor'])
+    expect(deriveHome(rows, pinned).pinned).toEqual(['noor', 'otto'])
     expect(deriveHome(rows, orgActions.unpin(pinned, 'otto')).pinned).toEqual(['noor'])
     expect(deriveHome(rows, orgActions.unpin(pinned, 'otto')).ungrouped).toEqual(['otto'])
   })

@@ -62,7 +62,7 @@ export interface BotRow {
   profile: string
   hidden: boolean
   lastActivityAt: number
-  /** The Hermes concierge: while it is pinned it is always the first pin. */
+  /** The Hermes concierge: pinned once on a new install; otherwise a pin like any other. */
   isDefault?: boolean
   /** `ui_meta['hermes-bots'].pinned`; undefined when Hermes has no value. */
   pinned?: boolean
@@ -75,7 +75,7 @@ export interface BotRow {
 }
 
 export interface HomeLayout {
-  /** Pin order, with a pinned concierge always first. Never sorted by activity. */
+  /** Pin order, the device's own. Never sorted by activity. */
   pinned: string[]
   /** Unpinned rows without a section, in the manual order. */
   ungrouped: string[]
@@ -126,10 +126,9 @@ export function deriveHome(rows: BotRow[], org: Organization): HomeLayout {
   const visible = rows.filter(r => !r.hidden)
   const visibleProfiles = new Set(visible.map(r => r.profile))
 
-  // A pin only shows in the pinned area while its bot has a visible row.
-  const visiblePins = org.pins.filter(p => visibleProfiles.has(p))
-  const concierge = visible.find(r => r.isDefault)?.profile
-  const pinned = concierge && visiblePins.includes(concierge) ? [concierge, ...visiblePins.filter(p => p !== concierge)] : visiblePins
+  // A pin only shows in the pinned area while its bot has a visible row. The
+  // concierge, pinned or not, gets no fixed place: it is a pin like any other.
+  const pinned = org.pins.filter(p => visibleProfiles.has(p))
   const pinnedSet = new Set(pinned)
 
   const unpinnedVisible = visible.filter(r => !pinnedSet.has(r.profile))

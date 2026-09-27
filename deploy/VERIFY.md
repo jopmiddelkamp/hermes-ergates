@@ -530,7 +530,7 @@ to scroll:
    same list stays at the same scroll position: selection circles slide in
    from the left while the rows move right, ≡ handles fade in on the right,
    time and unread dots stay left of the handles, the avatars get a badge at
-   the top left and (all but the concierge) a move handle at the top right,
+   the top left and a move handle at the top right, the concierge included,
    the icons cross-fade into ✕ and "0 selected". Collapsed sections stay
    collapsed; a tap on a header still collapses or expands it. Tap ✕: the
    same animation plays back. With Settings → Accessibility → Remove
@@ -546,8 +546,9 @@ to scroll:
    the collapsed section's header: it joins that section at its top (expand
    it to see). Each stays where it was dropped after tapping ✕.
 5. Pinned avatars: drag an avatar by its move handle to the right, onto the
-   second line, and back to the left; the pin order follows. No avatar drops
-   in front of the concierge, and the concierge has no move handle.
+   second line, and back to the left; the pin order follows. The concierge
+   moves the same way: drag another pin in front of it and it steps aside,
+   like any other pin.
 6. Section drag: touch a section header's ≡: only the section headers show,
    the touched header stays under the finger; drag it and drop: the sections
    take the new order and the list comes back. Touch the ≡ and lift without
@@ -580,8 +581,8 @@ to scroll:
 16. TalkBack: turn TalkBack on, focus a No section row and use the actions
     menu: Move up and Move down move it one place, and the list shows it
     there; on a section header, Move up, Move down and Edit section work; on
-    a pinned avatar, Move left and Move right work, it reads "selected" or
-    "not selected", and the concierge offers neither.
+    a pinned avatar, Move left and Move right work, the concierge included,
+    and it reads "selected" or "not selected".
 17. Scroll starting on a header handle: start a scroll gesture with your
     finger landing on a section header's ≡, instead of a row. Expected: the
     list may briefly show only the section headers before the scroll

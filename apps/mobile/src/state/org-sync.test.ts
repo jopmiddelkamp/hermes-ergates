@@ -220,7 +220,7 @@ describe('syncing with every roster read', () => {
     expect(next.firstSync).toBe('done')
     expect(next.outbox).toEqual([{ id: 'o1', profile: 'default', field: 'pinned', pinned: true, status: 'queued' }])
     expect(next.pins).toEqual(['linh', 'kevin', 'default'])
-    expect(deriveHome([concierge, ...rows], sharedView(next, [concierge, ...rows])).pinned).toEqual(['default', 'linh', 'kevin'])
+    expect(deriveHome([concierge, ...rows], sharedView(next, [concierge, ...rows])).pinned).toEqual(['linh', 'kevin', 'default'])
   })
 
   it('never changes a concierge pinned value Hermes already has, not pinned included', () => {

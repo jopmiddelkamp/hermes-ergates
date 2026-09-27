@@ -1,14 +1,11 @@
 /**
  * The pinned avatars at the top of Home, in both modes (docs/10 "Home",
- * "Home edit mode"): large avatars in pin order, wrapped and centered, a
- * pinned concierge first. With Edit mode's progress each avatar gets a
- * selection badge at its top left and, except a pinned concierge, a move
- * handle at its top right; the unread dot moves down to the bottom right,
- * clear of both. A tap toggles the selection in Edit mode; the move handle
- * drags the avatar left and right inside the pinned area, across wrapped
- * lines, and nothing drops in front of a pinned concierge (its `fixed-order`
- * handle keeps it in place). Screen readers get Move left and Move right
- * instead.
+ * "Home edit mode"): large avatars in pin order, wrapped and centered. With
+ * Edit mode's progress each avatar gets a selection badge at its top left and
+ * a move handle at its top right; the unread dot moves down to the bottom
+ * right, clear of both. A tap toggles the selection in Edit mode; the move
+ * handle drags the avatar left and right inside the pinned area, across
+ * wrapped lines. Screen readers get Move left and Move right instead.
  *
  * The selection badge also carries swipe to select (the agents feature's
  * `swipe-select.ts`, `use-swipe-select.ts`'s `usePinSwipeSelect`): a touch
@@ -218,9 +215,7 @@ function PinnedAvatar({ item, editing, progress, selected, unread, actions, onAc
   const ref = useRef<View>(null)
   const badge = useAnimatedStyle(() => ({ opacity: progress.get(), transform: [{ scale: progress.get() }] }))
   // The badge and the move handle sit at the avatar's top-left and top-right,
-  // so the unread dot moves down to clear them both, the same way for every
-  // avatar (the concierge included, even without a move handle) so it never
-  // jumps between two rules.
+  // so the unread dot moves down to clear them both, the same way for every avatar.
   const dotPosition = useAnimatedStyle(() => ({ transform: [{ translateY: progress.get() * DOT_DROP }] }))
   const measure = () => ref.current?.measureInWindow((x, y, width, height) => onLongPress({ x, y, width, height }))
   // Gated by the badge's own `pointerEvents` below, not by rebuilding the
@@ -246,23 +241,20 @@ function PinnedAvatar({ item, editing, progress, selected, unread, actions, onAc
   )
   return (
     <View ref={ref} collapsable={false}>
-      {/* A `fixed-order` handle keeps the pinned concierge first: it cannot be picked up, and no pin drops in front of it. */}
-      {item.locked ? <Sortable.Handle mode="fixed-order">{face}</Sortable.Handle> : face}
+      {face}
       {/* A touch that starts here belongs to swipe to select; a tap still toggles, the same way a tap on the avatar does. */}
       <GestureDetector gesture={swipeGesture}>
         <Animated.View pointerEvents={editing ? 'auto' : 'none'} style={[styles.badge, badge]}>
           <SelectionCircle selected={selected} size={BADGE_SIZE} onAvatar />
         </Animated.View>
       </GestureDetector>
-      {item.locked ? null : (
-        <Animated.View pointerEvents={editing ? 'auto' : 'none'} style={[styles.move, badge]}>
-          <Sortable.Handle style={styles.moveTouch}>
-            <View style={[styles.moveBadge, { backgroundColor: theme.colors.background, borderColor: theme.colors.mutedForeground }]}>
-              <Grip size={MOVE_GRIP_SIZE} />
-            </View>
-          </Sortable.Handle>
-        </Animated.View>
-      )}
+      <Animated.View pointerEvents={editing ? 'auto' : 'none'} style={[styles.move, badge]}>
+        <Sortable.Handle style={styles.moveTouch}>
+          <View style={[styles.moveBadge, { backgroundColor: theme.colors.background, borderColor: theme.colors.mutedForeground }]}>
+            <Grip size={MOVE_GRIP_SIZE} />
+          </View>
+        </Sortable.Handle>
+      </Animated.View>
     </View>
   )
 }

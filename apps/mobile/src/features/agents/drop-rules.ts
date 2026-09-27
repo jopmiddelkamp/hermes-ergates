@@ -195,16 +195,14 @@ export function dropMove(items: readonly ListItem[], order: readonly string[], k
 }
 
 /**
- * The pin move for a finished drop among the pinned avatars, or null: a drop
- * in the same place, the pinned concierge, or an order with anything in front
- * of a pinned concierge. `order` is the pinned keys after the drop; keys of
+ * The pin move for a finished drop among the pinned avatars, or null for a
+ * drop in the same place. `order` is the pinned keys after the drop; keys of
  * pins that disappeared during the drag are skipped.
  */
 export function pinDropMove(pins: readonly PinnedItem[], order: readonly string[], key: string): OrderMove | null {
   const item = pins.find(p => p.key === key)
   const known = order.filter(k => pins.some(p => p.key === k))
-  const locked = pins.find(p => p.locked)
-  if (!item || item.locked || !known.includes(key) || (locked && known[0] !== locked.key)) {
+  if (!item || !known.includes(key)) {
     return null
   }
   const nextKey = known[known.indexOf(key) + 1]

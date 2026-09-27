@@ -1,9 +1,9 @@
 /**
  * Home Edit mode as pure functions (docs/10 "Home edit mode"): the flat list
- * Home draws in both modes, the selection, the bottom bar labels, Move up and
- * Move down (Move left and Move right on a pin), and the concierge lock. No
- * React and no React Native, so Node tests cover every rule; the Home screen
- * and `src/ui/home-list` only bind it.
+ * Home draws in both modes, the selection, the bottom bar labels, and Move up
+ * and Move down (Move left and Move right on a pin). No React and no React
+ * Native, so Node tests cover every rule; the Home screen and
+ * `src/ui/home-list` only bind it.
  */
 
 import type { OrderMove, Section } from '@/state/organization'
@@ -12,14 +12,13 @@ import type { Bot } from './roster'
 
 /**
  * One item of the Home list, in both modes, top to bottom: the pinned
- * avatars (in pin order, a pinned concierge first), the rows without a
- * section, then each section's header and, unless the section is collapsed,
- * its rows. `key` is unique in the list. A section header keeps its first
- * row (`topRow`), shown or not: a row dropped right under a collapsed header
- * lands in front of it.
+ * avatars (in pin order), the rows without a section, then each section's
+ * header and, unless the section is collapsed, its rows. `key` is unique in
+ * the list. A section header keeps its first row (`topRow`), shown or not: a
+ * row dropped right under a collapsed header lands in front of it.
  */
 export type EditItem =
-  | { kind: 'pinned'; key: string; bot: Bot; locked: boolean }
+  | { kind: 'pinned'; key: string; bot: Bot }
   | { kind: 'section'; key: string; section: Section; topRow: string | null }
   | { kind: 'row'; key: string; bot: Bot; sectionId: string | null }
 
@@ -54,9 +53,8 @@ export interface EditBarLabels {
 
 export function buildEditItems(layout: EditLayout): EditItem[] {
   const items: EditItem[] = []
-  // `deriveHome` already puts a pinned concierge first; it is the one pin that never moves.
   for (const bot of layout.pinned) {
-    items.push({ kind: 'pinned', key: `pinned:${bot.profile}`, bot, locked: bot.isDefault })
+    items.push({ kind: 'pinned', key: `pinned:${bot.profile}`, bot })
   }
   for (const bot of layout.ungrouped) {
     items.push({ kind: 'row', key: `row:${bot.profile}`, bot, sectionId: null })
@@ -152,19 +150,19 @@ function idOf(item: EditItem | undefined): string | null {
 }
 
 /**
- * The order move one step up or down inside the item's own group, or null when
- * it cannot move that way: at the group's edge, the pinned concierge, or a pin
- * that would pass above the concierge. For a pin, up is left and down is right.
+ * The order move one step up or down inside the item's own group, or null
+ * when it cannot move that way: it is already at the group's edge. For a pin,
+ * up is left and down is right.
  */
 export function moveStep(items: EditItem[], key: string, direction: MoveDirection): OrderMove | null {
   const item = items.find(i => i.key === key)
-  if (!item || (item.kind === 'pinned' && item.locked)) {
+  if (!item) {
     return null
   }
   const peers = peersOf(items, item)
   const at = peers.indexOf(item)
   const target = direction === 'up' ? peers[at - 1] : peers[at + 1]
-  if (!target || (target.kind === 'pinned' && target.locked)) {
+  if (!target) {
     return null
   }
   // Moving up lands in front of the one above; moving down, in front of the one after the next.

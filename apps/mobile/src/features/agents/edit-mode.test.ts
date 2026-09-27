@@ -78,14 +78,6 @@ describe('buildEditItems', () => {
     expect(pinnedItems(items).map(i => i.key)).toEqual(['pinned:hermes', 'pinned:noor'])
     expect(listItems(items).map(i => i.key)).toEqual(['row:otto', 'section:prive', 'row:kevin', 'row:linh', 'section:work'])
   })
-
-  it('locks only the pinned concierge', () => {
-    const pinned = buildEditItems(layout()).filter(i => i.kind === 'pinned')
-    expect(pinned.map(i => [i.key, i.kind === 'pinned' && i.locked])).toEqual([
-      ['pinned:hermes', true],
-      ['pinned:noor', false]
-    ])
-  })
 })
 
 describe('the selection', () => {
@@ -179,14 +171,16 @@ describe('Move up and Move down', () => {
     expect(moveStep(items, 'row:nobody', 'up')).toBeNull()
   })
 
-  it('keeps the pinned concierge first: it never moves and no pin passes above it', () => {
-    expect(moveStep(items, 'pinned:hermes', 'down')).toBeNull()
-    expect(moveStep(items, 'pinned:noor', 'up')).toBeNull()
-    expect(moveActions(items, 'pinned:hermes')).toEqual([])
-    expect(moveActions(items, 'pinned:noor')).toEqual([])
+  it('moves the default profile like any other pin', () => {
+    expect(moveStep(items, 'pinned:hermes', 'down')).toEqual({ kind: 'pin', profile: 'hermes', before: null })
+    expect(moveStep(items, 'pinned:noor', 'up')).toEqual({ kind: 'pin', profile: 'noor', before: 'hermes' })
   })
 
-  it('moves pins among themselves when the concierge is not pinned', () => {
+  it('offers Move left on the second pin even when the first pin is the default profile', () => {
+    expect(moveActions(items, 'pinned:noor')).toEqual([{ name: 'moveLeft', label: 'Move left' }])
+  })
+
+  it('moves pins among themselves whichever one is the default profile', () => {
     const pins = buildEditItems({ ...layout(), pinned: [bot('noor'), bot('mia'), bot('ada')] })
     expect(moveStep(pins, 'pinned:mia', 'up')).toEqual({ kind: 'pin', profile: 'mia', before: 'noor' })
     expect(moveStep(pins, 'pinned:noor', 'down')).toEqual({ kind: 'pin', profile: 'noor', before: 'ada' })

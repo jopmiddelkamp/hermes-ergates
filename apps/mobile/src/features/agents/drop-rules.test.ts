@@ -209,14 +209,17 @@ describe('pinDropMove, a drop among the pinned avatars', () => {
     expect(drop('pinned:noor', 2)).toEqual({ kind: 'pin', profile: 'noor', before: null })
   })
 
-  it('returns null for a drop in the same place, for the pinned concierge, and for anything in front of it', () => {
+  it('returns null for a drop in the same place, or an unknown key', () => {
     expect(drop('pinned:noor', 1)).toBeNull()
     expect(pinDropMove(pins(), order, 'pinned:hermes')).toBeNull()
-    expect(drop('pinned:mia', 0)).toBeNull()
     expect(pinDropMove(pins(), order, 'row:otto')).toBeNull()
   })
 
-  it('lets any pin go first when the concierge is not pinned', () => {
+  it('lets a drag move another pin in front of the default profile', () => {
+    expect(drop('pinned:mia', 0)).toEqual({ kind: 'pin', profile: 'mia', before: 'hermes' })
+  })
+
+  it('lets any pin go first, default profile or not', () => {
     const plain = pins({ ...layout(), pinned: [bot('noor'), bot('mia')] })
     expect(pinDropMove(plain, moved(keysOf(plain), 'pinned:mia', 0), 'pinned:mia')).toEqual({ kind: 'pin', profile: 'mia', before: 'noor' })
   })
