@@ -200,9 +200,16 @@ describe('sending the organization outbox', () => {
 
 describe('when Home flushes', () => {
   it('waits for the first roster read after a start, so no queued change is mistaken for one whose agent is gone', () => {
-    expect(readyToFlush(true, 0)).toBe(false)
-    expect(readyToFlush(true, 1_700_000_000_000)).toBe(true)
-    expect(readyToFlush(false, 1_700_000_000_000)).toBe(false)
+    expect(readyToFlush(false, 0, 0)).toBe(false)
+    expect(readyToFlush(true, 0, 0)).toBe(false)
+    expect(readyToFlush(true, 1_700_000_000_000, 0)).toBe(true)
+    expect(readyToFlush(false, 1_700_000_000_000, 0)).toBe(false)
+  })
+
+  it('holds a flush after a stall until a newer roster read comes in, so an offline retry does not loop', () => {
+    expect(readyToFlush(true, 1_700_000_000_000, 1_700_000_000_000)).toBe(false)
+    expect(readyToFlush(true, 1_700_000_000_000, 1_700_000_001_000)).toBe(false)
+    expect(readyToFlush(true, 1_700_000_001_000, 1_700_000_000_000)).toBe(true)
   })
 })
 

@@ -2,12 +2,14 @@
  * Sends this connection's organization outbox (docs/05 "Organization
  * outbox") while Home is mounted: as soon as a change is queued, and again
  * after every roster read, which is how a connection that came back shows
- * itself; never before the first roster read (`readyToFlush`). One flush at
- * a time (`oneAtATime`). After a flush that sent or refused anything, the
- * roster is read again, so the sent changes settle and a refusal shows
- * current names; the agents whose change Hermes refused are named in one
- * message, which the screen shows as an alert (no React Native here, so the
- * feature's index stays importable in Node).
+ * itself; never before the first roster read, and never again after a flush
+ * stalls until a newer roster read comes in, so a connection that stays down
+ * does not turn into a retry loop (`readyToFlush`). One flush at a time
+ * (`oneAtATime`). After a flush that sent or refused anything, the roster is
+ * read again, so the sent changes settle and a refusal shows current names;
+ * the agents whose change Hermes refused are named in one message, which the
+ * screen shows as an alert (no React Native here, so the feature's index
+ * stays importable in Node).
  */
 
 import { useQueryClient } from '@tanstack/react-query'
@@ -30,6 +32,12 @@ export function useOrgSync(port: GatewayPort, connectionId: string, home: HomeMo
     latest.current = onRefused
   }, [onRefused])
 
+  // The roster read a stalled flush started from (readyToFlush): a ref, not
+  // state, so recording a stall does not itself trigger a render. Nothing
+  // flushes again until a newer roster read comes in, so a connection that
+  // stays down does not turn into a retry loop.
+  const stalledAt = useRef(0)
+
   const flush = useMemo(
     () =>
       oneAtATime(async () => {
@@ -37,6 +45,14 @@ export function useOrgSync(port: GatewayPort, connectionId: string, home: HomeMo
         // belong to a different connection by the time a long flush runs (the
         // primary connection changed while Home stayed mounted).
         const rosterOf = () => client.getQueryData<Bot[]>(rosterKey(connectionId))
+        const readAt = () => client.getQueryState(rosterKey(connectionId))?.dataUpdatedAt ?? 0
+        const queuedNow = () => Boolean(useDeviceStore.getState().organization[connectionId]?.outbox.some(item => item.status === 'queued'))
+        // `oneAtATime` can start this run right after one that just stalled
+        // (a requeued item makes `queuedNow()` true again at once); it must
+        // stop here too, not only in the effect below.
+        if (!readyToFlush(queuedNow(), readAt(), stalledAt.current)) {
+          return
+        }
         const result = await flushOrgOutbox({
           profiles: port.profiles,
           summaryOf: profile => summaryOfRoster(rosterOf(), profile),
@@ -45,6 +61,9 @@ export function useOrgSync(port: GatewayPort, connectionId: string, home: HomeMo
             update: fn => updateOrgOutbox(connectionId, fn)
           }
         })
+        if (result.waiting) {
+          stalledAt.current = readAt()
+        }
         if (result.sent > 0 || result.refused.length > 0) {
           void client.invalidateQueries({ queryKey: rosterKey(connectionId) })
         }
@@ -55,7 +74,7 @@ export function useOrgSync(port: GatewayPort, connectionId: string, home: HomeMo
     [port, connectionId, updateOrgOutbox, client]
   )
 
-  const ready = readyToFlush(queued, home.updatedAt)
+  const ready = readyToFlush(queued, home.updatedAt, stalledAt.current)
   useEffect(() => {
     if (ready) {
       void flush()

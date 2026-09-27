@@ -16,7 +16,7 @@ import { scheduleOnRN } from 'react-native-worklets'
 
 import { nextLayoutEditing } from './layout-editing'
 
-export const EDIT_MOTION_MS = 250
+const EDIT_MOTION_MS = 250
 
 const TIMING = { duration: EDIT_MOTION_MS, easing: Easing.inOut(Easing.ease), reduceMotion: ReduceMotion.System }
 

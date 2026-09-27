@@ -9,7 +9,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import React, { useRef, useState } from 'react'
 import { Alert, StyleSheet, Text, View } from 'react-native'
 
-import { canSaveSectionName, deleteSectionPrompt, useHome, useOrganizer } from '@/features/agents'
+import { canSaveSectionName, deleteSectionPrompt, shownSectionName, useHome, useOrganizer } from '@/features/agents'
 import { usePrimaryConnection } from '@/features/settings'
 import { useGateway } from '@/gateway/registry'
 import { useDeviceStore, type Connection } from '@/state/device-store'
@@ -45,7 +45,10 @@ function SectionEditor({ connection, section, onDone }: { connection: Connection
   const theme = useTheme()
   const home = useHome(useGateway(connection), connection.id)
   const organizer = useOrganizer(connection.id, home.rows)
-  const [name, setName] = useState(section.name)
+  // The name Home already shows for this section, which can differ from the
+  // stored name right after a Desktop rename (`shownSectionName`).
+  const shownName = shownSectionName(home.organization.sections, section.id, section.name)
+  const [name, setName] = useState(shownName)
   // Save and Delete run organizing actions, which need the roster to merge
   // pins and sections against; with none loaded yet they would wipe them.
   const waitingForRoster = home.rows.length === 0
@@ -69,7 +72,7 @@ function SectionEditor({ connection, section, onDone }: { connection: Connection
     })
 
   const confirmDelete = () => {
-    const prompt = deleteSectionPrompt(section.name)
+    const prompt = deleteSectionPrompt(shownName)
     Alert.alert(prompt.title, prompt.message, [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -88,7 +91,7 @@ function SectionEditor({ connection, section, onDone }: { connection: Connection
     <Page title="Section" onBack={() => runOnce(onDone)}>
       <View>
         <Field label="Name" value={name} onChangeText={setName} placeholder="Prive" />
-        <Button label="Save" onPress={save} disabled={waitingForRoster || !canSaveSectionName(name, section.name)} />
+        <Button label="Save" onPress={save} disabled={waitingForRoster || !canSaveSectionName(name, shownName)} />
       </View>
       <Button label="Delete section" variant="destructive" onPress={confirmDelete} disabled={waitingForRoster} />
       {waitingForRoster ? <Text style={[styles.hint, { color: theme.colors.mutedForeground }]}>Waiting for the agent list.</Text> : null}

@@ -27,7 +27,7 @@ export {
   type PinnedItem,
   type Selection
 } from './edit-mode'
-export { EDIT_SECTION_ACTION, canSaveSectionName, deleteSectionPrompt, type DeletePrompt } from './section-page'
+export { EDIT_SECTION_ACTION, canSaveSectionName, deleteSectionPrompt, shownSectionName, type DeletePrompt } from './section-page'
 export {
   EDIT_ITEM_HEIGHT,
   NO_SECTION_DRAG,
@@ -60,6 +60,5 @@ export { provisionAgent, provisionDeps, provisionOnce, type OpenBotChat, type Pr
 export { AVATAR_MAX_BYTES, botsMeta, instructionsSummary, modelSummary, type SaveOutcome, type SaveSection } from './editor'
 export { EditBotProvider, useEditBotContext } from './editor-context'
 export { rosterKey, searchBots, useAvatar, useDescribe, useModelOptions, useRoster, useSetHidden, type Bot } from './roster'
-export { createOrganizer, type Organizer, type OrganizeAction } from './organizer'
 export { useHome, useOrganizer } from './use-home'
 export { useOrgSync } from './use-org-sync'

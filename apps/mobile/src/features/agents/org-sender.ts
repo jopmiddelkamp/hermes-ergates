@@ -49,12 +49,12 @@ export interface FlushResult {
 }
 
 /** The `hermes-bots` fields one change writes. */
-export function metaPatch(change: OrgChange): HermesBotsMeta {
+function metaPatch(change: OrgChange): HermesBotsMeta {
   return change.field === 'pinned' ? { pinned: change.pinned } : { sectionId: change.sectionId, sectionName: change.sectionName }
 }
 
 /** One write: the agent's `hermes-bots` namespace with only this change's fields replaced, and its revision. */
-export function configureFor(summary: ProfileSummary, change: OrgChange): ConfigureParams {
+function configureFor(summary: ProfileSummary, change: OrgChange): ConfigureParams {
   return {
     name: summary.name,
     ui_meta: { 'hermes-bots': { ...botsMeta(summary), ...metaPatch(change) } },
@@ -165,13 +165,22 @@ export async function flushOrgOutbox(deps: OrgSenderDeps): Promise<FlushResult> 
 }
 
 /**
- * Whether Home may flush now: something is queued, and the roster has been
- * read since the app started (`rosterReadAt` is 0 before). Before that read
- * the roster knows no agent, and every queued change would look like one for
- * an agent Hermes no longer has, and be dropped.
+ * Whether Home may flush now: something is queued, the roster has been read
+ * since the app started (`rosterReadAt` is 0 before), and that read is newer
+ * than the last stall (`stalledAt`, 0 when the flush has never stalled).
+ *
+ * Before the first read the roster knows no agent, and every queued change
+ * would look like one for an agent Hermes no longer has, and be dropped.
+ *
+ * After a flush stalls (the connection was lost mid-flush, `FlushResult.waiting`),
+ * the requeued item makes `queued` true again at once; without the
+ * `rosterReadAt > stalledAt` check that would flush again immediately, and
+ * with the connection still down, loop without ever giving the app a turn.
+ * Holding the flush until a newer roster read comes in matches docs/05: a
+ * stalled change is sent again only after the next successful roster read.
  */
-export function readyToFlush(queued: boolean, rosterReadAt: number): boolean {
-  return queued && rosterReadAt > 0
+export function readyToFlush(queued: boolean, rosterReadAt: number, stalledAt: number): boolean {
+  return queued && rosterReadAt > 0 && rosterReadAt > stalledAt
 }
 
 /**

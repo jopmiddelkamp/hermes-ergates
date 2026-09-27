@@ -15,10 +15,13 @@
  * Every row and header pads its own content by the page padding instead
  * (`page-padding.ts`). `layoutEditing` (`useLayoutEditing` in `motion.ts`)
  * carries the one-time static layout switch down to every row and header,
- * so it is computed once here, not per item; `renderItem` and the drag
- * callbacks passed to `Sortable.Grid` are memoized so a Home render that
- * changes none of their real inputs does not hand the grid new function
- * identities to react to.
+ * so it is computed once here, not per item. `renderItem` and the drag
+ * callbacks passed to `Sortable.Grid` are wrapped in `useCallback`, but that
+ * only keeps them stable while Home's own handlers are: Home passes new
+ * `onOpen`, `onMenu`, `onToggle`, `onToggleCollapsed` and `onEditSection`
+ * closures whenever its state changes, so `renderItem` is a new function on
+ * most Home renders too. Do not chase full stability by wrapping those five
+ * handlers in `useCallback` inside `index.tsx`.
  */
 
 import { useCallback, useEffect, useMemo, useReducer, type ReactNode } from 'react'
@@ -161,11 +164,14 @@ export function HomeList(props: HomeListProps) {
   }, [data, meta])
   const strategy = useMemo(() => makeGuardedStrategy(meta), [meta])
 
-  // Stable across renders that do not actually change what a row or a
-  // header needs, so `Sortable.Grid` does not treat every Home render as a
-  // reason to redraw every item: `renderItem` and the drag callbacks used to
-  // be new function literals every time, which doubled the work right at
-  // the Edit toggle (the moment `editing` itself already forces a real redraw).
+  // `useCallback` here only helps across a Home render that keeps the same
+  // `onOpen`, `onMenu`, `onToggle`, `onToggleCollapsed` and `onEditSection`
+  // identities; Home passes new ones whenever its own state changes, so
+  // `renderItem` is not stable across most Home renders. Without the
+  // `useCallback` wrapper, `renderItem` and the drag callbacks would also be
+  // new function literals on the renders where the handlers do stay put,
+  // which doubled the work right at the Edit toggle (the moment `editing`
+  // itself already forces a real redraw).
   const onDragStart = useCallback(
     ({ key }: DragStartParams) => {
       lightTap(haptics)

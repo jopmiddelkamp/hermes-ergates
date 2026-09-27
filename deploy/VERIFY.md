@@ -619,11 +619,15 @@ same gateway (docs/05 "Bot metadata compatibility", "Organization outbox"):
 2. Desktop to phone: on Desktop, unpin that agent and drag the other one
    back to Unassigned. Pull to refresh Home on the phone: the avatar leaves
    the pinned area and the row goes back to No section.
-3. Offline: turn on Airplane mode on the phone, pin an agent and move
-   another into a section. Home shows both at once. Force-quit the app and
-   open it again: both still show. Turn Airplane mode off and open Home:
+3. Offline, one change: turn on Airplane mode on the phone and pin exactly
+   one agent. The app stays responsive: scroll Home and open Settings. Turn
+   Airplane mode off; within a few seconds the pin reaches Hermes and Desktop
+   shows it, with no alert.
+4. Offline, two changes: turn on Airplane mode on the phone, pin an agent and
+   move another into a section. Home shows both at once. Force-quit the app
+   and open it again: both still show. Turn Airplane mode off and open Home:
    within a few seconds Desktop shows both changes, and no alert appears.
-4. Conflict retry: pull to refresh Home so its roster is current, then
+5. Conflict retry: pull to refresh Home so its roster is current, then
    within the same few seconds change that agent's pin on Desktop and move
    the agent into a section on the phone. The phone's write still carries
    the revision from the read a moment before Desktop's change, so Hermes
@@ -631,10 +635,10 @@ same gateway (docs/05 "Bot metadata compatibility", "Organization outbox"):
    Expected: both changes stick -- the move reaches Desktop and Desktop's
    pin is still there (the retry's re-read already had it, and the phone's
    rewrite kept it).
-5. Rename and delete: rename a section on the phone; on a Desktop that reads
+6. Rename and delete: rename a section on the phone; on a Desktop that reads
    `sectionName` its members show under the new name. Delete the section on
    the phone: Desktop shows its members under Unassigned.
-6. Concierge on a new install: install the app fresh against a gateway
+7. Concierge on a new install: install the app fresh against a gateway
    whose concierge has no pinned value in Hermes: it shows pinned on the
    phone and on Desktop. Unpin it on Desktop, reinstall the app: it stays
    unpinned.
