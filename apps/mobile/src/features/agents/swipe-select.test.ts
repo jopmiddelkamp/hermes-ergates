@@ -13,9 +13,11 @@ import {
   lineAt,
   lineTop,
   pinAt,
+  pinCells,
   swipeLines,
   swipeMode,
   swipeSelection,
+  type PinAreaLayout,
   type PinCell
 } from './swipe-select'
 
@@ -66,11 +68,20 @@ const sorted = (selection: Selection) => [...selection].sort()
  * Hermes, Noor wrapped on the pinned area's first line (96 pt columns, 24 pt
  * gap, so Noor starts at x 120); Mia alone on the second line, 24 pt below.
  */
-const pinCells: PinCell[] = [
+const pinFixtureCells: PinCell[] = [
   { key: 'pinned:hermes', x: 0, y: 0, width: 96, height: 116 },
   { key: 'pinned:noor', x: 120, y: 0, width: 96, height: 116 },
   { key: 'pinned:mia', x: 0, y: 140, width: 96, height: 116 }
 ]
+
+/**
+ * The pinned area's own layout at a 402 pt wide phone with a 20 pt gutter:
+ * `available = 402 − 2·20 = 362`, and as many 96 pt columns as fit 362 pt
+ * with a 24 pt gap between them is 3 (`3·96 + 2·24 = 336 ≤ 362`; a 4th would
+ * take `4·96 + 3·24 = 456`, past it), so up to 3 pins share a line and a 4th
+ * wraps to a second one, `110 + 24` pt below the first.
+ */
+const pinAreaLayout: PinAreaLayout = { width: 402, gutter: 20, cellWidth: 96, cellHeight: 110, gap: 24, paddingTop: 20 }
 
 describe('the lines the swipe measures', () => {
   it('lists every row and section header with the fixed height the rows list draws it at, and no pin', () => {
@@ -176,17 +187,67 @@ describe('swipeSelection', () => {
 
 describe('pinAt, the pin under the finger', () => {
   it('finds the pin whose cell contains the point', () => {
-    expect(pinAt(pinCells, 48, 58)).toBe('pinned:hermes')
-    expect(pinAt(pinCells, 140, 58)).toBe('pinned:noor')
+    expect(pinAt(pinFixtureCells, 48, 58)).toBe('pinned:hermes')
+    expect(pinAt(pinFixtureCells, 140, 58)).toBe('pinned:noor')
   })
 
   it('finds nothing in the gap between cells', () => {
-    expect(pinAt(pinCells, 108, 58)).toBeNull()
-    expect(pinAt(pinCells, 48, 128)).toBeNull()
+    expect(pinAt(pinFixtureCells, 108, 58)).toBeNull()
+    expect(pinAt(pinFixtureCells, 48, 128)).toBeNull()
   })
 
   it('finds the pin on the second wrapped line', () => {
-    expect(pinAt(pinCells, 48, 200)).toBe('pinned:mia')
+    expect(pinAt(pinFixtureCells, 48, 200)).toBe('pinned:mia')
+  })
+})
+
+describe('pinCells, laid out the way the pinned area’s Sortable.Flex does', () => {
+  it('centers 1 pin on its own line', () => {
+    expect(pinCells(['a'], pinAreaLayout)).toEqual([{ key: 'a', x: 153, y: 20, width: 96, height: 110 }])
+  })
+
+  it('centers 2 pins on one line', () => {
+    expect(pinCells(['a', 'b'], pinAreaLayout)).toEqual([
+      { key: 'a', x: 93, y: 20, width: 96, height: 110 },
+      { key: 'b', x: 213, y: 20, width: 96, height: 110 }
+    ])
+  })
+
+  it('centers 3 pins on one line, the most that fit', () => {
+    expect(pinCells(['a', 'b', 'c'], pinAreaLayout)).toEqual([
+      { key: 'a', x: 33, y: 20, width: 96, height: 110 },
+      { key: 'b', x: 153, y: 20, width: 96, height: 110 },
+      { key: 'c', x: 273, y: 20, width: 96, height: 110 }
+    ])
+  })
+
+  it('wraps a 4th pin to its own centered second line', () => {
+    expect(pinCells(['a', 'b', 'c', 'd'], pinAreaLayout)).toEqual([
+      { key: 'a', x: 33, y: 20, width: 96, height: 110 },
+      { key: 'b', x: 153, y: 20, width: 96, height: 110 },
+      { key: 'c', x: 273, y: 20, width: 96, height: 110 },
+      { key: 'd', x: 153, y: 154, width: 96, height: 110 }
+    ])
+  })
+
+  it('has no cells for no pins', () => {
+    expect(pinCells([], pinAreaLayout)).toEqual([])
+  })
+
+  it('finds the wrapped 4th pin via pinAt, on its own second line', () => {
+    const cells = pinCells(['a', 'b', 'c', 'd'], pinAreaLayout)
+    expect(pinAt(cells, 160, 160)).toBe('d')
+    expect(pinAt(cells, 160, 140)).toBeNull()
+  })
+})
+
+describe('swipeMode over the pinned avatars', () => {
+  it('selects when the tap starts on a pin that is not selected', () => {
+    expect(swipeMode(pins, set(), 'pinned:hermes')).toBe('select')
+  })
+
+  it('deselects when the tap starts on a pin that is already selected', () => {
+    expect(swipeMode(pins, set('hermes'), 'pinned:hermes')).toBe('deselect')
   })
 })
 
@@ -207,6 +268,11 @@ describe('swipeSelection over the pinned avatars', () => {
   it('leaves the rows selection in base untouched', () => {
     const base = set('otto')
     expect(sorted(swipeSelection(pins, base, 'pinned:hermes', 'pinned:mia', 'select'))).toEqual(['hermes', 'mia', 'noor', 'otto'])
+  })
+
+  it('toggles a single pin on a tap: start and finish on the same key', () => {
+    expect(sorted(swipeSelection(pins, set(), 'pinned:hermes', 'pinned:hermes', 'select'))).toEqual(['hermes'])
+    expect(sorted(swipeSelection(pins, set('hermes'), 'pinned:hermes', 'pinned:hermes', 'deselect'))).toEqual([])
   })
 })
 

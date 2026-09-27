@@ -13,12 +13,19 @@
  * The selection badge also carries swipe to select (the agents feature's
  * `swipe-select.ts`, `use-swipe-select.ts`'s `usePinSwipeSelect`): a touch
  * that starts there and moves selects or deselects a range of pins, the same
- * iOS Mail rule the rows list uses, in pin order across wrapped lines. Each
- * pin's own `onLayout` feeds its measured cell to the hit test, so it stays
- * right after a pin drag reorders them; `BADGE_OFFSET` is the badge's own
- * fixed position inside that cell, used to seed the swipe at the touch's
- * real spot. This is also why the badge needs react-native-gesture-handler
- * (`GestureDetector`): see the dependency-cruiser rule this file is named in.
+ * iOS Mail rule the rows list uses, in pin order across wrapped lines. The
+ * pins are not measured one by one for this — each pin sits inside a
+ * react-native-sortables item wrapper, so its own `onLayout` would report a
+ * position relative to that wrapper, not to the pinned area. Instead
+ * `pinCells` computes every pin's cell the way this `Sortable.Flex` itself
+ * lays them out (`PIN_WIDTH`, `PIN_GAP`, `PIN_CELL_HEIGHT`, `PIN_PADDING_TOP`
+ * and `gutter`, below), from the pins' own key order, so it stays right
+ * after a pin drag reorders them; the one thing it cannot know ahead of
+ * time, the pinned area's own width, comes from one `onLayout` on this
+ * file's outer `View`. `BADGE_OFFSET` is the badge's own fixed position
+ * inside a cell, used to seed the swipe at the touch's real spot. This is
+ * also why the badge needs react-native-gesture-handler (`GestureDetector`):
+ * see the dependency-cruiser rule this file is named in.
  */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react'
@@ -41,6 +48,17 @@ import { usePinSwipeSelect, type PinSwipeSelect } from './use-swipe-select'
 const AVATAR_SIZE = 84
 const PIN_WIDTH = 96
 const PIN_GAP = 24
+/** The `Sortable.Flex`'s own `paddingVertical`, above the first line of pins. */
+const PIN_PADDING_TOP = 20
+/**
+ * A pin's own column height: the avatar (`AVATAR_SIZE`), the gap under it
+ * (`styles.pin`'s `gap`, 8), and one line of its name at the default text
+ * size (18) — 110 pt, a real pin's measured height. `pinCells` uses this
+ * fixed height rather than measuring each pin, so it goes stale if the
+ * label ever grows past one line at a larger accessibility text size;
+ * `styles.label`'s `numberOfLines={1}` keeps it to one line regardless.
+ */
+const PIN_CELL_HEIGHT = AVATAR_SIZE + 8 + 18
 const BADGE_SIZE = 32
 /** The move handle's touch area around its badge (44 pt, the minimum touch target). */
 const MOVE_TOUCH = 44
@@ -104,7 +122,10 @@ export function PinnedArea({ pins, items, editing, progress, selection, gateway,
   // the same reason `HomeList` memoizes its own `Sortable.Grid` props. Kept
   // above the empty-pins return below: every hook here must run every render.
   const onDragStart = useCallback(() => lightTap(haptics), [haptics])
-  const swipe = usePinSwipeSelect(pins, selection, onSelectionChange, BADGE_OFFSET)
+  // The pinned area's own fixed geometry, for `pinCells`: stable unless `gutter` changes, so
+  // `usePinSwipeSelect`'s effect that recomputes the cells does not fire on every render.
+  const pinLayout = useMemo(() => ({ gutter, cellWidth: PIN_WIDTH, cellHeight: PIN_CELL_HEIGHT, gap: PIN_GAP, paddingTop: PIN_PADDING_TOP }), [gutter])
+  const swipe = usePinSwipeSelect(pins, selection, onSelectionChange, BADGE_OFFSET, pinLayout)
 
   const onDragEnd = useCallback(
     ({ key, indexToKey }: SortableFlexDragEndParams) => {
@@ -133,40 +154,45 @@ export function PinnedArea({ pins, items, editing, progress, selection, gateway,
   }
 
   return (
-    <Sortable.Flex
-      flexDirection="row"
-      flexWrap="wrap"
-      justifyContent="center"
-      gap={PIN_GAP}
-      paddingHorizontal={gutter}
-      paddingVertical={20}
-      customHandle
-      sortEnabled={editing}
-      scrollableRef={scrollRef}
-      dragActivationDelay={0}
-      activeItemScale={1.05}
-      inactiveItemOpacity={1}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-    >
-      {pins.map(item => (
-        <PinnedAvatar
-          key={item.key}
-          item={item}
-          editing={editing}
-          progress={progress}
-          selected={selection.has(item.bot.profile)}
-          unread={unread(item.bot.profile)}
-          actions={editing ? moveActions(items, item.key) : []}
-          onAction={act(item)}
-          gateway={gateway}
-          connectionId={connectionId}
-          onPress={() => onPress(item.bot)}
-          onLongPress={anchor => onLongPress(item.bot, anchor)}
-          swipe={swipe}
-        />
-      ))}
-    </Sortable.Flex>
+    // `Sortable.Flex` does not forward its own `onLayout`, and `pinCells` needs the pinned
+    // area's own width, so this outer `View` measures it instead; a plain `View` here stretches
+    // to the same width `Sortable.Flex` would have, so it changes nothing else about the layout.
+    <View onLayout={swipe.onLayout}>
+      <Sortable.Flex
+        flexDirection="row"
+        flexWrap="wrap"
+        justifyContent="center"
+        gap={PIN_GAP}
+        paddingHorizontal={gutter}
+        paddingVertical={PIN_PADDING_TOP}
+        customHandle
+        sortEnabled={editing}
+        scrollableRef={scrollRef}
+        dragActivationDelay={0}
+        activeItemScale={1.05}
+        inactiveItemOpacity={1}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+      >
+        {pins.map(item => (
+          <PinnedAvatar
+            key={item.key}
+            item={item}
+            editing={editing}
+            progress={progress}
+            selected={selection.has(item.bot.profile)}
+            unread={unread(item.bot.profile)}
+            actions={editing ? moveActions(items, item.key) : []}
+            onAction={act(item)}
+            gateway={gateway}
+            connectionId={connectionId}
+            onPress={() => onPress(item.bot)}
+            onLongPress={anchor => onLongPress(item.bot, anchor)}
+            swipe={swipe}
+          />
+        ))}
+      </Sortable.Flex>
+    </View>
   )
 }
 
@@ -219,7 +245,7 @@ function PinnedAvatar({ item, editing, progress, selected, unread, actions, onAc
     </Pressable>
   )
   return (
-    <View ref={ref} collapsable={false} onLayout={event => swipe.onCellLayout(item.key, event)}>
+    <View ref={ref} collapsable={false}>
       {/* A `fixed-order` handle keeps the pinned concierge first: it cannot be picked up, and no pin drops in front of it. */}
       {item.locked ? <Sortable.Handle mode="fixed-order">{face}</Sortable.Handle> : face}
       {/* A touch that starts here belongs to swipe to select; a tap still toggles, the same way a tap on the avatar does. */}

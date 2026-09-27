@@ -13,8 +13,14 @@
  * take `EditItem[]`, so the pinned area's gesture (`src/ui/home-list/
  * use-swipe-select.ts`) calls them with the pins in pin order instead of the
  * rows list, and `pinAt` below finds the pin under the finger from the pins'
- * measured layout, in place of `lineAt`. A swipe that starts on a pin stays
- * within the pins; it never continues into the rows list, or the other way.
+ * cells, in place of `lineAt`. The cells come from `pinCells`, not from
+ * measuring each pin: a pin sits inside a react-native-sortables item
+ * wrapper, so its own `onLayout` reports a position relative to that
+ * wrapper, not to the pinned area, and several pins measuring in the same
+ * frame race the shared value that would hold their cells. `pinCells`
+ * computes every cell instead, the way `swipeLines` computes the rows list's
+ * lines from fixed heights. A swipe that starts on a pin stays within the
+ * pins; it never continues into the rows list, or the other way.
  */
 
 import { EDIT_ITEM_HEIGHT } from './drop-rules'
@@ -81,6 +87,45 @@ export interface PinCell {
   y: number
   width: number
   height: number
+}
+
+/** What `pinCells` needs to lay the pins out the way the pinned area's `Sortable.Flex` does. */
+export interface PinAreaLayout {
+  /** The pinned area's own outer width (its container's `onLayout`, padding included). */
+  width: number
+  /** The `Sortable.Flex`'s `paddingHorizontal`. */
+  gutter: number
+  /** A pin's own column width (`PIN_WIDTH` in `PinnedArea.tsx`). */
+  cellWidth: number
+  /** A pin's own column height (`PIN_CELL_HEIGHT` in `PinnedArea.tsx`). */
+  cellHeight: number
+  /** The `Sortable.Flex`'s `gap`, between columns on a line and, since `PinnedArea` sets no `rowGap`, between lines too. */
+  gap: number
+  /** The `Sortable.Flex`'s `paddingVertical`, above the first line. */
+  paddingTop: number
+}
+
+/**
+ * The pins' cells, laid out the way `flexDirection="row"`, `flexWrap="wrap"`
+ * and `justifyContent="center"` place them in `PinnedArea`'s `Sortable.Flex`:
+ * as many `cellWidth` columns as fit `width − 2·gutter` with `gap` between
+ * them go on a line, each line centered on its own; a key past that count
+ * wraps to the next line, `cellHeight + gap` further down. Pass the pins in
+ * pin order; a pin drag reorders them, so call this again with the new order.
+ */
+export function pinCells(keys: readonly string[], layout: PinAreaLayout): PinCell[] {
+  const { width, gutter, cellWidth, cellHeight, gap, paddingTop } = layout
+  const available = width - 2 * gutter
+  const perLine = Math.max(1, Math.floor((available + gap) / (cellWidth + gap)))
+  const cells: PinCell[] = []
+  for (let start = 0; start < keys.length; start += perLine) {
+    const line = keys.slice(start, start + perLine)
+    const lineWidth = line.length * cellWidth + (line.length - 1) * gap
+    const x = gutter + (available - lineWidth) / 2
+    const y = paddingTop + (start / perLine) * (cellHeight + gap)
+    line.forEach((key, i) => cells.push({ key, x: x + i * (cellWidth + gap), y, width: cellWidth, height: cellHeight }))
+  }
+  return cells
 }
 
 /**

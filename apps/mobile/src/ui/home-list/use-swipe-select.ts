@@ -14,7 +14,7 @@
  * that top sits in the scroll content.
  */
 
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { LayoutChangeEvent } from 'react-native'
 import { Gesture, type PanGesture } from 'react-native-gesture-handler'
 import Animated, { scrollTo, useFrameCallback, useScrollOffset, useSharedValue, type AnimatedRef, type FrameInfo } from 'react-native-reanimated'
@@ -26,10 +26,12 @@ import {
   lineAt,
   lineTop,
   pinAt,
+  pinCells,
   swipeLines,
   swipeMode,
   swipeSelection,
   type ListItem,
+  type PinAreaLayout,
   type PinCell,
   type PinnedItem,
   type Selection,
@@ -221,8 +223,8 @@ function cellFor(cells: readonly PinCell[], key: string): PinCell | null {
 export interface PinSwipeSelect {
   /** Builds the swipe gesture for the pin's badge with this key. */
   gestureFor(key: string): PanGesture
-  /** The pin's own 96 pt column, measured or remeasured after a pin drag reorders the pins: `PinnedArea`'s `onLayout` on the pin. */
-  onCellLayout(key: string, event: LayoutChangeEvent): void
+  /** The pinned area's own container: its width is all the pins' computed cells need beyond their fixed geometry (`onLayout` on `PinnedArea`'s outer `View`). */
+  onLayout(event: LayoutChangeEvent): void
   /** The pin with this key left the pinned area; a swipe that started on it ends. */
   forget(key: string): void
 }
@@ -237,17 +239,32 @@ interface PinSwipeStart {
 /**
  * Swipe to select over the pinned avatars: the same iOS Mail rule as
  * `useSwipeSelect` above, starting on a pin's selection badge instead of a
- * row's circle, and hit-tested against the pins' own measured cells
- * (`pinAt`) instead of the rows list's fixed line heights. No auto-scroll:
- * the pinned area sits at the top of the list, so it never needs the list to
- * scroll itself. `badgeOffset` is the selection badge's fixed position
- * inside its pin's cell (top left; `PinnedArea` owns the geometry it comes
- * from), used to turn a touch on the small badge into a point in the pinned
- * area: `event.x`/`event.y` are measured from the badge's own top left, the
- * same way a row's `event.y` is measured from its circle column's top.
+ * row's circle, and hit-tested against the pins' own cells (`pinAt`) instead
+ * of the rows list's fixed line heights. The cells are not measured per pin
+ * — a pin sits inside a react-native-sortables item wrapper, so its own
+ * `onLayout` would report a position relative to that wrapper, not to the
+ * pinned area, and several pins measuring in the same frame would race the
+ * shared value that held their cells. `pinCells` computes them instead, from
+ * the pins' own key order and `geometry`, the pinned area's fixed layout
+ * (`PinnedArea` owns it); `onLayout` below measures only the one thing
+ * `pinCells` cannot know ahead of time, the pinned area's own width. No
+ * auto-scroll: the pinned area sits at the top of the list, so it never
+ * needs the list to scroll itself. `badgeOffset` is the selection badge's
+ * fixed position inside its pin's cell (top left; `PinnedArea` owns the
+ * geometry it comes from), used to turn a touch on the small badge into a
+ * point in the pinned area: `event.x`/`event.y` are measured from the
+ * badge's own top left, the same way a row's `event.y` is measured from its
+ * circle column's top.
  */
-export function usePinSwipeSelect(pins: PinnedItem[], selection: Selection, onSelectionChange: (selection: Selection) => void, badgeOffset: { x: number; y: number }): PinSwipeSelect {
+export function usePinSwipeSelect(
+  pins: PinnedItem[],
+  selection: Selection,
+  onSelectionChange: (selection: Selection) => void,
+  badgeOffset: { x: number; y: number },
+  geometry: Omit<PinAreaLayout, 'width'>
+): PinSwipeSelect {
   const cells = useSharedValue<PinCell[]>([])
+  const [width, setWidth] = useState(0)
   const active = useSharedValue(false)
   const currentKey = useSharedValue<string | null>(null)
 
@@ -255,6 +272,16 @@ export function usePinSwipeSelect(pins: PinnedItem[], selection: Selection, onSe
   const latest = useRef({ pins, selection, onSelectionChange })
   latest.current = { pins, selection, onSelectionChange }
   const swipe = useRef<PinSwipeStart | null>(null)
+
+  // A stable `keys` array, so the effect below only recomputes the cells
+  // when the pin order actually changes (a pin drag reorders the pins), or
+  // the pinned area's own width or geometry does, not on every render that
+  // leaves the order the same. '\u0000' cannot appear in a pin key.
+  const keysSignature = pins.map(pin => pin.key).join('\u0000')
+  const keys = useMemo(() => (keysSignature === '' ? [] : keysSignature.split('\u0000')), [keysSignature])
+  useEffect(() => {
+    cells.set(pinCells(keys, { ...geometry, width }))
+  }, [cells, keys, width, geometry])
 
   const showPin = useCallback((key: string) => {
     const start = swipe.current
@@ -323,6 +350,15 @@ export function usePinSwipeSelect(pins: PinnedItem[], selection: Selection, onSe
           if (!cell) {
             return
           }
+          // `cell.x`/`cell.y` are the pin's own cell, top left, in the pinned
+          // area's own coordinates (what `pinCells` computes); `badgeOffset`
+          // is the badge's fixed top left inside that cell; `event.x`/`.y`
+          // are measured from the badge's own top left. A touch near the
+          // badge's center (event.x ≈ event.y ≈ BADGE_SIZE / 2, 16 pt) lands
+          // at roughly cell.x + 18.3 and cell.y + 12.3 (BADGE_OFFSET in
+          // PinnedArea.tsx is {x: 2.3, y: -3.7} there) — inside the cell's
+          // own [0, PIN_WIDTH) × [0, PIN_CELL_HEIGHT), so `pinAt` below finds
+          // this same pin.
           track(cell.x + badgeOffset.x + event.x, cell.y + badgeOffset.y + event.y)
         })
         .onFinalize(() => {
@@ -337,13 +373,9 @@ export function usePinSwipeSelect(pins: PinnedItem[], selection: Selection, onSe
     [cells, currentKey, active, begin, track, finish, badgeOffset]
   )
 
-  const onCellLayout = useCallback(
-    (key: string, event: LayoutChangeEvent) => {
-      const { x, y, width, height } = event.nativeEvent.layout
-      cells.set([...cells.get().filter(cell => cell.key !== key), { key, x, y, width, height }])
-    },
-    [cells]
-  )
+  const onLayout = useCallback((event: LayoutChangeEvent) => {
+    setWidth(event.nativeEvent.layout.width)
+  }, [])
 
-  return useMemo<PinSwipeSelect>(() => ({ gestureFor, onCellLayout, forget }), [gestureFor, onCellLayout, forget])
+  return useMemo<PinSwipeSelect>(() => ({ gestureFor, onLayout, forget }), [gestureFor, onLayout, forget])
 }
