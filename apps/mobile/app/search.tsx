@@ -11,6 +11,7 @@ import { searchBots, useRoster } from '@/features/agents'
 import { usePrimaryConnection } from '@/features/settings'
 import { useGateway } from '@/gateway/registry'
 import { useDeviceStore } from '@/state/device-store'
+import { softFill } from '@/theme/fill'
 import { useTheme } from '@/theme/provider'
 import { BotRow } from '@/ui/BotRow'
 import { Icon } from '@/ui/icons'
@@ -45,7 +46,7 @@ function SearchBody({ connectionId, query, setQuery, onClose }: { connectionId: 
     <Screen>
       <View style={styles.bar}>
         <IconButton name="x" accessibilityLabel="Close search" onPress={onClose} />
-        <View style={[styles.field, { backgroundColor: theme.colors.input, borderColor: theme.colors.border }]}>
+        <View style={[styles.field, { backgroundColor: softFill(theme.colors, theme.colors.background) }]}>
           <Icon name="search" size={18} color={theme.colors.mutedForeground} />
           <TextInput
             autoFocus
@@ -71,8 +72,10 @@ function SearchBody({ connectionId, query, setQuery, onClose }: { connectionId: 
 }
 
 const styles = StyleSheet.create({
-  bar: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  field: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, borderRadius: 24, borderWidth: 1, paddingHorizontal: 16 },
+  // `paddingTop` matches the header row other sheets draw (`Sheet`'s own
+  // header), so the field does not sit flush against the top safe-area inset.
+  bar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 10, marginBottom: 12 },
+  field: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, borderRadius: 24, paddingHorizontal: 16 },
   input: { flex: 1, fontSize: 17, paddingVertical: 10 },
   empty: { fontSize: 15, lineHeight: 22, paddingVertical: 24, textAlign: 'center' }
 })

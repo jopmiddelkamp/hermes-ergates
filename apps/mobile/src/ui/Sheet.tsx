@@ -38,7 +38,14 @@ export function Sheet({ title, onClose, headerLeft, headerRight, centerTitle, ch
     // sheet (which already sits below the status bar) gets none, while a sheet
     // that fills the screen gets the status-bar inset. The root provider would
     // report the window's inset in both cases and leave an empty band on top.
-    <SafeAreaProvider style={styles.container}>
+    //
+    // This outer view also carries the sheet's own `popover` background, not
+    // just the rounded `SafeAreaView` below it: the rounded corners are clipped
+    // above the safe-area top inset, and a host screen that does not paint
+    // that strip itself (a nested stack with no `contentStyle`, see
+    // `app/agent/[profile]/_layout.tsx`) otherwise leaves the native default
+    // showing through as a white sliver at the rounded edge in dark mode.
+    <SafeAreaProvider style={[styles.container, { backgroundColor: theme.colors.popover }]}>
       <SafeAreaView
         edges={['top']}
         style={[
