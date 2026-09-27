@@ -25,16 +25,43 @@ function sameList(a: string[], b: string[]): boolean {
 }
 
 /**
+ * The name a known section shows: its local name while a member (or a queued
+ * section change) still carries that name; otherwise the name most of its
+ * members carry, ties going to the first such member in roster order;
+ * otherwise the local name (no member carries any name).
+ */
+function followedName(localName: string, memberNames: string[] | undefined): string {
+  if (!memberNames || memberNames.length === 0 || memberNames.includes(localName)) {
+    return localName
+  }
+  const counts = new Map<string, number>()
+  let best = localName
+  let bestCount = 0
+  for (const name of memberNames) {
+    const count = (counts.get(name) ?? 0) + 1
+    counts.set(name, count)
+    if (count > bestCount) {
+      best = name
+      bestCount = count
+    }
+  }
+  return best
+}
+
+/**
  * The organization as Home shows it: pinned and section membership from
  * Hermes (a queued change wins), the pins in this phone's order with new
  * ones at the end (latest activity first), and this phone's sections with
- * every section only Hermes knows added at the end.
+ * every section only Hermes knows added at the end. A known section's shown
+ * name follows Desktop's members (`followedName`); a section only Hermes
+ * knows keeps today's rule (the first name an agent carries, or "Untitled
+ * section").
  */
 export function sharedView(org: Organization, rows: BotRow[]): Organization {
   const pending = pendingValues(org.outbox)
   const pinned = new Set<string>()
   const membership: Record<string, string | null> = {}
-  const names = new Map<string, string>()
+  const namesBySection = new Map<string, string[]>()
   for (const row of rows) {
     const queued = pending[row.profile]
     if (queued?.pinned ?? row.pinned ?? false) {
@@ -43,8 +70,10 @@ export function sharedView(org: Organization, rows: BotRow[]): Organization {
     const section = queued?.section ?? { sectionId: row.sectionId ?? null, sectionName: row.sectionName ?? null }
     if (section.sectionId !== null) {
       membership[row.profile] = section.sectionId
-      if (section.sectionName && !names.has(section.sectionId)) {
-        names.set(section.sectionId, section.sectionName)
+      if (section.sectionName) {
+        const list = namesBySection.get(section.sectionId) ?? []
+        list.push(section.sectionName)
+        namesBySection.set(section.sectionId, list)
       }
     }
   }
@@ -55,10 +84,16 @@ export function sharedView(org: Organization, rows: BotRow[]): Organization {
   const added: Section[] = []
   for (const id of new Set(Object.values(membership))) {
     if (id !== null && !known.has(id)) {
-      added.push({ id, name: names.get(id) ?? UNTITLED_SECTION, collapsed: false, order: order++ })
+      added.push({ id, name: namesBySection.get(id)?.[0] ?? UNTITLED_SECTION, collapsed: false, order: order++ })
     }
   }
-  return { ...org, pins, membership, sections: added.length > 0 ? [...org.sections, ...added] : org.sections }
+  const sections = org.sections.map(s => {
+    const name = followedName(s.name, namesBySection.get(s.id))
+    return name === s.name ? s : { ...s, name }
+  })
+  const renamed = sections.some((s, i) => s !== org.sections[i])
+  const base = renamed ? sections : org.sections
+  return { ...org, pins, membership, sections: added.length > 0 ? [...base, ...added] : base }
 }
 
 function sectionName(org: Organization, sectionId: string | null): string | null {
@@ -87,9 +122,15 @@ export function sharedChanges(before: Organization, after: Organization, profile
  * Runs one organizing action on the shared view. This phone keeps the pin
  * order, the row order and the section list; the pinned flags and section
  * membership that changed go to the outbox. Returns `org` when the action
- * changes nothing.
+ * changes nothing, or when the roster has no rows yet: with nothing to merge
+ * in, the shared view would show no pins and no Hermes sections, and running
+ * an action on it would wipe the pin order and drop a rename or delete for
+ * Hermes.
  */
 export function organize(org: Organization, rows: BotRow[], action: (view: Organization) => Organization, newId: () => string): Organization {
+  if (rows.length === 0) {
+    return org
+  }
   const view = sharedView(org, rows)
   const next = action(view)
   if (next === view) {

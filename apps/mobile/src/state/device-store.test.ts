@@ -79,6 +79,11 @@ describe('organization actions', () => {
     org = s().organization.c1
     expect(org.sections[0].collapsed).toBe(true)
     expect(org.manualUnread.kevin).toBe(true)
+
+    s().markRead('c1', 'kevin', 900)
+    org = s().organization.c1
+    expect(org.manualUnread.kevin).toBeUndefined()
+    expect(org.lastOpenedAt.kevin).toBe(900)
     expect(s().organization.c2).toBeUndefined()
   })
 
@@ -418,5 +423,74 @@ describe('deleting a section', () => {
     expect(s().organization.c1.rowOrder).toEqual(['linh', 'mia', 'kevin'])
     expect(s().organization.c1.outbox).toMatchObject([{ profile: 'kevin', field: 'section', sectionId: null, sectionName: null }])
     expect(s().organization.c2).toBeUndefined()
+  })
+})
+
+describe('the organization outbox', () => {
+  const pinLinh = { id: 'o1', profile: 'linh', field: 'pinned', pinned: true, status: 'queued' } as const
+
+  it('changes one connection outbox through one action, and leaves the state alone when nothing changes', () => {
+    const store = newStore()
+    store.getState().updateOrgOutbox('c1', outbox => [...outbox, pinLinh])
+    expect(store.getState().organization.c1.outbox).toEqual([pinLinh])
+    expect(store.getState().organization.c2).toBeUndefined()
+    const before = store.getState()
+    store.getState().updateOrgOutbox('c1', outbox => outbox)
+    store.getState().updateOrgOutbox('c2', outbox => outbox)
+    expect(store.getState()).toBe(before)
+  })
+
+  it('keeps queued changes across a restart, and sends an unanswered write again', async () => {
+    const storage = createMemoryStorageJson<PersistedDeviceState>()
+    const secrets = new MemorySecretStore()
+    const first = createDeviceStore(storage, secrets, { newId: counter() })
+    await waitForHydration(first)
+
+    first.getState().organize('c1', roster, view => orgActions.pin(view, 'mia'))
+    first.getState().updateOrgOutbox('c1', outbox => outbox.map(item => ({ ...item, status: 'sending' })))
+    first.getState().updateOrgOutbox('c1', outbox => [...outbox, { id: 'o2', profile: 'kevin', field: 'section', sectionId: 'prive', sectionName: 'Prive', status: 'sent', revision: 4 }])
+    first.getState().syncWithHermes('c2', roster)
+
+    const second = createDeviceStore(storage, secrets)
+    await waitForHydration(second)
+    expect(second.getState().organization.c1.outbox.map(item => [item.id, item.status])).toEqual([
+      ['1', 'queued'],
+      ['o2', 'sent']
+    ])
+    expect(second.getState().organization.c1.firstSync).toBe('install')
+    expect(second.getState().organization.c2.firstSync).toBe('done')
+  })
+
+  it('hydrates an organization from before the outbox with an empty one', async () => {
+    const storage = createMemoryStorageJson<PersistedDeviceState>()
+    const org = { pins: ['kevin'], rowOrder: [], sections: [], membership: {}, manualUnread: {}, lastOpenedAt: {}, exchangeAcks: {} }
+    await storage.setItem('ergates-device-v1', {
+      state: { connections: [conn1], organization: { c1: org, c2: { ...org, outbox: 'o1' } } as never, prefs: defaultPrefs, drafts: {}, outbox: [], provisioning: [] },
+      version: 1
+    })
+    const store = createDeviceStore(storage, new MemorySecretStore())
+    await waitForHydration(store)
+    expect(store.getState().organization.c1.outbox).toEqual([])
+    expect(store.getState().organization.c2.outbox).toEqual([])
+    expect(store.getState().organization.c1.firstSync).toBe('update')
+    expect(store.getState().organization.c2.firstSync).toBe('update')
+  })
+
+  it('clears queued changes with the connection, and a deleted agent takes its changes along', async () => {
+    const store = newStore()
+    const s = () => store.getState()
+    s().updateOrgOutbox('c1', () => [pinLinh])
+    s().syncWithHermes('c2', roster)
+    s().updateOrgOutbox('c2', () => [{ ...pinLinh, profile: 'kevin' }, pinLinh])
+
+    s().forgetProfile('c2', 'linh', 5)
+    expect(s().organization.c2.outbox.map(item => item.profile)).toEqual(['kevin'])
+    expect(s().organization.c2.pins).toEqual([])
+    expect(s().organization.c2.rowOrder).toEqual(['kevin', 'mia'])
+    expect(s().organization.c2.lastOpenedAt.linh).toBe(5)
+
+    await s().removeConnection('c1')
+    expect(s().organization.c1).toBeUndefined()
+    expect(s().organization.c2.outbox).toHaveLength(1)
   })
 })

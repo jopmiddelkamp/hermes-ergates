@@ -8,9 +8,13 @@
  * - A revision conflict (someone, Hermes Desktop for example, wrote in
  *   between): read the agent again, apply the same change once more, write
  *   again. A second conflict refuses the change.
- * - No connection, a timeout, an expired sign-in, or a busy/rate-limited
- *   gateway: the change stays queued and the flush stops; the next roster
- *   read starts it again.
+ * - No connection, a timeout, an expired sign-in, a busy/rate-limited
+ *   gateway, or a 502/503/504 (a reverse proxy while Hermes restarts): the
+ *   change stays queued and the flush stops; the next roster read starts it
+ *   again.
+ * - Hermes no longer has the agent (deleted after the last roster read, or a
+ *   conflict's re-read no longer finds it): the change is dropped, with no
+ *   alert.
  * - Any other error refuses the change. A refused change leaves the outbox,
  *   so the agent shows what Hermes has, and the caller names it in one alert.
  *
@@ -74,14 +78,26 @@ function afterWrite(summary: ProfileSummary, meta: HermesBotsMeta, revision: num
   return { ...summary, ui_meta: { ...summary.ui_meta, 'hermes-bots': meta }, ui_meta_revisions: { ...summary.ui_meta_revisions, 'hermes-bots': revision } }
 }
 
+/** A reverse proxy in front of Hermes answering 502/503/504 while it restarts behaves like a dropped connection. */
+const RESTARTING_STATUSES = new Set([502, 503, 504])
+
 /**
- * No connection, a timeout, an expired sign-in, or a busy/rate-limited
- * gateway keeps the change queued and stops the flush; any other error
- * refuses it.
+ * No connection, a timeout, an expired sign-in, a busy/rate-limited gateway,
+ * or a 502/503/504 keeps the change queued and stops the flush; any other
+ * error refuses it.
  */
 function connectionLost(err: unknown): boolean {
-  const kind = (isGatewayError(err) ? err : mapRpcError(err)).kind
-  return kind === 'network' || kind === 'timeout' || kind === 'unauthorized' || kind === 'rate_limited' || kind === 'busy'
+  const mapped = isGatewayError(err) ? err : mapRpcError(err)
+  if (mapped.kind === 'network' || mapped.kind === 'timeout' || mapped.kind === 'unauthorized' || mapped.kind === 'rate_limited' || mapped.kind === 'busy') {
+    return true
+  }
+  return mapped.status !== undefined && RESTARTING_STATUSES.has(mapped.status)
+}
+
+/** Hermes no longer has this profile: the pin answers `profiles.configure` for a missing one with rpc 4064 (`_resolve_profile`). */
+function missingProfile(err: unknown): boolean {
+  const mapped = isGatewayError(err) ? err : mapRpcError(err)
+  return mapped.kind === 'rpc' && mapped.code === 4064
 }
 
 /**
@@ -132,7 +148,7 @@ export async function flushOrgOutbox(deps: OrgSenderDeps): Promise<FlushResult> 
         deps.outbox.update(outbox => requeue(outbox, id))
         return { sent, refused, waiting: true }
       }
-      outcome = { kind: 'refused' }
+      outcome = missingProfile(err) ? 'gone' : { kind: 'refused' }
     }
     if (outcome === 'gone') {
       deps.outbox.update(outbox => removeItem(outbox, id))

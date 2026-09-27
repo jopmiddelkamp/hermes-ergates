@@ -42,9 +42,13 @@ export default function SectionScreen() {
 }
 
 function SectionEditor({ connection, section, onDone }: { connection: Connection; section: Section; onDone: () => void }) {
+  const theme = useTheme()
   const home = useHome(useGateway(connection), connection.id)
   const organizer = useOrganizer(connection.id, home.rows)
   const [name, setName] = useState(section.name)
+  // Save and Delete run organizing actions, which need the roster to merge
+  // pins and sections against; with none loaded yet they would wipe them.
+  const waitingForRoster = home.rows.length === 0
   // A ref, not state: a second tap landing before the pop transition unmounts
   // this screen would still read stale state and run again, renaming or
   // deleting twice (as in move-to-section.tsx).
@@ -84,9 +88,10 @@ function SectionEditor({ connection, section, onDone }: { connection: Connection
     <Page title="Section" onBack={() => runOnce(onDone)}>
       <View>
         <Field label="Name" value={name} onChangeText={setName} placeholder="Prive" />
-        <Button label="Save" onPress={save} disabled={!canSaveSectionName(name, section.name)} />
+        <Button label="Save" onPress={save} disabled={waitingForRoster || !canSaveSectionName(name, section.name)} />
       </View>
-      <Button label="Delete section" variant="destructive" onPress={confirmDelete} />
+      <Button label="Delete section" variant="destructive" onPress={confirmDelete} disabled={waitingForRoster} />
+      {waitingForRoster ? <Text style={[styles.hint, { color: theme.colors.mutedForeground }]}>Waiting for the agent list.</Text> : null}
     </Page>
   )
 }

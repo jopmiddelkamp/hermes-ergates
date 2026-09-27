@@ -41,6 +41,9 @@ const seconds = (v: number | undefined | null) => (typeof v === 'number' && v > 
 /** A trimmed non-empty string, or null (an empty or non-string value means none). */
 const textOrNull = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null)
 
+/** Desktop's `botSectionId` (`id ? String(id) : null`): a non-empty string or number becomes its string form, untrimmed; anything else, or empty, is null. */
+const sectionIdOrNull = (v: unknown): string | null => ((typeof v === 'string' || typeof v === 'number') && v ? String(v) : null)
+
 export function toBot(p: ProfileSummary): Bot {
   const meta = botsMeta(p)
   const cs = p.canonical_session ?? null
@@ -59,7 +62,7 @@ export function toBot(p: ProfileSummary): Bot {
     preview: cs?.preview ?? (p.last_session as { preview?: string } | null)?.preview ?? '',
     canonicalSessionId: cs ? cs.resolved_id || cs.id : null,
     pinned: typeof meta.pinned === 'boolean' ? meta.pinned : undefined,
-    sectionId: 'sectionId' in meta ? textOrNull(meta.sectionId) : undefined,
+    sectionId: 'sectionId' in meta ? sectionIdOrNull(meta.sectionId) : undefined,
     sectionName: 'sectionName' in meta ? textOrNull(meta.sectionName) : undefined,
     revision: p.ui_meta_revisions?.['hermes-bots'] ?? 0,
     summary: p
@@ -72,6 +75,16 @@ export function searchBots(bots: Bot[], query: string): Bot[] {
     return bots
   }
   return bots.filter(b => [b.name, b.role, b.description, b.profile].some(v => v.toLowerCase().includes(q)))
+}
+
+/** The agent's summary from a roster as last read; undefined when the roster is missing it (loading, or Hermes no longer has it). */
+export function summaryOfRoster(roster: Bot[] | undefined, profile: string): ProfileSummary | undefined {
+  return roster?.find(b => b.profile === profile)?.summary
+}
+
+/** The agent's shown name from that same roster; the profile name itself when the roster does not have it. */
+export function nameOfRoster(roster: Bot[] | undefined, profile: string): string {
+  return roster?.find(b => b.profile === profile)?.name ?? profile
 }
 
 export const rosterKey = (connectionId: string) => ['profiles', connectionId] as const

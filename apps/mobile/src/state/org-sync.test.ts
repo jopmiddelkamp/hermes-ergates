@@ -42,6 +42,30 @@ describe('reading pins and sections from Hermes', () => {
     expect(view.membership).toEqual({ linh: 'prive', mia: 'prive' })
   })
 
+  it('follows Desktop for a known section name once every member carries the new one', () => {
+    const renamedElsewhere = rows.map(row => (row.profile === 'linh' || row.profile === 'mia' ? { ...row, sectionName: 'Private' } : row))
+    const view = sharedView(synced({ sections: [prive] }), renamedElsewhere)
+    expect(view.sections).toEqual([{ ...prive, name: 'Private' }])
+  })
+
+  it('keeps a known section local name while at least one member still carries it', () => {
+    const halfRenamed = rows.map(row => (row.profile === 'mia' ? { ...row, sectionName: 'Private' } : row))
+    const view = sharedView(synced({ sections: [prive] }), halfRenamed)
+    expect(view.sections).toEqual([prive])
+  })
+
+  it('keeps a known section local name when no member carries any name', () => {
+    const unnamed = rows.map(row => (row.profile === 'linh' || row.profile === 'mia' ? { ...row, sectionName: undefined } : row))
+    const view = sharedView(synced({ sections: [prive] }), unnamed)
+    expect(view.sections).toEqual([prive])
+  })
+
+  it('names an Untitled section once a member carries a name', () => {
+    const untitled = { id: 'prive', name: UNTITLED_SECTION, collapsed: false, order: 0 }
+    const view = sharedView(synced({ sections: [untitled] }), rows)
+    expect(view.sections).toEqual([{ ...untitled, name: 'Prive' }])
+  })
+
   it('keeps the sections of this phone, empty ones too, and adds a section only Hermes knows at the end', () => {
     const named = [...rows, { profile: 'otto', hidden: false, lastActivityAt: 50, sectionId: 'sec-clients', sectionName: 'Clients' }]
     const unnamed = [...named, { profile: 'pim', hidden: false, lastActivityAt: 40, sectionId: 'sec-old' }, { profile: 'ada', hidden: false, lastActivityAt: 30, sectionId: 'sec-old', sectionName: '' }]
@@ -152,6 +176,13 @@ describe('organizing through the outbox', () => {
     expect(twice.outbox).toEqual([{ id: 'o2', profile: 'noor', field: 'pinned', pinned: false, status: 'queued' }])
   })
 
+  it('with an empty roster, leaves a rename, a delete and a reorder alone and queues nothing', () => {
+    const withWork = synced({ ...base, sections: [prive, work] })
+    expect(organize(withWork, [], org => orgActions.renameSection(org, 'prive', 'Private'), ids())).toBe(withWork)
+    expect(organize(withWork, [], org => orgActions.deleteSection(org, 'prive'), ids())).toBe(withWork)
+    expect(organize(withWork, [], org => orgActions.applyMove(org, { kind: 'section', sectionId: 'work', before: 'prive' }), ids())).toBe(withWork)
+  })
+
   it('names only the fields that changed, per agent', () => {
     const before = sharedView(base, rows)
     const after = orgActions.moveRowsToSection(orgActions.unpin(before, 'linh'), ['linh'], null)
@@ -213,6 +244,7 @@ describe('syncing with every roster read', () => {
       { id: 'o2', profile: 'noor', field: 'section', sectionId: 'work', sectionName: 'Work', status: 'queued' }
     ])
     expect(next.membership).toEqual({})
+    expect(next.pins).toEqual(['noor', 'kevin', 'linh'])
     expect(next.firstSync).toBe('done')
     expect(syncWithHermes(next, hermes, ids()).outbox).toBe(next.outbox)
   })

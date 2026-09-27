@@ -107,6 +107,54 @@ describe('sending the organization outbox', () => {
     expect(result.sent).toBe(1)
     expect(outbox().map(item => [item.profile, item.status])).toEqual([['thijs', 'sent']])
     expect((await hermesBots(gateway, 'kevin')).meta?.pinned).toBe(false)
+    expect(gateway.configureCalls.filter(call => call.name === 'kevin')).toHaveLength(2)
+  })
+
+  it('drops a change without an alert when a conflict re-read no longer finds the agent', async () => {
+    const gateway = new FakeGateway()
+    const { deps, outbox } = await harness(gateway, [pinKevin])
+    gateway.beforeConfigure = params => {
+      if (params.name === 'kevin') {
+        gateway.desktopWrite('kevin', { pinned: false })
+        void gateway.profiles.remove('kevin')
+      }
+    }
+    expect(await flushOrgOutbox(deps)).toEqual({ sent: 0, refused: [], waiting: false })
+    expect(outbox()).toEqual([])
+    expect(gateway.configureCalls).toHaveLength(1)
+  })
+
+  it('drops a change without an alert when Hermes deletes the agent after the roster was read', async () => {
+    const gateway = new FakeGateway()
+    const { deps, outbox } = await harness(gateway, [pinKevin])
+    await gateway.profiles.remove('kevin')
+    expect(await flushOrgOutbox(deps)).toEqual({ sent: 0, refused: [], waiting: false })
+    expect(outbox()).toEqual([])
+    expect(gateway.configureCalls).toEqual([])
+  })
+
+  it.each([
+    ['timeout', new GatewayError('timeout', 'The gateway did not answer in time.')],
+    ['busy', new GatewayError('busy', 'The assistant is busy with another turn.')],
+    ['rate_limited', new GatewayError('rate_limited', 'Too many attempts. Wait a moment and try again.')]
+  ])('keeps a change queued when the gateway answers %s', async (_, error) => {
+    const gateway = new FakeGateway()
+    const { deps, outbox } = await harness(gateway, [pinKevin])
+    gateway.beforeConfigure = () => {
+      throw error
+    }
+    expect(await flushOrgOutbox(deps)).toEqual({ sent: 0, refused: [], waiting: true })
+    expect(outbox()).toEqual([{ id: 'o1', ...pinKevin, status: 'queued' }])
+  })
+
+  it.each([502, 503, 504])('keeps a change queued when a reverse proxy answers %i while Hermes restarts', async status => {
+    const gateway = new FakeGateway()
+    const { deps, outbox } = await harness(gateway, [pinKevin])
+    gateway.beforeConfigure = () => {
+      throw new GatewayError('unknown', 'The gateway had an internal problem.', { status })
+    }
+    expect(await flushOrgOutbox(deps)).toEqual({ sent: 0, refused: [], waiting: true })
+    expect(outbox()).toEqual([{ id: 'o1', ...pinKevin, status: 'queued' }])
   })
 
   it('keeps a change queued when the connection is lost, stops, and sends it on the next flush', async () => {

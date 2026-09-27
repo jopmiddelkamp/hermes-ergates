@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { ProfileSummary, ProfilesListResult } from '@/gateway/types'
 import profilesList from '@test/fixtures/profiles-list.json'
 
-import { toBot } from './roster'
+import { nameOfRoster, summaryOfRoster, toBot, type Bot } from './roster'
 
 const recorded = (profilesList as ProfilesListResult).profiles
 
@@ -33,5 +33,26 @@ describe('reading pins and sections from Hermes metadata', () => {
     expect(bot.sectionName).toBeUndefined()
     expect(bot.revision).toBe(0)
     expect(toBot(withMeta({ pinned: 'yes' })).pinned).toBeUndefined()
+  })
+
+  it('reads a section id the way Desktop does: a number becomes its string form, a spaced string is kept untrimmed, and empty is No section', () => {
+    expect(toBot(withMeta({ sectionId: 42 })).sectionId).toBe('42')
+    expect(toBot(withMeta({ sectionId: '  sec 1  ' })).sectionId).toBe('  sec 1  ')
+    expect(toBot(withMeta({ sectionId: '' })).sectionId).toBeNull()
+  })
+})
+
+describe('looking an agent up in a roster', () => {
+  const bots: Bot[] = [
+    { profile: 'linh', name: 'Linh', role: '', description: '', hidden: false, hasAvatar: false, isDefault: false, lastActivityAt: 0, preview: '', canonicalSessionId: null, summary: { name: 'linh', is_default: false } }
+  ]
+
+  it('finds the agent current summary and name, and falls back when the roster does not have it', () => {
+    expect(summaryOfRoster(bots, 'linh')).toBe(bots[0].summary)
+    expect(summaryOfRoster(bots, 'ghost')).toBeUndefined()
+    expect(summaryOfRoster(undefined, 'linh')).toBeUndefined()
+    expect(nameOfRoster(bots, 'linh')).toBe('Linh')
+    expect(nameOfRoster(bots, 'ghost')).toBe('ghost')
+    expect(nameOfRoster(undefined, 'linh')).toBe('linh')
   })
 })
