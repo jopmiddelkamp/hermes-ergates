@@ -21,6 +21,7 @@ import {
   sectionDragItems,
   sameSlot,
   slotMeta,
+  sortableChildKey,
   visibleArea,
   withSectionGhosts,
   type CrossQuery,
@@ -240,6 +241,31 @@ describe('pinDropMove, a drop among the pinned avatars', () => {
   })
 })
 
+describe('sortableChildKey, reading a pin key back from the child key Sortable.Flex hands PinnedArea', () => {
+  it('reads the escaped colon and the .$ prefix back out', () => {
+    expect(sortableChildKey('.$pinned=2ergates-test-agent')).toBe('pinned:ergates-test-agent')
+  })
+
+  it('reads = and : out of one key in a single left-to-right pass, so =0 followed by 2 is not misread', () => {
+    expect(sortableChildKey('.$a=0b=2c')).toBe('a=b:c')
+  })
+
+  it('leaves an already clean key unchanged', () => {
+    expect(sortableChildKey('pinned:noor')).toBe('pinned:noor')
+  })
+})
+
+describe('pinDropMove fed the escaped keys Sortable.Flex hands PinnedArea, read back through sortableChildKey', () => {
+  /** The same escaping React itself does for a child key: `=` to `=0`, `:` to `=2`, under a `.$` prefix. */
+  const escape = (key: string) => `.$${key.replace(/[=:]/g, match => (match === '=' ? '=0' : '=2'))}`
+
+  it('reorders the pins once the child keys are read back to the pins\' own keys', () => {
+    const escapedOrder = keysOf(pins()).map(escape)
+    const droppedOrder = moved(escapedOrder, escape('pinned:mia'), 1).map(sortableChildKey)
+    expect(pinDropMove(pins(), droppedOrder, sortableChildKey(escape('pinned:mia')))).toEqual({ kind: 'pin', profile: 'mia', before: 'noor' })
+  })
+})
+
 describe('the headers-only list for a section drag', () => {
   it('shows only the section headers, under a spacer that keeps the dragged header where it was', () => {
     expect(sectionDragItems(list(), 'section:prive')).toEqual([
@@ -399,6 +425,13 @@ describe('dragging between the pinned area and the rows list', () => {
     expect(drop('pinned:mia', 200, 250 + 10)).toEqual({ kind: 'unpinAt', profile: 'mia', sectionId: null, before: 'otto' })
   })
 
+  it('unpins a pin whose key came through sortableChildKey the same way, from a Sortable.Flex child key', () => {
+    const childKey = sortableChildKey('.$pinned=2noor')
+    expect(childKey).toBe('pinned:noor')
+    expect(crossSlot(query(childKey, 200, 250 + 180))).toEqual({ area: 'rows', index: 3, y: 176 })
+    expect(drop(childKey, 200, 250 + 180)).toEqual({ kind: 'unpinAt', profile: 'noor', sectionId: 'prive', before: 'kevin' })
+  })
+
   it('unpins a pin dropped right under a header into that section: at its top, also when the section is collapsed', () => {
     // Local y 170: on the Prive header's lower part (128 to 176), nearest the gap under it.
     expect(drop('pinned:noor', 200, 250 + 170)).toEqual({ kind: 'unpinAt', profile: 'noor', sectionId: 'prive', before: 'kevin' })
@@ -464,6 +497,14 @@ describe('the end of a drag that may have crossed into the other area', () => {
   it('ends over the other area with its move: the caller skips its own drop', () => {
     expect(crossDrop('row:otto', 'row:otto', overPins, pinned, shown)).toEqual({ over: true, move: { kind: 'pinAt', profile: 'otto', before: 'noor' } })
     expect(crossDrop('pinned:noor', 'pinned:noor', { area: 'rows', index: 3, y: 176 }, pinned, shown)).toEqual({
+      over: true,
+      move: { kind: 'unpinAt', profile: 'noor', sectionId: 'prive', before: 'kevin' }
+    })
+  })
+
+  it('ends over the other area the same way for a dragged pin whose key came through sortableChildKey', () => {
+    const key = sortableChildKey('.$pinned=2noor')
+    expect(crossDrop(key, key, { area: 'rows', index: 3, y: 176 }, pinned, shown)).toEqual({
       over: true,
       move: { kind: 'unpinAt', profile: 'noor', sectionId: 'prive', before: 'kevin' }
     })

@@ -44,6 +44,7 @@ export {
   sameSlot,
   sectionDragItems,
   slotMeta,
+  sortableChildKey,
   visibleArea,
   withSectionGhosts,
   type CrossSlot,

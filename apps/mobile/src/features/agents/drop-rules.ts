@@ -55,6 +55,44 @@ export function slotMeta(items: readonly DragItem[]): SlotMeta {
   return meta
 }
 
+/**
+ * `Sortable.Flex` (`PinnedArea.tsx`) takes children, not data, so it names
+ * each pin by React's own child key rather than the pin's own key: a
+ * leading `.$`, then the key with every `=` turned into `=0` and every `:`
+ * into `=2` (React's escaping for an object property built from a `key`
+ * prop, so `pinned:noor` survives as `.$pinned=2noor`). Every key
+ * `Sortable.Flex` hands `PinnedArea` back — to `onDragStart`, `onDragMove`,
+ * `onDragEnd` and `onActiveItemDropped` — is read back through this, at the
+ * boundary, before it reaches any other rule here. `Sortable.Grid`, which
+ * the rows list uses, takes `data` and a key extractor instead, so its keys
+ * need no such reading back. A key without the `.$` prefix (already a plain
+ * item key) is returned unchanged. Marked 'worklet': `onDragMove` runs on
+ * the UI thread.
+ */
+export function sortableChildKey(key: string): string {
+  'worklet'
+  if (!key.startsWith('.$')) {
+    return key
+  }
+  const escaped = key.slice(2)
+  let result = ''
+  let i = 0
+  while (i < escaped.length) {
+    const pair = escaped.slice(i, i + 2)
+    if (pair === '=0') {
+      result += '='
+      i += 2
+    } else if (pair === '=2') {
+      result += ':'
+      i += 2
+    } else {
+      result += escaped[i]
+      i += 1
+    }
+  }
+  return result
+}
+
 // Declaration order matters here: the worklets Babel plugin turns a 'worklet'
 // function into a factory evaluated at module load, and `nextOrder` below
 // closes over `orderIsLegal` and `sameKeys`. Moving either of them below

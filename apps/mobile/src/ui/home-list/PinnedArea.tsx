@@ -46,7 +46,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { Pressable, StyleSheet, Text, View, type AccessibilityActionEvent } from 'react-native'
 import { GestureDetector } from 'react-native-gesture-handler'
 import Animated, { useAnimatedStyle, type AnimatedRef, type SharedValue } from 'react-native-reanimated'
-import Sortable, { type DragStartParams, type SortableFlexDragEndParams } from 'react-native-sortables'
+import Sortable, { type DragMoveParams, type DragStartParams, type SortableFlexDragEndParams } from 'react-native-sortables'
 
 import {
   editRowLabel,
@@ -54,6 +54,7 @@ import {
   moveDirection,
   moveStep,
   pinDropMove,
+  sortableChildKey,
   useAvatar,
   type Bot,
   type CrossSlot,
@@ -176,10 +177,14 @@ export function PinnedArea(props: PinnedAreaProps) {
   // Stable across renders that do not change the pins or the handlers, for
   // the same reason `HomeList` memoizes its own `Sortable.Grid` props. Kept
   // above the empty-pins return below: every hook here must run every render.
+  // `Sortable.Flex` takes children, not data, so every key it hands back below is React's
+  // own escaped child key, not the pin's own key (`sortableChildKey`'s own doc comment in
+  // `drop-rules.ts`); each callback here reads it back at the boundary, before it reaches
+  // `cross` or any drop rule.
   const onDragStart = useCallback(
     ({ key }: DragStartParams) => {
       lightTap(haptics)
-      cross.begin(key)
+      cross.begin(sortableChildKey(key))
     },
     [haptics, cross]
   )
@@ -188,14 +193,24 @@ export function PinnedArea(props: PinnedAreaProps) {
   const pinLayout = useMemo(() => pinAreaGeometry(gutter), [gutter])
   const swipe = usePinSwipeSelect(pins, selection, onSelectionChange, BADGE_OFFSET, pinLayout)
 
+  const onDragMove = useCallback(
+    (params: DragMoveParams) => {
+      'worklet'
+      cross.onDragMove({ ...params, key: sortableChildKey(params.key) })
+    },
+    [cross]
+  )
+
   const onDragEnd = useCallback(
     ({ key, indexToKey }: SortableFlexDragEndParams) => {
       lightTap(haptics)
+      const dragKey = sortableChildKey(key)
+      const order = indexToKey.map(sortableChildKey)
       // Dropped over the rows list: unpinned there, so the order among the pins does not count.
-      if (cross.end(key)) {
+      if (cross.end(dragKey)) {
         return
       }
-      const move = pinDropMove(pins, indexToKey, key)
+      const move = pinDropMove(pins, order, dragKey)
       if (move) {
         onMove(move)
       }
@@ -239,7 +254,7 @@ export function PinnedArea(props: PinnedAreaProps) {
           inactiveItemOpacity={1}
           autoScrollMaxOverscroll={overscroll}
           onDragStart={onDragStart}
-          onDragMove={cross.onDragMove}
+          onDragMove={onDragMove}
           onDragEnd={onDragEnd}
           onActiveItemDropped={cross.dropped}
         >
