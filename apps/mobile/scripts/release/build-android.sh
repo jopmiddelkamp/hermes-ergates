@@ -10,6 +10,11 @@
 #
 # It regenerates apps/mobile/android (expo prebuild --clean) and puts app.json
 # back as it found it. No secret is printed or put on a command line.
+#
+# set +x first: a caller running this with `bash -x`, or one that inherits
+# `set -x` from its own environment, must not get secret values traced onto
+# stderr.
+set +x
 set -euo pipefail
 
 APP="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
