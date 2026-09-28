@@ -4,7 +4,7 @@
  * with the GitHub run in its environment.
  */
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -118,15 +118,6 @@ describe('cli secrets', () => {
   ].join('\n')
   const P8 = '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n'
   const PLAY_JSON = JSON.stringify({ type: 'service_account', client_email: 'ci@ergates.iam.gserviceaccount.com', private_key: 'k' })
-  const GH_STUB = [
-    '#!/usr/bin/env bash',
-    `{ printf 'gh'; printf ' %s' "$@"; printf '\\n'; printf 'stdin=%s\\n' "$(cat)"; } >> "$GH_LOG"`,
-    'case "$*" in',
-    '  "api repos/{owner}/{repo}/environments/app-stores") exit 1 ;;',
-    `  "api repos/{owner}/{repo}/environments/app-stores/deployment-branch-policies") echo '{"total_count":0,"branch_policies":[]}' ;;`,
-    'esac',
-    '',
-  ].join('\n')
 
   function releaseFolder(env = RELEASE_ENV): string {
     const dir = path.join(scratch, 'release')
@@ -143,11 +134,48 @@ describe('cli secrets', () => {
     return dir
   }
 
-  function withFakeGh(): { PATH: string; GH_LOG: string } {
+  function fakeBin(): string {
     const bin = path.join(scratch, 'bin')
-    mkdirSync(bin)
-    writeFileSync(path.join(bin, 'gh'), GH_STUB, { mode: 0o755 })
-    return { PATH: `${bin}:${process.env.PATH ?? ''}`, GH_LOG: path.join(scratch, 'gh.log') }
+    mkdirSync(bin, { recursive: true })
+    return bin
+  }
+
+  /** A fake `gh` recording every call (argv and stdin) to GH_LOG, and able to simulate the environment or its tag policy already existing. */
+  function writeFakeGh(bin: string, { environmentExists = false, policyPresent = false } = {}): string {
+    const policies = policyPresent
+      ? { total_count: 1, branch_policies: [{ id: 1, name: 'v*', type: 'tag' }] }
+      : { total_count: 0, branch_policies: [] }
+    const stub = [
+      '#!/usr/bin/env bash',
+      `{ printf 'gh'; printf ' %s' "$@"; printf '\\n'; printf 'stdin=%s\\n' "$(cat)"; } >> "$GH_LOG"`,
+      'case "$*" in',
+      `  "api repos/{owner}/{repo}/environments/app-stores") exit ${environmentExists ? 0 : 1} ;;`,
+      `  "api repos/{owner}/{repo}/environments/app-stores/deployment-branch-policies") echo '${JSON.stringify(policies)}' ;;`,
+      'esac',
+      '',
+    ].join('\n')
+    writeFileSync(path.join(bin, 'gh'), stub, { mode: 0o755 })
+    return path.join(scratch, 'gh.log')
+  }
+
+  /** `git check-ignore` exits 0 (ignored), 1 (not ignored), or, for a path outside the repository, 128 (verified against real git) — gitProblems must fail closed on anything but 0 or 1. */
+  function writeFakeGit(bin: string, checkIgnoreExit: number) {
+    writeFileSync(path.join(bin, 'git'), `#!/usr/bin/env bash\nexit ${checkIgnoreExit}\n`, { mode: 0o755 })
+  }
+
+  /** Stands in for keytool: creates an empty file at the -keystore path and exits 0, so the success path of make-upload-keystore runs without a real JDK. */
+  function writeFakeKeytool(bin: string) {
+    const stub = [
+      '#!/usr/bin/env bash',
+      'prev=""',
+      'for arg in "$@"; do',
+      '  if [ "$prev" = "-keystore" ]; then : > "$arg"; fi',
+      '  prev="$arg"',
+      'done',
+      'exit 0',
+      '',
+    ].join('\n')
+    writeFileSync(path.join(bin, 'keytool'), stub, { mode: 0o755 })
   }
 
   it('check names what is missing and uploads nothing', () => {
@@ -162,17 +190,51 @@ describe('cli secrets', () => {
     expect(result.stderr).toContain('::error::ios-distribution.p12 is missing.')
   })
 
-  it('upload creates the environment with its tag rule and sends every value on stdin', () => {
-    const gh = withFakeGh()
+  it('secrets-check refuses a release folder that is not mode 700', () => {
+    const dir = releaseFolder()
+    chmodSync(dir, 0o750)
 
-    const result = cli(['secrets-upload'], { ERGATES_RELEASE_DIR: releaseFolder(), ...gh })
+    const result = cli(['secrets-check'], { ERGATES_RELEASE_DIR: dir })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(`::error::${dir} is readable by other users: chmod 700 it.`)
+  })
+
+  it('secrets-check refuses a secret file that is not mode 600', () => {
+    const dir = releaseFolder()
+    const envFile = path.join(dir, 'release.env')
+    chmodSync(envFile, 0o644)
+
+    const result = cli(['secrets-check'], { ERGATES_RELEASE_DIR: dir })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(`::error::${envFile} is readable by other users: chmod 600 it.`)
+  })
+
+  it('secrets-check refuses when it cannot verify the release folder is ignored by git', () => {
+    const dir = releaseFolder()
+    const bin = fakeBin()
+    writeFakeGit(bin, 128)
+
+    const result = cli(['secrets-check'], { ERGATES_RELEASE_DIR: dir, PATH: `${bin}:${process.env.PATH ?? ''}` })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(`::error::cannot verify ${dir} is ignored by git.`)
+  })
+
+  it('upload creates the environment with its tag rule and sends every value on stdin', () => {
+    const bin = fakeBin()
+    const GH_LOG = writeFakeGh(bin, { environmentExists: false, policyPresent: false })
+    writeFakeGit(bin, 0)
+
+    const result = cli(['secrets-upload'], { ERGATES_RELEASE_DIR: releaseFolder(), PATH: `${bin}:${process.env.PATH ?? ''}`, GH_LOG })
 
     expect(result.status).toBe(0)
     expect(result.stdout).not.toMatch(/p12-secret|keystore-secret|BEGIN PRIVATE KEY/)
     expect(result.stdout).toContain('✓ environment app-stores created\n')
     expect(result.stdout).toContain('✓ secret APP_STORE_CONNECT_PRIVATE_KEY\n')
     expect(result.stdout).toContain('✓ variable APPLE_TEAM_ID\n')
-    const log = readFileSync(gh.GH_LOG, 'utf8')
+    const log = readFileSync(GH_LOG, 'utf8')
     const calls = log.split('\n').filter(line => line.startsWith('gh '))
     expect(calls.slice(0, 4)).toEqual([
       'gh api repos/{owner}/{repo}/environments/app-stores',
@@ -187,6 +249,28 @@ describe('cli secrets', () => {
     expect(log).toContain('stdin={"name":"v*","type":"tag"}\n')
   })
 
+  it('upload repairs an already-existing environment and does not duplicate an already-present tag policy', () => {
+    const bin = fakeBin()
+    const GH_LOG = writeFakeGh(bin, { environmentExists: true, policyPresent: true })
+    writeFakeGit(bin, 0)
+
+    const result = cli(['secrets-upload'], { ERGATES_RELEASE_DIR: releaseFolder(), PATH: `${bin}:${process.env.PATH ?? ''}`, GH_LOG })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).not.toMatch(/p12-secret|keystore-secret|BEGIN PRIVATE KEY/)
+    expect(result.stdout).toContain('✓ environment app-stores updated\n')
+    const log = readFileSync(GH_LOG, 'utf8')
+    const calls = log.split('\n').filter(line => line.startsWith('gh '))
+    expect(calls.slice(0, 3)).toEqual([
+      'gh api repos/{owner}/{repo}/environments/app-stores',
+      'gh api --method PUT repos/{owner}/{repo}/environments/app-stores --input -',
+      'gh api repos/{owner}/{repo}/environments/app-stores/deployment-branch-policies',
+    ])
+    expect(calls.some(call => call.includes('--method POST'))).toBe(false)
+    expect(calls).toHaveLength(3 + 11 + 1)
+    expect(calls.join('\n')).not.toMatch(/p12-secret|keystore-secret/)
+  })
+
   it('make-upload-keystore refuses two different passwords before it runs keytool', () => {
     const env = RELEASE_ENV.replace('ANDROID_UPLOAD_KEY_PASSWORD=keystore-secret', 'ANDROID_UPLOAD_KEY_PASSWORD=other-secret')
     const dir = releaseFolder(env)
@@ -199,5 +283,20 @@ describe('cli secrets', () => {
       '::error::ANDROID_UPLOAD_KEY_PASSWORD must be the same as ANDROID_UPLOAD_KEYSTORE_PASSWORD: a PKCS12 keystore has one password.\n'
     )
     expect(existsSync(path.join(dir, 'android-upload.jks'))).toBe(false)
+  })
+
+  it('make-upload-keystore never prints the alias value', () => {
+    const alias = 'dummy-alias-do-not-leak-5f2a9c1d'
+    const env = RELEASE_ENV.replace('ANDROID_UPLOAD_KEY_ALIAS=upload', `ANDROID_UPLOAD_KEY_ALIAS=${alias}`)
+    const dir = releaseFolder(env)
+    rmSync(path.join(dir, 'android-upload.jks'))
+    const bin = fakeBin()
+    writeFakeKeytool(bin)
+
+    const result = cli(['make-upload-keystore'], { ERGATES_RELEASE_DIR: dir, PATH: `${bin}:${process.env.PATH ?? ''}` })
+
+    expect(result.status).toBe(0)
+    for (const line of result.stdout.split('\n')) expect(line).not.toContain(alias)
+    expect(result.stdout).toContain(`✓ ${path.join(dir, 'android-upload.jks')} created`)
   })
 })

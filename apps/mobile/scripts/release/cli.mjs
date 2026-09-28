@@ -142,13 +142,22 @@ function describeFiles() {
   return files
 }
 
-/** Git must never see the release folder; `git check-ignore` exits 1 for a path it would track. */
+/**
+ * Git must never see the release folder. `git check-ignore` exits 1 for a
+ * path it would track (a real problem), 0 for a path it ignores. Any other
+ * exit (for example 128, which real git gives for a path outside the
+ * repository) means the question could not be answered, so this fails
+ * closed instead of silently treating "could not check" as "fine".
+ */
 function gitProblems() {
   const probe = spawnSync('git', ['check-ignore', '-q', inRelease(ENV_FILE)], { cwd: APP_DIR })
-  return probe.status === 1 ? [`${RELEASE_DIR} is not ignored by git. Stop: the secrets could be committed.`] : []
+  if (probe.status === 0) return []
+  if (probe.status === 1) return [`${RELEASE_DIR} is not ignored by git. Stop: the secrets could be committed.`]
+  return [`cannot verify ${RELEASE_DIR} is ignored by git.`]
 }
 
-function permissionWarnings() {
+/** The release folder must be 700 and every file in it 600; group/other-readable refuses, it does not just warn. */
+function permissionProblems() {
   const open = [RELEASE_DIR, ...Object.values(FILES).map(inRelease), inRelease(ENV_FILE)]
     .filter(file => existsSync(file) && (statSync(file).mode & 0o077) !== 0)
   return open.map(file => `${file} is readable by other users: chmod ${file === RELEASE_DIR ? '700' : '600'} it.`)
@@ -156,8 +165,7 @@ function permissionWarnings() {
 
 function secretsCheck() {
   const env = loadReleaseEnv()
-  for (const warning of permissionWarnings()) console.warn(`! ${warning}`)
-  const problems = [...gitProblems(), ...secretProblems(env, describeFiles())]
+  const problems = [...permissionProblems(), ...gitProblems(), ...secretProblems(env, describeFiles())]
   if (problems.length > 0) fail(problems)
   console.log(`✓ ${RELEASE_DIR}: every secret of the ${ENVIRONMENT} environment is ready`)
   return env
@@ -181,10 +189,11 @@ function ghOrFail(args, input) {
 function secretsUpload() {
   const env = secretsCheck()
   const environment = `repos/{owner}/{repo}/environments/${ENVIRONMENT}`
-  if (!gh(['api', environment]).ok) {
-    ghOrFail(['api', '--method', 'PUT', environment, '--input', '-'], JSON.stringify(ENVIRONMENT_BODY))
-    console.log(`✓ environment ${ENVIRONMENT} created`)
-  }
+  // Always PUT: a misconfigured environment (wrong deployment_branch_policy,
+  // for example set up by hand) gets repaired, not just created once.
+  const existed = gh(['api', environment]).ok
+  ghOrFail(['api', '--method', 'PUT', environment, '--input', '-'], JSON.stringify(ENVIRONMENT_BODY))
+  console.log(`✓ environment ${ENVIRONMENT} ${existed ? 'updated' : 'created'}`)
   const policies = JSON.parse(ghOrFail(['api', `${environment}/deployment-branch-policies`]))
   if (!hasTagPolicy(policies)) {
     ghOrFail(['api', '--method', 'POST', `${environment}/deployment-branch-policies`, '--input', '-'], JSON.stringify(TAG_POLICY_BODY))
@@ -213,7 +222,8 @@ function makeUploadKeystore() {
   const result = spawnSync('keytool', keytoolArguments(env, keystore), { env: { ...process.env, ...passwords }, stdio: 'inherit' })
   if (result.error || result.status !== 0) fail('keytool failed; see the output above. keytool comes with a JDK, for example Java 17.')
   chmodSync(keystore, 0o600)
-  console.log(`✓ ${keystore}: upload key ${env.ANDROID_UPLOAD_KEY_ALIAS}`)
+  // No secret value in this message: ANDROID_UPLOAD_KEY_ALIAS is one of SECRETS.
+  console.log(`✓ ${keystore} created`)
 }
 
 const [command, ...args] = process.argv.slice(2)
