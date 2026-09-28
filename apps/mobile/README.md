@@ -39,7 +39,7 @@ For a gateway on the Tailscale VPS (password mode) enter its URL; the app reads 
 | `ERGATES_LIVE=1 ERGATES_TOKEN=… npx vitest run test/live` | Smoke check against a real backend (docs/11 section 3) |
 | `ERGATES_LIVE=1 ERGATES_RECORD=1 ERGATES_TOKEN=… ERGATES_OUT=… npx vitest run test/live/agent-traffic-record.live.test.ts` | Re-record the bot-to-bot traffic fixtures (sanitize by hand before copying into `test/fixtures/agent-traffic/`) |
 | `npx expo prebuild --platform ios --clean` | Regenerate the native project after changing plugins in `app.json` |
-| `npm run release:check` / `npm run release` | Store release to TestFlight and Google Play internal testing via EAS; secrets in the git-ignored `.release/`. Setup: [RELEASING.md](RELEASING.md) |
+| `scripts/release/upload-secrets.sh --check` | Store releases run in GitHub Actions from gflow tags, to TestFlight and Google Play internal testing; this checks the secrets in the git-ignored `.release/` before they are uploaded. Setup and every release: [RELEASING.md](RELEASING.md) |
 
 ## Layout
 
