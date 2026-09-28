@@ -1,5 +1,8 @@
 # Ergates
 
+[![CI](https://github.com/jopmiddelkamp/hermes-ergates/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/jopmiddelkamp/hermes-ergates/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A clean React Native messaging app for a team of Hermes Agent assistants on your own server. Hermes owns the agents; Ergates is the phone app, a small server integration package and the deployment configuration.
 
 | Part | Path | Status |
@@ -49,3 +52,15 @@ Run one job with `scripts/ci-local.sh mobile`, several with `scripts/ci-local.sh
 - Live backend smoke: `ERGATES_LIVE=1 ERGATES_TOKEN=… npx vitest run test/live` (from `apps/mobile`)
 
 Hermes pin: `d76856cc6971b6e0e1903b5369498bcc4bb83a60` (v0.21.2). Re-verify the vendored client and the recorded shapes in `docs/superpowers/research/` on every upgrade.
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for branches, setup, and the checks a change needs to pass. Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md), and security issues should be reported privately, per the [security policy](SECURITY.md).
+
+## Releases
+
+Releases go to TestFlight and the Google Play internal testing track through gflow and GitHub Actions; see [`apps/mobile/RELEASING.md`](apps/mobile/RELEASING.md) for how a release runs.
+
+## License
+
+Ergates is licensed under the [MIT License](LICENSE), copyright Jop Middelkamp. `apps/mobile/LICENSE` is a separate notice that covers the Expo template code the mobile app started from and stays with that code.
