@@ -49,7 +49,8 @@
           "microphonePermission": "Ergates uses the microphone for voice input in the composer.",
           "speechRecognitionPermission": "Ergates turns your voice into text for the composer. On-device recognition is used when available."
         }
-      ]
+      ],
+      "./plugins/with-release-signing"
     ],
     "experiments": {
       "typedRoutes": true
