@@ -2,12 +2,16 @@
 name: CI
 
 on:
-  # Other branches get CI through their pull request. A push trigger for them
-  # too would run every job twice per commit (push and pull_request runs land
-  # in different concurrency groups). `main` runs on every push after a merge.
+  # gflow lands every change through a pull request into one of these branches
+  # (.gflow/config, mode=protected), so branch protection can require these
+  # jobs. `master` and `develop` also run on the push after a merge. Other
+  # branches get CI through their pull request; a push trigger for them too
+  # would run every job twice per commit (push and pull_request runs land in
+  # different concurrency groups). Release tags run release.yml instead.
   push:
-    branches: [main]
+    branches: [master, develop]
   pull_request:
+    branches: [master, develop, "release/**", "hotfix/**"]
 
 permissions:
   contents: read

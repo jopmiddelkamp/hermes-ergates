@@ -1,0 +1,129 @@
+# Store release (apps/mobile/RELEASING.md). A gflow tag builds the app, uploads
+# it to TestFlight and the Google Play internal track, and opens its GitHub
+# Release page: a pre-release for vX.Y.Z-rc.N, a release for vX.Y.Z. A manual
+# run on the same tag re-runs a failed release without moving the tag:
+#   gh workflow run release.yml --ref v0.3.0-rc.1 [-f build-number=123]
+# Actions are pinned by full commit SHA: these jobs can read the store secrets.
+name: Release mobile
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      build-number:
+        description: Build number to use instead of the run number plus BUILD_NUMBER_OFFSET
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      channel: ${{ steps.release.outputs.channel }}
+      build-number: ${{ steps.release.outputs.build-number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26"
+      - name: Version, channel and build number from the tag
+        id: release
+        working-directory: apps/mobile
+        env:
+          BUILD_NUMBER_OFFSET: ${{ vars.BUILD_NUMBER_OFFSET }}
+          BUILD_NUMBER_OVERRIDE: ${{ inputs.build-number }}
+        run: node scripts/release/cli.mjs metadata
+
+  checks:
+    needs: metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26"
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - run: scripts/ci-local.sh mobile
+
+  build-android:
+    needs: [metadata, checks]
+    uses: ./.github/workflows/release-build-android.yml
+    with:
+      build-number: ${{ needs.metadata.outputs.build-number }}
+
+  build-ios:
+    needs: [metadata, checks]
+    uses: ./.github/workflows/release-build-ios.yml
+    with:
+      build-number: ${{ needs.metadata.outputs.build-number }}
+
+  upload-android:
+    needs: build-android
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: app-stores
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: android-release
+          path: ${{ runner.temp }}/android-release
+      # A Play app in draft status accepts only draft releases; set the
+      # repository variable PLAY_RELEASE_STATUS to completed once it has left draft.
+      - uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: dev.ergates.mobile
+          releaseFiles: ${{ runner.temp }}/android-release/ergates.aab
+          track: internal
+          status: ${{ vars.PLAY_RELEASE_STATUS || 'draft' }}
+
+  upload-ios:
+    needs: build-ios
+    runs-on: macos-latest
+    timeout-minutes: 30
+    environment: app-stores
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ios-release
+          path: ${{ runner.temp }}/ios-release
+      # v5 or later: older versions upload with altool, which fails on Xcode 26.
+      - uses: apple-actions/upload-testflight-build@1fc69ca369a60b813eaaa2d936eda22794b52e17 # v5.4.0
+        with:
+          app-path: ${{ runner.temp }}/ios-release/ergates.ipa
+          app-type: ios
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+
+  github-release:
+    needs: [metadata, upload-android, upload-ios]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ needs.metadata.outputs.tag }}
+          prerelease: ${{ needs.metadata.outputs.channel == 'rc' }}
+          generate_release_notes: true

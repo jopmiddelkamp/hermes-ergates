@@ -1,0 +1,16 @@
+# Weekly updates for the GitHub Actions the workflows use. The release
+# workflows pin each action to a full commit SHA with the version in a
+# comment; Dependabot moves both. Minor and patch updates come as one grouped
+# pull request into develop (gflow's integration branch); a major update comes
+# on its own, because it can change inputs.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    target-branch: develop
+    groups:
+      actions-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
