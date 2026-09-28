@@ -9,13 +9,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 JOBS=(lint mobile integration contract deploy)
 
-# The workflow files (actionlint) and the shell scripts (bash -n), including
-# the release scripts that otherwise first run in a release.
+# The workflow files (actionlint) and the shell scripts themselves (bash -n,
+# then shellcheck), including the release scripts that otherwise first run in
+# a release.
 job_lint() {
+  local scripts=("$ROOT/scripts/ci-local.sh" "$ROOT/.gflow/set-version.sh" "$ROOT"/apps/mobile/scripts/release/*.sh)
   local script
-  for script in "$ROOT/scripts/ci-local.sh" "$ROOT/.gflow/set-version.sh" "$ROOT"/apps/mobile/scripts/release/*.sh; do
+  for script in "${scripts[@]}"; do
     bash -n "$script"
   done
+  uvx --from shellcheck-py==0.11.0.1 shellcheck "${scripts[@]}"
   (cd "$ROOT" && uvx --from actionlint-py==1.7.12.25 actionlint)
 }
 

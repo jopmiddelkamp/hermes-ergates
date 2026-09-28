@@ -28,11 +28,15 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           xcode-version: latest-stable
+      # No cache: npm here. This job holds the iOS signing secrets, and a
+      # restored cache can carry entries written by any other workflow run on
+      # this repository's default branch (docs.github.com, "Dependency
+      # caching" reference); npm ci's lockfile integrity check limits but
+      # does not remove that risk. checks (no secret, ships nothing) keeps
+      # the cache instead.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "26"
-          cache: npm
-          cache-dependency-path: apps/mobile/package-lock.json
       - name: Install dependencies
         working-directory: apps/mobile
         run: npm ci --no-audit --no-fund

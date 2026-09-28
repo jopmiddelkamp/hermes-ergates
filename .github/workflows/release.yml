@@ -107,6 +107,10 @@ jobs:
           name: ios-release
           path: ${{ runner.temp }}/ios-release
       # v5 or later: older versions upload with altool, which fails on Xcode 26.
+      # wait-for-processing: "false" -- Apple emails on a processing failure,
+      # and without it the job holds a macOS runner for up to the action's own
+      # ~70-minute poll (see its src/utils/poll.ts at this pin) after the
+      # upload has already succeeded.
       - uses: apple-actions/upload-testflight-build@1fc69ca369a60b813eaaa2d936eda22794b52e17 # v5.4.0
         with:
           app-path: ${{ runner.temp }}/ios-release/ergates.ipa
@@ -114,6 +118,7 @@ jobs:
           issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          wait-for-processing: "false"
 
   github-release:
     needs: [metadata, upload-android, upload-ios]

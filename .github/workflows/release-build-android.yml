@@ -24,11 +24,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # No cache: npm here. This job holds the Android signing secrets, and a
+      # restored cache can carry entries written by any other workflow run on
+      # this repository's default branch (docs.github.com, "Dependency
+      # caching" reference); npm ci's lockfile integrity check limits but
+      # does not remove that risk. checks (no secret, ships nothing) keeps
+      # the cache instead.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "26"
-          cache: npm
-          cache-dependency-path: apps/mobile/package-lock.json
       # React Native recommends JDK 17 for Android builds.
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
@@ -37,23 +41,29 @@ jobs:
       - name: Install dependencies
         working-directory: apps/mobile
         run: npm ci --no-audit --no-fund
-      # Catches a full disk (the runner's 14 GB SSD, docs.github.com
-      # "GitHub-hosted runners" reference) at the point it starts mattering,
-      # instead of a mid-build failure whose real cause is easy to miss.
-      - name: Check available disk space
-        run: df -h
+      # ubuntu-latest (public repo) has 16 GB RAM (docs.github.com,
+      # "GitHub-hosted runners" reference). `expo prebuild` writes Expo SDK
+      # 57's template android/gradle.properties, which caps the build's
+      # Gradle daemon at org.gradle.jvmargs=-Xmx2048m regardless of GRADLE_OPTS
+      # (GRADLE_OPTS only sizes the short-lived client VM, not the daemon that
+      # `--no-daemon` still forks to run the build). A gradle.properties in
+      # GRADLE_USER_HOME is read before the project's and overrides it
+      # (docs.gradle.org, "Configuring the build environment"), so writing one
+      # here is what actually raises the daemon's heap. The Kotlin daemon
+      # inherits org.gradle.jvmargs unless kotlin.daemon.jvmargs is set
+      # (kotlinlang.org, "Compilation and caches in the Kotlin Gradle
+      # plugin"), so the two daemons together cap out around 8 GB, leaving
+      # about 8 GB of the runner's 16 GB for the OS, npm/Node and the rest of
+      # the build tooling.
+      - name: Gradle heap for the release build
+        run: |
+          mkdir -p ~/.gradle
+          echo 'org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8' >> ~/.gradle/gradle.properties
       - name: Build the signed App Bundle
         working-directory: apps/mobile
         env:
           BUILD_NUMBER: ${{ inputs.build-number }}
           OUTPUT_DIR: ${{ runner.temp }}/release
-          # ubuntu-latest (public repo) has 16 GB RAM (docs.github.com,
-          # "GitHub-hosted runners" reference). Left unbounded, the
-          # --no-daemon Gradle JVM and the AAPT2/R8/Kotlin worker processes it
-          # spawns can each size their own heap off the full 16 GB and get
-          # OOM-killed under combined pressure with npm and the Node prebuild
-          # step; -Xmx4g bounds the Gradle JVM and leaves headroom for them.
-          GRADLE_OPTS: -Xmx4g
           ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
           ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
           ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
@@ -65,3 +75,10 @@ jobs:
           path: ${{ runner.temp }}/release/ergates.aab
           if-no-files-found: error
           retention-days: 14
+      # Free space at the point of failure, not before the build: the 14 GB
+      # SSD (docs.github.com, "GitHub-hosted runners" reference) is spent
+      # during the build, so the space before it says nothing about a
+      # disk-full failure.
+      - name: Check available disk space
+        if: failure()
+        run: df -h
