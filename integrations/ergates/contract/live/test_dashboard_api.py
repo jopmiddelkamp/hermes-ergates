@@ -13,6 +13,7 @@ import sys
 
 import pytest
 
+import ergates
 from ergates import hermes_adapter
 from ergates.operations import Operations
 from ergates.paths import store_path, templates_dir
@@ -49,7 +50,8 @@ def _reminder(profile, **overrides):
 def test_hermes_serve_mounts_the_router_and_health_answers(web, token_headers):
     reply = web.get(f"{API}/health", headers=token_headers)
 
-    assert (reply.status_code, reply.json()) == (200, {"ok": True, "schema_version": 1, "plugin_version": "0.2.0"})
+    assert (reply.status_code, reply.json()) == (
+        200, {"ok": True, "schema_version": 1, "plugin_version": ergates.__version__})
 
 
 @pytest.mark.parametrize(("method", "path"), ROUTES)

@@ -148,7 +148,7 @@ on. JSON in and out; every error is
 
 | Method and path | Success | Errors |
 |---|---|---|
-| `GET /health` | 200 `{"ok": true, "schema_version": 1, "plugin_version": "0.2.0"}` | 503 `store_unavailable` |
+| `GET /health` | 200 `{"ok": true, "schema_version": 1, "plugin_version": "<version>"}`, the version in `plugin.yaml` | 503 `store_unavailable` |
 | `POST /reminders` `{profile, schedule, timezone, prompt, request_id, label?}` | 201 new, 200 existing, 202 uncertain; body `{"receipt"}` | 409 `conflict` (with `receipt`), 400 `invalid`, 404 `unknown_profile` |
 | `GET /proposals/{id}` | 200 `{"proposal"}` | 404 `not_found` |
 | `POST /proposals/{id}/accept` `{proposal}` | 200 `{"proposal"}` with `template` | 409 `hash_mismatch` / `not_acceptable` / `name_taken`, 410 `expired`, 422 `unknown_template` |

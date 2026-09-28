@@ -5,6 +5,7 @@ Hermes's own web server; these tests pin each status code and body.
 """
 
 import json
+import re
 import time
 import tomllib
 from pathlib import Path
@@ -110,7 +111,8 @@ def _error(reply):
 def test_health_reports_the_schema_and_the_plugin_version(ops):
     reply = ops.health()
 
-    assert (reply.status, reply.body) == (200, {"ok": True, "schema_version": 1, "plugin_version": "0.2.0"})
+    assert (reply.status, reply.body) == (
+        200, {"ok": True, "schema_version": 1, "plugin_version": ergates.__version__})
 
 
 def test_health_is_503_when_the_store_is_unavailable(ops, store):
@@ -154,10 +156,14 @@ def test_internal_error_is_the_error_body_with_a_fixed_message():
 
 
 def test_the_plugin_version_is_the_same_everywhere():
+    """.gflow/set-version.sh writes one X.Y.Z into every file that carries it."""
     manifest = yaml.safe_load((PACKAGE_ROOT / "plugin.yaml").read_text(encoding="utf-8"))
     project = tomllib.loads((PACKAGE_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    lock = tomllib.loads((PACKAGE_ROOT / "uv.lock").read_text(encoding="utf-8"))
+    locked = next(package for package in lock["package"] if package["name"] == "ergates")
 
-    assert ergates.__version__ == manifest["version"] == project["project"]["version"] == "0.2.0"
+    assert re.fullmatch(r"\d+\.\d+\.\d+", ergates.__version__)
+    assert ergates.__version__ == manifest["version"] == project["project"]["version"] == locked["version"]
 
 
 # --- POST /reminders -----------------------------------------------------------
