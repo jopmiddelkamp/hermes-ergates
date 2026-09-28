@@ -1,6 +1,6 @@
 /**
- * Pure types for bot-to-bot traffic in chat (docs/superpowers/specs/2026-09-14-agent-traffic-design.md
- * sections 4.2-4.3). No React or React Native imports (ADR-029 rule 1).
+ * Pure types for bot-to-bot traffic in chat.
+ * No React or React Native imports (ADR-029 rule 1).
  */
 
 /** Delivery, worker and reply are independent properties of one exchange (spec 4.3). */

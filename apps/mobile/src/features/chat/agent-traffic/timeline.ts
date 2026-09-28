@@ -1,8 +1,8 @@
 /**
- * The one presentation policy (spec 5.7, 5.9, docs/superpowers/specs/2026-09-14-agent-traffic-design.md):
- * the only producer of visible lines, working-line text, accessibility labels, Activity entries and
- * the read-only transcript. Raw receipt, notice or tool-argument text never reaches a line or a label
- * (docs/04). Pure: no React or React Native imports (ADR-029 rule 1).
+ * The one presentation policy: the only producer of visible lines, working-line text,
+ * accessibility labels, Activity entries and the read-only transcript. Raw receipt, notice
+ * or tool-argument text never reaches a line or a label (docs/04). Pure: no React or React
+ * Native imports (ADR-029 rule 1).
  */
 
 import { formatClock, formatDateSeparator } from '@/lib/time'

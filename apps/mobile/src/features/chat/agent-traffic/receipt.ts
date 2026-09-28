@@ -1,6 +1,5 @@
 /**
- * Receipt grammar, body reading and delivery mapping (spec 5.2, 5.3,
- * docs/superpowers/specs/2026-09-14-agent-traffic-design.md).
+ * Receipt grammar, body reading and delivery mapping.
  * Pure: no React or React Native imports (ADR-029 rule 1).
  */
 

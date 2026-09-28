@@ -10,7 +10,7 @@ You are an engineer, human or AI, who builds jop-bot from these documents. This 
 4. `docs/build/03-templates.md` - full text of config files, prompts, Docker files.
 5. `docs/build/04-algorithms.md` - step-by-step logic with numbers.
 6. `docs/build/05-test-strategy.md` - how to test without touching real vendors.
-7. The plan for your phase in `docs/superpowers/plans/`. Execute one task at a time.
+7. The plan for your phase. Execute one task at a time.
 8. Background only when needed: `docs/01..09` (design) and `docs/research/` (why).
 
 ## 2. Rules you must follow

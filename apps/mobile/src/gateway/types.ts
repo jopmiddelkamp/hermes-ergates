@@ -1,7 +1,7 @@
 /**
- * Wire types for the Hermes gateway as recorded from the pinned backend
- * (commit d76856cc, v0.21.2) on 2026-09-13. See
- * docs/superpowers/research/2026-09-13-recorded-backend-shapes.md.
+ * Wire types for the Hermes gateway, verified against the pinned backend
+ * (commit d76856cc, v0.21.2). See docs/06-hermes-api-contract.md for the
+ * backend wire shapes.
  *
  * This module imports nothing from React Native or Expo (ADR-029 rule 1).
  */

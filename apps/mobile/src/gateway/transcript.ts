@@ -1,5 +1,5 @@
 /**
- * REST transcript row normalization (spec 4.1, docs/superpowers/specs/2026-09-14-agent-traffic-design.md).
+ * REST transcript row normalization (docs/06-hermes-api-contract.md, "Session transcript").
  * Pure: no React or React Native imports (ADR-029 rule 1). It lives next to the
  * port so both adapters can use it without importing a feature.
  */

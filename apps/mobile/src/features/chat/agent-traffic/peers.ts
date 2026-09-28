@@ -1,6 +1,5 @@
 /**
- * Peer resolution for bot-to-bot traffic in chat (spec 5.6,
- * docs/superpowers/specs/2026-09-14-agent-traffic-design.md).
+ * Peer resolution for bot-to-bot traffic in chat.
  * Pure: no React or React Native imports (ADR-029 rule 1).
  */
 

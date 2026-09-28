@@ -10,7 +10,7 @@ A clean React Native messaging app for a team of Hermes Agent assistants on your
 | Mobile app (Expo SDK 57) | [apps/mobile](apps/mobile/README.md) | Runs on the iOS simulator against a local `hermes serve`; see the app README |
 | Integration package (Hermes plugin, Python) | [integrations/ergates](integrations/ergates/README.md) | Unit-tested and run against the pinned Hermes in the contract tests; not yet installed on a live gateway |
 | Deployment (Compose, profile and role templates, runbook) | [deploy](deploy/README.md) | Checked by CI; not yet run on a VPS; the live checks are [deploy/VERIFY.md](deploy/VERIFY.md) |
-| Design documents | [docs](docs/README.md) | Authoritative specification; `docs/superpowers/` holds the plans (among them the Fable upgrade roadmap) and research notes |
+| Design documents | [docs](docs/README.md) | Authoritative specification for vision, architecture, security, data model, API contract and mobile design |
 
 ## Quick start (simulator)
 
@@ -51,7 +51,7 @@ Run one job with `scripts/ci-local.sh mobile`, several with `scripts/ci-local.sh
 - `cd integrations/ergates && uv run --python 3.11 --with pytest --with pytest-cov --with pyyaml pytest`
 - Live backend smoke: `ERGATES_LIVE=1 ERGATES_TOKEN=… npx vitest run test/live` (from `apps/mobile`)
 
-Hermes pin: `d76856cc6971b6e0e1903b5369498bcc4bb83a60` (v0.21.2). Re-verify the vendored client and the recorded shapes in `docs/superpowers/research/` on every upgrade.
+Hermes pin: `d76856cc6971b6e0e1903b5369498bcc4bb83a60` (v0.21.2). Re-verify the vendored client against [06 - Client contract](docs/06-hermes-api-contract.md) on every upgrade; `scripts/ci-local.sh contract` checks the pinned integration automatically.
 
 ## Contributing
 

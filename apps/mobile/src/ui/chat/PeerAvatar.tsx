@@ -1,6 +1,5 @@
 /**
- * Avatar for a message-agent peer (docs/superpowers/specs/2026-09-14-agent-traffic-design.md
- * section 4.2). Resolves the image the way `src/ui/BotRow.tsx` does: find the
+ * Avatar for a message-agent peer. Resolves the image the way `src/ui/BotRow.tsx` does: find the
  * connection, get its gateway, query the avatar asset for the peer's roster
  * profile. Either "cannot resolve" case — no local `avatarProfile` (a remote
  * peer), or an `avatarProfile` with no matching connection record — shows the

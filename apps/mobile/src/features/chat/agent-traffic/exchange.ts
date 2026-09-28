@@ -1,6 +1,5 @@
 /**
- * Exchange evidence, pairing, state, copy and the transcript-window rule
- * (spec 5.3-5.5, docs/superpowers/specs/2026-09-14-agent-traffic-design.md).
+ * Exchange evidence, pairing, state, copy and the transcript-window rule.
  * Pure: no React or React Native imports (ADR-029 rule 1).
  */
 

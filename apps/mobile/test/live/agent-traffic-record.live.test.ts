@@ -1,7 +1,7 @@
 /**
- * Opt-in recorder for the agent-traffic fixtures (docs/superpowers/specs/2026-09-14-agent-traffic-design.md
- * section 8). It drives the real backend: Hermes (`default`) is asked to message Kevin (`kevin`)
- * over `message_agent`, once with Kevin's Bot Chat closed (CLI delivery) and once with it held
+ * Opt-in recorder for the agent-traffic fixtures. It drives the real backend: Hermes (`default`)
+ * is asked to message Kevin (`kevin`) over `message_agent`, once with Kevin's Bot Chat closed
+ * (CLI delivery) and once with it held
  * live on a second socket (live delivery), then to message a teammate that does not exist
  * (refusal) and to send two messages in one turn (batch candidate).
  *

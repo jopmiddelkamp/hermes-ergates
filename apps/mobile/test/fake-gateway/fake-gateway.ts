@@ -4,7 +4,7 @@
  * It mimics the recorded backend shapes closely enough for scenario tests to
  * drive the real `createSessionController` without a network. Every
  * profile/session RPC is answered from `test/fixtures/*.json`
- * (see docs/superpowers/research/2026-09-13-recorded-backend-shapes.md);
+ * (see docs/06-hermes-api-contract.md for the backend wire shapes);
  * only `prompt.submit` and replay are scriptable per test.
  *
  * No React Native or Expo imports (ADR-029 rule 1) - this runs in Node under
