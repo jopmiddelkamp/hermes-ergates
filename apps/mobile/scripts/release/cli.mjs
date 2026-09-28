@@ -7,17 +7,40 @@
  *   node scripts/release/cli.mjs metadata                          version, channel and build number of this run
  *   node scripts/release/cli.mjs set-build-number <n> [app.json]   write the build number into app.json (never committed)
  *   node scripts/release/cli.mjs ios-signing <ExportOptions.plist>  check the App Store profile, sign the Xcode project, write the export options
+ *   node scripts/release/cli.mjs secrets-check                     what is missing in the release folder (upload-secrets.sh --check)
+ *   node scripts/release/cli.mjs secrets-upload                    create the app-stores environment when missing, set its secrets
+ *   node scripts/release/cli.mjs make-upload-keystore              create the Android upload keystore in the release folder
+ *
+ * The release folder is apps/mobile/.release, or ERGATES_RELEASE_DIR when set.
  */
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { appendFileSync, chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { appStoreProfileProblems, exportOptionsPlist } from './ios-signing.mjs'
 import { formatOutputs, resolveRelease, withBuildNumber } from './metadata.mjs'
+import {
+  ENVIRONMENT,
+  ENVIRONMENT_BODY,
+  ENV_FILE,
+  FILES,
+  SECRETS,
+  TAG_PATTERN,
+  TAG_POLICY_BODY,
+  VARIABLES,
+  hasTagPolicy,
+  keystoreProblems,
+  keytoolArguments,
+  parseEnvFile,
+  secretProblems,
+  secretValue,
+} from './secrets.mjs'
 
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const APP_JSON = path.join(APP_DIR, 'app.json')
+const RELEASE_DIR = process.env.ERGATES_RELEASE_DIR || path.join(APP_DIR, '.release')
 
 /** `::error::` makes GitHub show each line on the run page; locally it is plain text. */
 function fail(lines) {
@@ -96,10 +119,110 @@ function iosSigning(exportOptionsPath) {
   console.log(`ios-signing: ${targetName} Release signs with "${profile.name}"; export options in ${exportOptionsPath}`)
 }
 
+function inRelease(name) {
+  return path.join(RELEASE_DIR, name)
+}
+
+function loadReleaseEnv() {
+  const file = inRelease(ENV_FILE)
+  if (!existsSync(file)) {
+    fail(`${file} is missing. Copy scripts/release/release.env.example there and fill it in (RELEASING.md).`)
+  }
+  return parseEnvFile(readFileSync(file, 'utf8'))
+}
+
+/** Size of each file that exists; the text of the two text files, for the shape checks only. */
+function describeFiles() {
+  const files = {}
+  for (const name of Object.values(FILES)) {
+    if (!existsSync(inRelease(name))) continue
+    files[name] = { size: statSync(inRelease(name)).size }
+    if (name === FILES.ascKey || name === FILES.playKey) files[name].text = readFileSync(inRelease(name), 'utf8')
+  }
+  return files
+}
+
+/** Git must never see the release folder; `git check-ignore` exits 1 for a path it would track. */
+function gitProblems() {
+  const probe = spawnSync('git', ['check-ignore', '-q', inRelease(ENV_FILE)], { cwd: APP_DIR })
+  return probe.status === 1 ? [`${RELEASE_DIR} is not ignored by git. Stop: the secrets could be committed.`] : []
+}
+
+function permissionWarnings() {
+  const open = [RELEASE_DIR, ...Object.values(FILES).map(inRelease), inRelease(ENV_FILE)]
+    .filter(file => existsSync(file) && (statSync(file).mode & 0o077) !== 0)
+  return open.map(file => `${file} is readable by other users: chmod ${file === RELEASE_DIR ? '700' : '600'} it.`)
+}
+
+function secretsCheck() {
+  const env = loadReleaseEnv()
+  for (const warning of permissionWarnings()) console.warn(`! ${warning}`)
+  const problems = [...gitProblems(), ...secretProblems(env, describeFiles())]
+  if (problems.length > 0) fail(problems)
+  console.log(`✓ ${RELEASE_DIR}: every secret of the ${ENVIRONMENT} environment is ready`)
+  return env
+}
+
+/** Runs gh; a secret goes in as `input` on stdin, never as an argument. */
+function gh(args, input) {
+  const result = spawnSync('gh', args, { cwd: APP_DIR, input, encoding: 'utf8' })
+  return { ok: !result.error && result.status === 0, stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
+}
+
+function ghOrFail(args, input) {
+  const result = gh(args, input)
+  if (!result.ok) {
+    process.stderr.write(result.stderr)
+    fail(`gh ${args.slice(0, 3).join(' ')} failed. Check gh auth status and that this folder's git remote is the GitHub repository.`)
+  }
+  return result.stdout
+}
+
+function secretsUpload() {
+  const env = secretsCheck()
+  const environment = `repos/{owner}/{repo}/environments/${ENVIRONMENT}`
+  if (!gh(['api', environment]).ok) {
+    ghOrFail(['api', '--method', 'PUT', environment, '--input', '-'], JSON.stringify(ENVIRONMENT_BODY))
+    console.log(`✓ environment ${ENVIRONMENT} created`)
+  }
+  const policies = JSON.parse(ghOrFail(['api', `${environment}/deployment-branch-policies`]))
+  if (!hasTagPolicy(policies)) {
+    ghOrFail(['api', '--method', 'POST', `${environment}/deployment-branch-policies`, '--input', '-'], JSON.stringify(TAG_POLICY_BODY))
+  }
+  console.log(`✓ environment ${ENVIRONMENT}: only tags matching ${TAG_PATTERN} deploy`)
+  const readFile = name => readFileSync(inRelease(name))
+  for (const secret of SECRETS) {
+    ghOrFail(['secret', 'set', secret.name, '--env', ENVIRONMENT], secretValue(secret, env, readFile))
+    console.log(`✓ secret ${secret.name}`)
+  }
+  for (const variable of VARIABLES) {
+    ghOrFail(['variable', 'set', variable.name, '--env', ENVIRONMENT], secretValue(variable, env, readFile))
+    console.log(`✓ variable ${variable.name}`)
+  }
+}
+
+function makeUploadKeystore() {
+  const env = loadReleaseEnv()
+  const keystore = inRelease(FILES.androidKeystore)
+  const problems = keystoreProblems(env, existsSync(keystore))
+  if (problems.length > 0) fail(problems)
+  const passwords = {
+    ANDROID_UPLOAD_KEYSTORE_PASSWORD: env.ANDROID_UPLOAD_KEYSTORE_PASSWORD,
+    ANDROID_UPLOAD_KEY_PASSWORD: env.ANDROID_UPLOAD_KEY_PASSWORD,
+  }
+  const result = spawnSync('keytool', keytoolArguments(env, keystore), { env: { ...process.env, ...passwords }, stdio: 'inherit' })
+  if (result.error || result.status !== 0) fail('keytool failed; see the output above. keytool comes with a JDK, for example Java 17.')
+  chmodSync(keystore, 0o600)
+  console.log(`✓ ${keystore}: upload key ${env.ANDROID_UPLOAD_KEY_ALIAS}`)
+}
+
 const [command, ...args] = process.argv.slice(2)
 switch (command) {
   case 'metadata': metadata(); break
   case 'set-build-number': setBuildNumber(...args); break
   case 'ios-signing': iosSigning(...args); break
-  default: fail('Usage: node scripts/release/cli.mjs metadata | set-build-number <n> [app.json] | ios-signing <ExportOptions.plist>')
+  case 'secrets-check': secretsCheck(); break
+  case 'secrets-upload': secretsUpload(); break
+  case 'make-upload-keystore': makeUploadKeystore(); break
+  default: fail('Usage: node scripts/release/cli.mjs metadata | set-build-number | ios-signing | secrets-check | secrets-upload | make-upload-keystore')
 }
