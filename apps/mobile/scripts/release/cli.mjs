@@ -161,7 +161,12 @@ function gitProblems() {
   const releasePath = realpathSync(RELEASE_DIR)
   const inside = releasePath === repoRoot || releasePath.startsWith(repoRoot + path.sep)
   if (!inside) return []
-  const probe = spawnSync('git', ['check-ignore', '-q', inRelease(ENV_FILE)], { cwd: APP_DIR })
+  // Probe the resolved path, relative to the resolved repo root, and run git
+  // from that root: a RELEASE_DIR whose own path sits outside the work tree
+  // but whose target resolves inside it (the macOS /tmp -> /private/tmp
+  // case) makes git exit 128 ("outside repository") on the unresolved path,
+  // even when the real underlying file is genuinely ignored.
+  const probe = spawnSync('git', ['check-ignore', '-q', path.relative(repoRoot, path.join(releasePath, ENV_FILE))], { cwd: repoRoot })
   if (probe.status === 0) return []
   if (probe.status === 1) return [`${RELEASE_DIR} is not ignored by git. Stop: the secrets could be committed.`]
   return [`cannot verify ${RELEASE_DIR} is ignored by git.`]

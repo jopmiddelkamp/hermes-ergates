@@ -4,7 +4,7 @@
  * with the GitHub run in its environment.
  */
 import { spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -13,6 +13,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 const APP = path.resolve(import.meta.dirname, '../..')
 const CLI = path.join(APP, 'scripts/release/cli.mjs')
 const APP_VERSION: string = JSON.parse(readFileSync(path.join(APP, 'app.json'), 'utf8')).expo.version
+// The real git binary, resolved once: the symlink tests below redirect the
+// `git` on PATH to a throwaway repository via `-C`, and still need the real
+// executable underneath to do that.
+const REAL_GIT = spawnSync('/bin/sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim()
 
 let scratch: string
 
@@ -119,8 +123,8 @@ describe('cli secrets', () => {
   const P8 = '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n'
   const PLAY_JSON = JSON.stringify({ type: 'service_account', client_email: 'ci@ergates.iam.gserviceaccount.com', private_key: 'k' })
 
-  function releaseFolder(env = RELEASE_ENV): string {
-    const dir = path.join(scratch, 'release')
+  function releaseFolder(env = RELEASE_ENV, parent = scratch): string {
+    const dir = path.join(parent, 'release')
     mkdirSync(dir, { mode: 0o700 })
     const files: Record<string, string | Buffer> = {
       'release.env': env,
@@ -183,6 +187,35 @@ describe('cli secrets', () => {
       '',
     ].join('\n')
     writeFileSync(path.join(bin, 'git'), stub, { mode: 0o755 })
+  }
+
+  /**
+   * Real git, redirected: every call runs as `git -C $FAKE_GIT_ROOT ...`, so
+   * gitProblems() (whose git calls always run with `cwd: APP_DIR`, the real
+   * checkout) is made to see a throwaway repository instead. Unlike
+   * writeFakeGit above, `check-ignore` is not canned: it is real git,
+   * genuinely evaluating the path argument it is given against that
+   * repository's own ignore rules and its own containment check. That is
+   * the only way to reproduce (and verify the fix for) a `RELEASE_DIR` that
+   * is a symlink: the bug is specifically about which path text and cwd
+   * reach git, and a canned exit code cannot tell the two apart.
+   */
+  function writeRealGitRedirect(bin: string) {
+    const stub = ['#!/usr/bin/env bash', 'exec "$REAL_GIT" -C "$FAKE_GIT_ROOT" "$@"', ''].join('\n')
+    writeFileSync(path.join(bin, 'git'), stub, { mode: 0o755 })
+  }
+
+  /** A real, throwaway git repository under scratch (never the checked-out repo), with a release/ folder inside it that releaseFolder() fills. */
+  function releaseFolderInRealRepo(ignoreReleaseFolder: boolean): { repoDir: string; symlink: string } {
+    const repoDir = path.join(scratch, 'repo')
+    mkdirSync(repoDir)
+    const init = spawnSync(REAL_GIT, ['init', '-q'], { cwd: repoDir })
+    if (init.status !== 0) throw new Error(`git init failed: ${init.stderr}`)
+    if (ignoreReleaseFolder) writeFileSync(path.join(repoDir, '.gitignore'), 'release/\n')
+    const dir = releaseFolder(RELEASE_ENV, repoDir)
+    const symlink = path.join(scratch, 'release-symlink')
+    symlinkSync(dir, symlink, 'dir')
+    return { repoDir, symlink }
   }
 
   /** Stands in for keytool: creates an empty file at the -keystore path and exits 0, so the success path of make-upload-keystore runs without a real JDK. */
@@ -301,6 +334,43 @@ describe('cli secrets', () => {
 
     expect(result.status).toBe(1)
     expect(result.stderr).toContain(`::error::cannot verify ${dir} is ignored by git.`)
+  })
+
+  it('secrets-check succeeds when the release folder is a symlink outside the repository to an ignored folder inside it', () => {
+    // The macOS /tmp -> /private/tmp case: ERGATES_RELEASE_DIR is a symlink
+    // whose own path is outside the work tree, but whose target resolves
+    // inside it. The realpath-based inside/outside decision correctly calls
+    // this "inside"; the git check-ignore probe must still succeed, by
+    // running on the resolved path relative to the resolved repo root.
+    const bin = fakeBin()
+    writeRealGitRedirect(bin)
+    const { repoDir, symlink } = releaseFolderInRealRepo(true)
+
+    const result = cli(['secrets-check'], {
+      ERGATES_RELEASE_DIR: symlink,
+      PATH: `${bin}:${process.env.PATH ?? ''}`,
+      REAL_GIT,
+      FAKE_GIT_ROOT: repoDir,
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain(`✓ ${symlink}: every secret of the app-stores environment is ready`)
+  })
+
+  it('secrets-check refuses when the release folder is a symlink outside the repository to a folder inside it that git does not ignore', () => {
+    const bin = fakeBin()
+    writeRealGitRedirect(bin)
+    const { repoDir, symlink } = releaseFolderInRealRepo(false)
+
+    const result = cli(['secrets-check'], {
+      ERGATES_RELEASE_DIR: symlink,
+      PATH: `${bin}:${process.env.PATH ?? ''}`,
+      REAL_GIT,
+      FAKE_GIT_ROOT: repoDir,
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(`::error::${symlink} is not ignored by git. Stop: the secrets could be committed.`)
   })
 
   it('upload creates the environment with its tag rule and sends every value on stdin', () => {
