@@ -158,9 +158,31 @@ describe('cli secrets', () => {
     return path.join(scratch, 'gh.log')
   }
 
-  /** `git check-ignore` exits 0 (ignored), 1 (not ignored), or, for a path outside the repository, 128 (verified against real git) — gitProblems must fail closed on anything but 0 or 1. */
-  function writeFakeGit(bin: string, checkIgnoreExit: number) {
-    writeFileSync(path.join(bin, 'git'), `#!/usr/bin/env bash\nexit ${checkIgnoreExit}\n`, { mode: 0o755 })
+  /**
+   * git as gitProblems() calls it. `rev-parse --show-toplevel` reports
+   * $FAKE_GIT_ROOT, or fails (repository root unknown) when that is unset;
+   * `check-ignore` exits $FAKE_GIT_CHECK_IGNORE_EXIT (0 ignored, 1 not
+   * ignored, anything else "cannot verify"). One stub file; each test passes
+   * its own values through the environment, not the script text.
+   */
+  function writeFakeGit(bin: string) {
+    const stub = [
+      '#!/usr/bin/env bash',
+      'case "$1" in',
+      '  rev-parse)',
+      '    if [ -z "${FAKE_GIT_ROOT:-}" ]; then exit 1; fi',
+      '    printf \'%s\\n\' "$FAKE_GIT_ROOT"',
+      '    ;;',
+      '  check-ignore)',
+      '    exit "${FAKE_GIT_CHECK_IGNORE_EXIT:-0}"',
+      '    ;;',
+      '  *)',
+      '    exit 1',
+      '    ;;',
+      'esac',
+      '',
+    ].join('\n')
+    writeFileSync(path.join(bin, 'git'), stub, { mode: 0o755 })
   }
 
   /** Stands in for keytool: creates an empty file at the -keystore path and exits 0, so the success path of make-upload-keystore runs without a real JDK. */
@@ -211,10 +233,69 @@ describe('cli secrets', () => {
     expect(result.stderr).toContain(`::error::${envFile} is readable by other users: chmod 600 it.`)
   })
 
-  it('secrets-check refuses when it cannot verify the release folder is ignored by git', () => {
+  it('secrets-check succeeds when the release folder is outside this repository', () => {
+    // No git stub here: real git decides, and this scratch folder (under the
+    // OS temp dir) really is outside the checked-out repository, so
+    // gitProblems must skip the check-ignore call entirely.
+    const dir = releaseFolder()
+
+    const result = cli(['secrets-check'], { ERGATES_RELEASE_DIR: dir })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain(`✓ ${dir}: every secret of the app-stores environment is ready`)
+  })
+
+  it('secrets-check succeeds when the release folder is inside the repository and git ignores it', () => {
     const dir = releaseFolder()
     const bin = fakeBin()
-    writeFakeGit(bin, 128)
+    writeFakeGit(bin)
+
+    const result = cli(['secrets-check'], {
+      ERGATES_RELEASE_DIR: dir,
+      PATH: `${bin}:${process.env.PATH ?? ''}`,
+      FAKE_GIT_ROOT: scratch,
+      FAKE_GIT_CHECK_IGNORE_EXIT: '0',
+    })
+
+    expect(result.status).toBe(0)
+  })
+
+  it('secrets-check refuses when the release folder is inside the repository and git does not ignore it', () => {
+    const dir = releaseFolder()
+    const bin = fakeBin()
+    writeFakeGit(bin)
+
+    const result = cli(['secrets-check'], {
+      ERGATES_RELEASE_DIR: dir,
+      PATH: `${bin}:${process.env.PATH ?? ''}`,
+      FAKE_GIT_ROOT: scratch,
+      FAKE_GIT_CHECK_IGNORE_EXIT: '1',
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(`::error::${dir} is not ignored by git. Stop: the secrets could be committed.`)
+  })
+
+  it('secrets-check refuses when git cannot say whether an inside release folder is ignored', () => {
+    const dir = releaseFolder()
+    const bin = fakeBin()
+    writeFakeGit(bin)
+
+    const result = cli(['secrets-check'], {
+      ERGATES_RELEASE_DIR: dir,
+      PATH: `${bin}:${process.env.PATH ?? ''}`,
+      FAKE_GIT_ROOT: scratch,
+      FAKE_GIT_CHECK_IGNORE_EXIT: '128',
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(`::error::cannot verify ${dir} is ignored by git.`)
+  })
+
+  it('secrets-check refuses when git cannot report the repository root at all', () => {
+    const dir = releaseFolder()
+    const bin = fakeBin()
+    writeFakeGit(bin)
 
     const result = cli(['secrets-check'], { ERGATES_RELEASE_DIR: dir, PATH: `${bin}:${process.env.PATH ?? ''}` })
 
@@ -225,7 +306,6 @@ describe('cli secrets', () => {
   it('upload creates the environment with its tag rule and sends every value on stdin', () => {
     const bin = fakeBin()
     const GH_LOG = writeFakeGh(bin, { environmentExists: false, policyPresent: false })
-    writeFakeGit(bin, 0)
 
     const result = cli(['secrets-upload'], { ERGATES_RELEASE_DIR: releaseFolder(), PATH: `${bin}:${process.env.PATH ?? ''}`, GH_LOG })
 
@@ -252,7 +332,6 @@ describe('cli secrets', () => {
   it('upload repairs an already-existing environment and does not duplicate an already-present tag policy', () => {
     const bin = fakeBin()
     const GH_LOG = writeFakeGh(bin, { environmentExists: true, policyPresent: true })
-    writeFakeGit(bin, 0)
 
     const result = cli(['secrets-upload'], { ERGATES_RELEASE_DIR: releaseFolder(), PATH: `${bin}:${process.env.PATH ?? ''}`, GH_LOG })
 

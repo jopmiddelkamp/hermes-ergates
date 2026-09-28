@@ -14,7 +14,7 @@
  * The release folder is apps/mobile/.release, or ERGATES_RELEASE_DIR when set.
  */
 import { spawnSync } from 'node:child_process'
-import { appendFileSync, chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -143,13 +143,24 @@ function describeFiles() {
 }
 
 /**
- * Git must never see the release folder. `git check-ignore` exits 1 for a
- * path it would track (a real problem), 0 for a path it ignores. Any other
- * exit (for example 128, which real git gives for a path outside the
- * repository) means the question could not be answered, so this fails
- * closed instead of silently treating "could not check" as "fine".
+ * Git must never see the release folder, but only when it is actually inside
+ * this repository's work tree: a folder outside it (an absolute
+ * ERGATES_RELEASE_DIR elsewhere, for example) can never be committed from
+ * here, so there is nothing to check. "Inside" is decided by comparing real
+ * paths (resolved symlinks) against `git rev-parse --show-toplevel`. When
+ * that call fails, the repository root is unknown, so this fails closed the
+ * same way as an unreadable check-ignore result. Inside the work tree,
+ * `git check-ignore` exits 1 for a path it would track (a real problem), 0
+ * for a path it ignores; any other exit (for example 128) means the
+ * question could not be answered, so this also fails closed there.
  */
 function gitProblems() {
+  const root = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: APP_DIR, encoding: 'utf8' })
+  if (root.error || root.status !== 0) return [`cannot verify ${RELEASE_DIR} is ignored by git.`]
+  const repoRoot = realpathSync(root.stdout.trim())
+  const releasePath = realpathSync(RELEASE_DIR)
+  const inside = releasePath === repoRoot || releasePath.startsWith(repoRoot + path.sep)
+  if (!inside) return []
   const probe = spawnSync('git', ['check-ignore', '-q', inRelease(ENV_FILE)], { cwd: APP_DIR })
   if (probe.status === 0) return []
   if (probe.status === 1) return [`${RELEASE_DIR} is not ignored by git. Stop: the secrets could be committed.`]
