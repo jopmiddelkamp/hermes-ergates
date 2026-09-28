@@ -4,7 +4,7 @@
 |---|---|
 | Version | 0.1 draft |
 | Date | 2026-09-12 |
-| Depends on | 02-functional-design.md, research/notes-claude-platform-facts.md |
+| Depends on | 02-functional-design.md, internal research notes (not published) |
 
 ## 1. Design principles
 
@@ -58,7 +58,7 @@ Why TypeScript: the MCP SDK, the Claude Agent SDK, and Claude Code itself are Ty
 ## 4. Harness layer (multi-vendor runtime)
 
 ### 4.0 Concept
-A harness is the vendor's agent runtime: model loop, built-in tools (files, shell), MCP client, sessions. The platform never re-implements these. It drives the harness headless, feeds it the agent's context, and reads its event stream. Verified capabilities per harness are in research/notes-harness-facts.md.
+A harness is the vendor's agent runtime: model loop, built-in tools (files, shell), MCP client, sessions. The platform never re-implements these. It drives the harness headless, feeds it the agent's context, and reads its event stream. Verified capabilities per harness are recorded in internal research notes, not published.
 
 ```mermaid
 flowchart LR
@@ -142,7 +142,7 @@ Consequence: tool policy and approvals never depend on a harness feature. This i
 ### 4.1 Interface (unchanged for callers)
 
 ### 4.2 Claude Code invocation (per turn, reference adapter)
-The runner executes inside the agent's sandbox container (other adapters follow the same pattern with their own flags, see research/notes-harness-facts.md):
+The runner executes inside the agent's sandbox container (other adapters follow the same pattern with their own flags, see internal research notes, not published):
 
 ```bash
 CLAUDE_CONFIG_DIR=/agent/claude \
@@ -160,7 +160,7 @@ claude -p \
   --model claude-opus-5 --effort high \
   --max-turns 40 --name "agent:<name>"
 ```
-Facts that shape this (all from the official docs, see research/notes-claude-platform-facts.md):
+Facts that shape this (all from the official docs, see internal research notes, not published):
 - `--bare` must not be used on the subscription path because bare mode does not read `CLAUDE_CODE_OAUTH_TOKEN`. Isolation is achieved with `CLAUDE_CONFIG_DIR` (own settings, credentials, projects, memory) and a dedicated working directory.
 - `--resume` does not restore `--mcp-config`, `--settings`, `--add-dir`; the runner passes them on every turn.
 - `--permission-prompt-tool` lets an MCP tool answer permission prompts. The platform MCP server implements it: it creates an approval card, pushes a notification, waits (with timeout) for the user's decision, and returns allow or deny.

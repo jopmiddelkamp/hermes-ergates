@@ -58,7 +58,7 @@ Jop already pays for Claude Max. He wants the same experience on a VPS he contro
 
 | ID | Constraint | Source |
 |---|---|---|
-| C1 | Model access through unmodified vendor agent binaries (Claude Code, Codex CLI, Gemini CLI, Grok Build) signed in with Jop's own subscriptions; API key path must exist as a switch for business use | research/notes-claude-platform-facts.md, research/notes-harness-facts.md |
+| C1 | Model access through unmodified vendor agent binaries (Claude Code, Codex CLI, Gemini CLI, Grok Build) signed in with Jop's own subscriptions; API key path must exist as a switch for business use | Internal research notes, not published |
 | C7 | The platform must not depend on one AI vendor: agent identity, memory, files, routines, and tool policy are owned by the platform; the harness is a per-agent setting that can be changed later | Jop's brief, 2026-09-12 |
 | C2 | Usage limits: rolling 5-hour window plus a weekly cap shared with all Claude apps | Claude Help Center |
 | C3 | Single VPS (Linux, Docker). No Kubernetes in Phase 1 | Jop's brief |
@@ -92,8 +92,6 @@ Jop already pays for Claude Max. He wants the same experience on a VPS he contro
 
 | Document | Purpose |
 |---|---|
-| research/00-research-summary.md | As-is analysis of Grok Bot, business rules, screenshots |
-| research/notes-claude-platform-facts.md | Verified facts about Claude Code, Agent SDK, MCP, policies |
 | 01-vision-and-scope.md | This document |
 | 02-functional-design.md | Actors, user stories, functional requirements, UI specification |
 | 03-technical-design.md | Architecture, components, runtime, deployment |

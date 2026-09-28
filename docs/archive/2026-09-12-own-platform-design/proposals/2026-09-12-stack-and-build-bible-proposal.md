@@ -4,7 +4,7 @@
 |---|---|
 | Date | 2026-09-12 |
 | Status | Proposal for Jop's decision |
-| Inputs | docs/01..09, docs/research/principles-input (OWASP, compliance, SOLID, DRY, KISS from Jop), 14 primary sources listed at the end |
+| Inputs | docs/01..09, Jop's principle notes (OWASP, compliance, SOLID, DRY, KISS; internal, not published), 14 primary sources listed at the end |
 
 ## Part 1 - Honest critique: could a less capable model build this from the current docs?
 
@@ -226,6 +226,6 @@ Work to produce the bible (my effort, after Jop's choices): about 4 to 6 working
 11. [MCP official SDKs and tiers](https://modelcontextprotocol.io/docs/sdk)
 12. [OpenAI client libraries](https://developers.openai.com/api/docs/libraries)
 13. [Google Gen AI SDK languages](https://ai.google.dev/gemini-api/docs/libraries)
-14. Jop's principle skills: docs/research/principles-input (owasp, compliance, solid, dry, kiss)
+14. Jop's principle notes: OWASP, compliance, SOLID, DRY, KISS (internal, not published)
 15. [Go 1 and the Future of Go Programs (compatibility promise)](https://go.dev/doc/go1compat)
 16. [.NET support policy: release cadence, LTS and STS](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core)

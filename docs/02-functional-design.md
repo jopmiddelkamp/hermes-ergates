@@ -4,7 +4,7 @@
 |---|---|
 | Version | 0.3 (corrected requirements and mobile direction) |
 | Date | 2026-09-12 |
-| Basis | research/00-research-summary.md (business rules BR-01..BR-40), Jop's brief, research/notes-hermes-facts.md |
+| Basis | Internal research notes, not published (business rules BR-01..BR-40), Jop's brief |
 | Mapping | Hermes primitives are mapped in 03; gaps, integration work and acceptance checks are explicit in 11. Requirement status is not proof of implementation. |
 
 Requirement IDs: **FR-xxx** functional, **NFR-xxx** non-functional, **BR-xx** business rules from the research. Priority: **M** must (Phase 1), **S** should (Phase 2), **C** could (Phase 3+).

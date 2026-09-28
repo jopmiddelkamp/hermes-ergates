@@ -15,7 +15,7 @@
 
 ## 2. Anthropic terms: what is and is not allowed
 
-All quotes were read from the official pages on 2026-09-12 (see research/notes-claude-platform-facts.md for full text and URLs).
+All quotes were read from the official pages on 2026-09-12 (see internal research notes, not published, for full text and URLs).
 
 | Question | Answer from the docs | Consequence for this project |
 |---|---|---|
@@ -29,7 +29,7 @@ All quotes were read from the official pages on 2026-09-12 (see research/notes-c
 
 | Vendor / harness | Subscription headless on a server | API key path | Source |
 |---|---|---|---|
-| OpenAI Codex CLI | ChatGPT sign-in gives "subscription access"; for CI the docs recommend `CODEX_API_KEY` and describe keeping `~/.codex/auth.json` as an "advanced" option; "Don't expose Codex execution in untrusted or public environments". No explicit ban on personal server use found; treat as personal, ordinary use only. | `CODEX_API_KEY`, billed at API rates | research/notes-harness-facts.md section 2 |
+| OpenAI Codex CLI | ChatGPT sign-in gives "subscription access"; for CI the docs recommend `CODEX_API_KEY` and describe keeping `~/.codex/auth.json` as an "advanced" option; "Don't expose Codex execution in untrusted or public environments". No explicit ban on personal server use found; treat as personal, ordinary use only. | `CODEX_API_KEY`, billed at API rates | Internal research notes, not published |
 | Google Gemini CLI | "Headless mode will use your existing authentication method, if an existing authentication credential is cached." Free tier and AI Pro/Ultra via Google account; automation terms not stated on the CLI pages; verify the Gemini Code Assist individual terms before relying on it. | `GEMINI_API_KEY` or Vertex AI | section 3 |
 | xAI Grok Build | Requires SuperGrok or X Premium+ for `grok login`; headless mode is documented "for scripts, automations, or integration into other apps"; server terms not stated. | `XAI_API_KEY` | section 4 |
 

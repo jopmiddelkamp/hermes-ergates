@@ -11,7 +11,7 @@ You are an engineer, human or AI, who builds jop-bot from these documents. This 
 5. `docs/build/04-algorithms.md` - step-by-step logic with numbers.
 6. `docs/build/05-test-strategy.md` - how to test without touching real vendors.
 7. The plan for your phase. Execute one task at a time.
-8. Background only when needed: `docs/01..09` (design) and `docs/research/` (why).
+8. Background only when needed: `docs/01..09` (design) and internal research notes, not published (why).
 
 ## 2. Rules you must follow
 
@@ -97,4 +97,3 @@ jop-bot/
 | How do I test this without real vendors? | `05-test-strategy.md` |
 | Why was this decided? | `docs/08-decision-log.md` |
 | What does the user see? | `docs/02-functional-design.md` section 5 |
-| Which vendor flag do I pass? | `docs/research/notes-harness-facts.md` |

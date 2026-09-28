@@ -34,3 +34,6 @@ apps/mobile/coverage/
 
 # Design and plan documents stay local; not part of the public repository.
 docs/superpowers/
+
+# Personal research notes stay local; not part of the public repository.
+docs/research/

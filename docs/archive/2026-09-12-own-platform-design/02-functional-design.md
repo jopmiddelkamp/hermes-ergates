@@ -4,7 +4,7 @@
 |---|---|
 | Version | 0.1 draft |
 | Date | 2026-09-12 |
-| Basis | research/00-research-summary.md (business rules BR-01..BR-40), Jop's brief |
+| Basis | Internal research notes, not published (business rules BR-01..BR-40), Jop's brief |
 
 Requirement IDs: **FR-xxx** functional, **NFR-xxx** non-functional, **BR-xx** business rules from the research. Priority: **M** must (Phase 1), **S** should (Phase 2), **C** could (Phase 3+).
 

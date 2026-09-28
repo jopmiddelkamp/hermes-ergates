@@ -61,7 +61,7 @@ Jop wants the same experience on a VPS he controls, with agents that act only th
 
 | ID | Constraint | Source |
 |---|---|---|
-| C1 | Model access through Hermes's provider layer; choose and smoke-test an available provider/account. Pinned Hermes docs describe Max extra-credit OAuth mechanics; actual entitlement and terms need a current check (04). | research/notes-hermes-facts.md section 13 |
+| C1 | Model access through Hermes's provider layer; choose and smoke-test an available provider/account. Pinned Hermes docs describe Max extra-credit OAuth mechanics; actual entitlement and terms need a current check (04). | Internal research notes, not published |
 | C7 | The platform must not depend on one AI vendor: Hermes profiles pin provider and model per agent and can switch later; identity, memory, files, routines, and tool policy stay in the profile | Jop's brief, 2026-09-12 |
 | C2 | Usage and cost visibility per agent, because subscription paths bill extra credits or quotas | Hermes provider docs |
 | C3 | Single VPS (Linux, Docker). No Kubernetes in Phase 1 | Jop's brief |
@@ -69,7 +69,7 @@ Jop wants the same experience on a VPS he controls, with agents that act only th
 | C5 | Mobile-first UI; voice input; short messages readable on a phone | Kevin chat evidence |
 | C6 | Authoritative agent data stays on the VPS. Disclose provider processing, push metadata, encrypted off-host backups and optional device caches/drafts; no third-party analytics | Privacy; 04 and 05 |
 | C8 | The client is a React Native app (Expo); no PWA | Jop, 2026-09-12 |
-| C9 | The Hermes version is pinned; its client protocol is internal and is re-verified on every upgrade | research/notes-hermes-facts.md |
+| C9 | The Hermes version is pinned; its client protocol is internal and is re-verified on every upgrade | Internal research notes, not published |
 | C10 | Clean mobile layouts and bot action menus from the supplied iPhone screenshots; desktop-equivalent mobile editing; Hermes semantic themes and Nous default palettes | Jop, 2026-09-12; 10-mobile-design.md |
 
 ## 7. Planning assumptions
@@ -100,9 +100,6 @@ Jop wants the same experience on a VPS he controls, with agents that act only th
 
 | Document | Purpose |
 |---|---|
-| research/00-research-summary.md | As-is analysis of Grok Bot, business rules, screenshots |
-| research/notes-hermes-facts.md | Source notes and corrected handler facts, with implementation limits |
-| research/notes-claude-platform-facts.md | Anthropic terms and Claude Code facts (compliance background) |
 | 01-vision-and-scope.md | This document |
 | 02-functional-design.md | Actors, user stories, functional requirements, UI specification |
 | 03-technical-design.md | Architecture: the app, `hermes serve`, profiles, Bot Mode conventions, push, deployment |

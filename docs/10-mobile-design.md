@@ -4,7 +4,7 @@ Version: 0.3. Date: 2026-09-12. Direction: requested by Jop. Implementation stat
 
 ## 1. Design direction
 
-A quiet messaging app for a small team of assistants. Use the layouts in [the mobile reference inventory](research/notes-mobile-design.md): generous whitespace, circular avatars, flat conversation rows, rounded message bubbles, a compact composer, and grouped settings in a sheet. Colors come from Hermes's semantic theme system. Keep the main experience focused on conversations.
+A quiet messaging app for a small team of assistants. Use the layouts from the original mobile reference screenshots, which are not published: generous whitespace, circular avatars, flat conversation rows, rounded message bubbles, a compact composer, and grouped settings in a sheet. Colors come from Hermes's semantic theme system. Keep the main experience focused on conversations.
 
 Home is a single screen, not a permanent multi-tab dashboard. The account avatar opens Settings, search opens a focused search view, and the plus button opens a compact creation menu. Routines, files, tools, model selection, and memory live behind the agent's name in chat. The board and catalog are secondary destinations when their phases ship.
 
@@ -85,7 +85,7 @@ Field, Card/Group and the secondary Button fill with whichever of `muted` or `ba
 
 ### Home sections and pinned members
 
-Clarified by Jop on 2026-09-13 in the [Prive reference](research/screenshots/mobile/2026-09-13-home-prive-section.png). A Home organization group is called a **section** in these docs; it does not create a shared conversation or a Hermes room.
+Clarified by Jop on 2026-09-13; the original mobile reference screenshots are not published. A Home organization group is called a **section** in these docs; it does not create a shared conversation or a Hermes room.
 
 - Show the section name, such as **Prive**, as small, regular-weight grey text with a chevron immediately beside it. Use Hermes `mutedForeground` with the contrast fallback above; avoid a card, filled badge or large heading. The whole heading has a minimum 44-point hit area and an accessible section name and expanded/collapsed state.
 - The section of each agent is shared with Hermes Desktop (docs/05 "Bot metadata compatibility"); the list of sections, their order and their collapse state stay on this phone. A section the phone finds only on agents shows at the end, named from the agents, or "Untitled section" when none carries a name.

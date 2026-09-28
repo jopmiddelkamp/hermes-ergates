@@ -21,10 +21,6 @@ Updated 2026-09-12 after source review and Jop's mobile design references; app c
 | [Build plan](superpowers/plans/2026-09-13-ergates-build.md) | Task-by-task implementation plan executed on 2026-09-13 |
 | [Recorded backend shapes](superpowers/research/2026-09-13-recorded-backend-shapes.md) | Live-probed request/response/event shapes behind the client contract |
 | [Simulator run record](superpowers/research/2026-09-13-simulator-run.md) | What was verified on the iOS simulator and what remains pending |
-| [Grok Bot research](research/00-research-summary.md) | Historical walkthrough, business rules and observed problems |
-| [Mobile references](research/notes-mobile-design.md) | Ten original iPhone screenshots, including Prive sections and retained membership while pinned |
-| [Hermes source notes](research/notes-hermes-facts.md) | Upstream sources, corrected handler facts and unverified implementation boundaries |
-| [Vendor background](research/notes-claude-platform-facts.md) | Earlier recorded vendor documentation; recheck current terms before selecting an auth path |
 | [Archived own-platform design](archive/2026-09-12-own-platform-design/) | Superseded history; do not build from it |
 
 Source of Hermes behavior and colors: adjacent checkout `../hermes-agent`, version 0.21.2, commit `d76856cc6971b6e0e1903b5369498bcc4bb83a60`. Pin client and pure theme sources with that backend. Source inspection is not a substitute for the real-backend/phone checks listed in 11. Examples and proposed integration interfaces must not be mistaken for captured fixtures or upstream APIs.

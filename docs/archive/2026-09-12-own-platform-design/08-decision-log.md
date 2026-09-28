@@ -69,7 +69,7 @@ Format: context, options, decision, consequences. Status: proposed until Jop app
 - Consequences: an `event` table with 7-day retention; Redis pub/sub between API instances.
 
 ## ADR-015 Multi-harness: the agent runtime is a per-agent setting, detected on the server
-- Context: Jop wants to use whichever AI subscriptions he has (Claude Max today; ChatGPT, Gemini, or SuperGrok tomorrow), mix them per agent, and switch later. Vendor agent CLIs (Claude Code, Codex CLI, Gemini CLI, Grok Build) all offer headless mode, streaming JSON, sessions, and MCP (research/notes-harness-facts.md).
+- Context: Jop wants to use whichever AI subscriptions he has (Claude Max today; ChatGPT, Gemini, or SuperGrok tomorrow), mix them per agent, and switch later. Vendor agent CLIs (Claude Code, Codex CLI, Gemini CLI, Grok Build) all offer headless mode, streaming JSON, sessions, and MCP (internal research notes, not published).
 - Options: (A) Claude Code only; (B) adapter per vendor CLI with a capability descriptor and a detector that offers only installed, logged-in harnesses; (C) one own API loop with provider SDKs (API keys only).
 - Decision: B, with C as a later fallback adapter. Approvals and tool policy live in the MCP gateway so they work for every harness. Agent identity, memory, files, routines, and policy are platform-owned; the harness session is disposable and rebuilt by context replay on a switch.
 - Consequences: sandbox image carries all CLIs (pinned); a detector and a Settings > Harnesses screen; per-adapter contract tests; per-vendor compliance rows in 04. Cost: about +11 person-days.

@@ -24,7 +24,7 @@ The provider mechanics below were read from the pinned Hermes docs on 2026-09-12
 
 Use an API-key provider as the initial engineering default unless Jop chooses another supported path. This is not a purchase or credential setup performed by the docs. Provider switching requires the correct endpoint/provider/model/auth configuration and a smoke test; it is not guaranteed to be one line. Personal subscription credentials are not shared across people. Business use needs its own provider agreement and organization billing decision.
 
-Sources: `website/docs/integrations/providers.md` and `website/docs/user-guide/features/credential-pools.md` in the pinned checkout; [recorded vendor background](research/notes-claude-platform-facts.md). Recheck current vendor terms before enabling a subscription path or expanding beyond personal use.
+Sources: `website/docs/integrations/providers.md` and `website/docs/user-guide/features/credential-pools.md` in the pinned checkout; recorded vendor background in internal research notes, not published. Recheck current vendor terms before enabling a subscription path or expanding beyond personal use.
 
 ## 3. Threat model
 
