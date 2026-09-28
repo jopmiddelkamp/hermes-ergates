@@ -76,7 +76,8 @@ describe('build-ios.sh', () => {
   })
 })
 
-describe('build-ios.sh --read-profile-fields', () => {
+// PlistBuddy (/usr/libexec/PlistBuddy) only exists on macOS; CI's ubuntu-latest runners have no path to it.
+describe.skipIf(process.platform !== 'darwin')('build-ios.sh --read-profile-fields', () => {
   it('extracts the Name, UUID and team of a valid profile plist', () => {
     const plist = path.join(scratch, 'profile.plist')
     writeFileSync(plist, VALID_PROFILE_PLIST)

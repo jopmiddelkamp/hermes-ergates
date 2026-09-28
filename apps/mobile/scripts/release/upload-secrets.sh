@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Puts the store release secrets into the GitHub environment app-stores
 # (RELEASING.md). It reads apps/mobile/.release (or ERGATES_RELEASE_DIR),
-# creates the environment with its tag rule when it is missing, and sets every
-# secret through gh on stdin. It prints names, never values.
+# creates or repairs the app-stores environment (always PUT) and adds the v*
+# tag rule when it is missing, and sets every secret through gh on stdin. It
+# prints names, never values.
 #
 #   scripts/release/upload-secrets.sh --check   list what is missing, upload nothing
 #   scripts/release/upload-secrets.sh           upload

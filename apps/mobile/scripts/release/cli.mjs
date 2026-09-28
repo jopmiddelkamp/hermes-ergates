@@ -8,7 +8,7 @@
  *   node scripts/release/cli.mjs set-build-number <n> [app.json]   write the build number into app.json (never committed)
  *   node scripts/release/cli.mjs ios-signing <ExportOptions.plist>  check the App Store profile, sign the Xcode project, write the export options
  *   node scripts/release/cli.mjs secrets-check                     what is missing in the release folder (upload-secrets.sh --check)
- *   node scripts/release/cli.mjs secrets-upload                    create the app-stores environment when missing, set its secrets
+ *   node scripts/release/cli.mjs secrets-upload                    create or repair the app-stores environment (always PUT), set its secrets
  *   node scripts/release/cli.mjs make-upload-keystore              create the Android upload keystore in the release folder
  *
  * The release folder is apps/mobile/.release, or ERGATES_RELEASE_DIR when set.

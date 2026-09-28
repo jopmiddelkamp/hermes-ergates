@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -12,6 +15,12 @@ import {
   secretProblems,
   secretValue,
 } from '../../scripts/release/secrets.mjs'
+
+// The three release workflows: the only ones that read `secrets.*` (see the security section of RELEASING.md).
+const ROOT = path.resolve(import.meta.dirname, '../../../..')
+const RELEASE_WORKFLOWS = ['release.yml', 'release-build-android.yml', 'release-build-ios.yml'].map(file =>
+  readFileSync(path.join(ROOT, '.github/workflows', file), 'utf8')
+)
 
 const ENV = {
   APPLE_TEAM_ID: 'AB12CD34EF',
@@ -44,20 +53,16 @@ describe('parseEnvFile', () => {
 })
 
 describe('the secret list', () => {
-  it('covers every secret and variable the release workflows read', () => {
-    expect(SECRETS.map(secret => secret.name)).toEqual([
-      'IOS_DIST_CERT_P12_BASE64',
-      'IOS_DIST_CERT_PASSWORD',
-      'IOS_APPSTORE_PROFILE_BASE64',
-      'APP_STORE_CONNECT_KEY_ID',
-      'APP_STORE_CONNECT_ISSUER_ID',
-      'APP_STORE_CONNECT_PRIVATE_KEY',
-      'ANDROID_UPLOAD_KEYSTORE_BASE64',
-      'ANDROID_UPLOAD_KEYSTORE_PASSWORD',
-      'ANDROID_UPLOAD_KEY_ALIAS',
-      'ANDROID_UPLOAD_KEY_PASSWORD',
-      'PLAY_SERVICE_ACCOUNT_JSON',
-    ])
+  it('covers every secrets.* name the release workflows read', () => {
+    const namesRead = new Set<string>()
+    for (const workflow of RELEASE_WORKFLOWS) {
+      for (const match of workflow.matchAll(/secrets\.([A-Z0-9_]+)/g)) namesRead.add(match[1])
+    }
+    expect(namesRead).toEqual(new Set(SECRETS.map(secret => secret.name)))
+  })
+
+  it('covers vars.APPLE_TEAM_ID, the one environment variable the release workflows read', () => {
+    expect(RELEASE_WORKFLOWS.some(workflow => workflow.includes('vars.APPLE_TEAM_ID'))).toBe(true)
     expect(VARIABLES.map(variable => variable.name)).toEqual(['APPLE_TEAM_ID'])
   })
 })

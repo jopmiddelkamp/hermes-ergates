@@ -147,6 +147,8 @@ export function keytoolArguments(env, keystorePath) {
     '-genkeypair',
     '-keystore', keystorePath,
     '-storetype', 'PKCS12',
+    // The alias is on argv (keytool has no :env form for it); the passwords are not.
+    // It is an identifier, not a password (usually "upload"), classified as a secret only for consistent handling.
     '-alias', env.ANDROID_UPLOAD_KEY_ALIAS,
     '-keyalg', 'RSA',
     '-keysize', '2048',

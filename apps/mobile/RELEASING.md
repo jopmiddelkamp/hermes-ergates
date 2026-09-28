@@ -16,7 +16,7 @@ The workflow is `.github/workflows/release.yml`; the build steps are scripts in 
 - **One version for the whole repo.** gflow runs `.gflow/set-version.sh X.Y.Z` when it starts a release or hotfix. On the release or hotfix branch the script writes the version into `app.json`, `package.json`, `package-lock.json` and the Hermes plugin (`pyproject.toml`, `plugin.yaml`, `ergates/__init__.py`, `dashboard/manifest.json`, `uv.lock`), and gflow commits it as `chore: set version X.Y.Z`. On any other branch it changes nothing: `develop` keeps the last released version and gets the next one through gflow's release and hotfix merges, so those merges do not conflict on the version lines. (gflow also calls the script to move `develop` to the next minor; it then prints `↷ skipped: develop version bump (no changes)`.)
 - **The tag gives the version.** `v0.3.0-rc.2` builds version `0.3.0`: Apple allows only digits and dots in the app version, so the `-rc.N` part stays in the tag. The run stops when `app.json` has another version than the tag.
 - **Build number:** the workflow's run number plus the repository variable `BUILD_NUMBER_OFFSET` (default 0). iOS `CFBundleVersion` and Android `versionCode` get the same number, and it rises with every run.
-- **Jobs:** `metadata` (version, channel, build number) → `checks` (the CI mobile job) → `build-android` and `build-ios` → `upload-android` and `upload-ios` → `github-release`. The `.aab` and `.ipa` stay downloadable on the run page for 14 days.
+- **Jobs:** `metadata` (version, channel, build number) → `checks` (the CI mobile job) → `build-android` and `build-ios` → `upload-android` and `upload-ios` → `github-release`. The `.aab` and `.ipa` stay downloadable on the run page for 14 days, by anyone, since the repository is public. They are store builds, signed for TestFlight and Play, not something you can install as-is.
 
 ## Costs
 
@@ -41,7 +41,7 @@ chmod 600 .release/release.env
 
 1. The repository, `github.com/jopmiddelkamp/hermes-ergates`, already exists, is public, and its default branch is `master`; nobody pushes a `main` branch to it. It is MIT-licensed, with contributions under the repository's own license and no DCO; `apps/mobile/LICENSE` (the Expo template's) and the rest of the repository's license and community files land in a separate step, not this one.
 2. Push `master`, land the current work on `develop`, and push `develop`. Run `git config gflow.branch.main master` in this checkout, and again right after any future clone of the repository: gflow otherwise tries `main` first when it picks the mainline branch.
-3. In the repository settings, turn on **Automatically delete head branches**. gflow's `chore/set-version-*` branches are never cleaned up otherwise.
+3. In the repository settings, turn on **Automatically delete head branches**. gflow's landing branches, and its `release-fix/*` and `hotfix-fix/*` work branches, are never cleaned up otherwise.
 4. Install `gh` and log in (`gh auth login`). gflow uses it to open pull requests.
 5. Protect `master` and `develop` so that every change needs a pull request with green CI. Run this from the repository:
 
@@ -144,6 +144,7 @@ This cuts `release/0.3.0`, commits `chore: set version 0.3.0` there, and pushes 
 ## When a run fails
 
 - **Fix forward.** A code problem gets a fix on the release branch and a new RC (`gflow bump`).
+- **Apple emails a processing failure after the run is green:** the build never appears in TestFlight. `upload-ios` does not wait for Apple's processing, so a green run only means the upload succeeded, not that the build passed review. Fix it on the release branch and `gflow bump`; that build number is used up.
 - **Run again on the same tag**, for example after a store or runner hiccup, or after the first manual Play upload. A manual run gets a new run number, so a new build number:
 
   ```bash
@@ -179,7 +180,7 @@ scripts/release/build-ios.sh
 - Every store secret is an environment secret of `app-stores`. Only jobs that name the environment get them, and the environment accepts only runs on tags matching `v*`. Pull request runs, from forks too, never see them, and no workflow uses `pull_request_target`.
 - Anyone who can push a tag can start a release. Keep write access to the repository to yourself.
 - The release workflows pin every action to a full commit SHA, with the version in a comment.
-- The release folder (`apps/mobile/.release/` by default, or the folder named by `ERGATES_RELEASE_DIR` when it is set, for example `~/.ergates-release`) must be mode 700, and every file in it mode 600, or the release scripts refuse to run and name the file to `chmod`. When the folder is inside this repository it must also be git-ignored: `upload-secrets.sh` refuses to run when git does not ignore it. A folder outside the repository (an `ERGATES_RELEASE_DIR` elsewhere) is never checked against git, since nothing outside the repository can be committed from here.
+- `upload-secrets.sh` refuses to run unless the release folder (`apps/mobile/.release/` by default, or the folder named by `ERGATES_RELEASE_DIR` when it is set, for example `~/.ergates-release`) is mode 700 and `release.env` and the five secret files are mode 600; it names the file to `chmod`. When the folder is inside this repository it must also be git-ignored: `upload-secrets.sh` refuses to run when git does not ignore it. A folder outside the repository (an `ERGATES_RELEASE_DIR` elsewhere) is never checked against git, since nothing outside the repository can be committed from here.
 - Nothing prints a secret: every release script clears its own trace flag (`set +x`) before it runs, so invoking one with `bash -x`, or inheriting a caller's trace, cannot print a secret either. The build scripts decode keys into a temporary folder that they delete, and Gradle reads the Android passwords from the environment.
 - To revoke access: revoke the API key in App Store Connect, revoke the certificate in the Apple Developer portal, delete the key in Google Cloud, and delete the environment `app-stores` on GitHub.
 
