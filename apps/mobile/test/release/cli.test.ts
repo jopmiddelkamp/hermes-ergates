@@ -4,7 +4,7 @@
  * with the GitHub run in its environment.
  */
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -82,5 +82,25 @@ describe('cli set-build-number', () => {
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('::error::The build number must be a whole number from 1 to 2100000000, got NaN.')
     expect(readFileSync(file, 'utf8')).toBe(readFileSync(path.join(APP, 'app.json'), 'utf8'))
+  })
+})
+
+describe('cli ios-signing', () => {
+  it('refuses a development profile before it writes anything', () => {
+    const exportOptions = path.join(scratch, 'ExportOptions.plist')
+
+    const result = cli(['ios-signing', exportOptions], {
+      APPLE_TEAM_ID: 'AB12CD34EF',
+      PROFILE_NAME: 'Ergates Development',
+      PROFILE_UUID: '0f5e3c9a-1111-4222-8333-944455556666',
+      PROFILE_TEAM_ID: 'AB12CD34EF',
+      PROFILE_APP_ID: 'AB12CD34EF.dev.ergates.mobile',
+      PROFILE_GET_TASK_ALLOW: 'true',
+      PROFILE_DEVICES: '',
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toBe('::error::The provisioning profile is a development or ad hoc profile. Create an App Store profile (RELEASING.md).\n')
+    expect(existsSync(exportOptions)).toBe(false)
   })
 })
