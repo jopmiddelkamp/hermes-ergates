@@ -39,8 +39,71 @@ remove_signing() {
   done
 }
 
+profile_value() {
+  /usr/libexec/PlistBuddy -c "Print :$2" "$1" 2>/dev/null || true
+}
+
+# What cli.mjs ios-signing checks: the profile's name, team, app ID and kind,
+# read from an already-decoded profile plist (what `security cms -D` writes
+# from the .mobileprovision; only that decode needs `security` -- this
+# function does not). Sets the PROFILE_* variables. Refuses a plist that does
+# not parse, or one with no Name or UUID, with a clear message and nothing
+# else printed: most likely `security cms -D` wrote something that is not a
+# provisioning profile.
+read_profile_fields() {
+  local plist="$1"
+  if ! /usr/libexec/PlistBuddy -c "Print" "$plist" > /dev/null 2>&1; then
+    echo "build-ios: $plist did not parse as a plist. Is IOS_APPSTORE_PROFILE_BASE64 a .mobileprovision file?" >&2
+    return 1
+  fi
+  PROFILE_NAME="$(profile_value "$plist" Name)"
+  PROFILE_UUID="$(profile_value "$plist" UUID)"
+  if [[ -z "$PROFILE_NAME" || -z "$PROFILE_UUID" ]]; then
+    echo "build-ios: $plist has no Name or UUID. Is IOS_APPSTORE_PROFILE_BASE64 a .mobileprovision file?" >&2
+    return 1
+  fi
+  PROFILE_TEAM_ID="$(profile_value "$plist" TeamIdentifier:0)"
+  PROFILE_APP_ID="$(profile_value "$plist" Entitlements:application-identifier)"
+  PROFILE_GET_TASK_ALLOW="$(profile_value "$plist" Entitlements:get-task-allow)"
+  PROFILE_DEVICES="$(profile_value "$plist" ProvisionedDevices)$(profile_value "$plist" ProvisionsAllDevices)"
+}
+
+# Refuses anything but exactly one workspace, before its name feeds -scheme
+# and -workspace below; prints its path. No Xcode needed: this only globs.
+# nullglob, restored after: without it, a dir with no match leaves the
+# pattern itself as a literal, one-element array -- a false "found 1".
+require_one_workspace() {
+  local dir="$1"
+  local restore_nullglob
+  # shopt -p exits 1 when the option is already off (it still prints the
+  # command to restore it), which set -e would otherwise treat as a failure.
+  restore_nullglob="$(shopt -p nullglob || true)"
+  shopt -s nullglob
+  local workspaces=("$dir"/*.xcworkspace)
+  eval "$restore_nullglob"
+  if [[ ${#workspaces[@]} -ne 1 ]]; then
+    echo "build-ios: expected exactly one $dir/*.xcworkspace, found ${#workspaces[@]}${workspaces[*]:+ (${workspaces[*]})}" >&2
+    return 1
+  fi
+  echo "${workspaces[0]}"
+}
+
 if [[ "${1:-}" == "--cleanup" ]]; then
   remove_signing
+  exit 0
+fi
+
+# Test hooks: exercise read_profile_fields and require_one_workspace on their
+# own, without a decoded certificate, Xcode, or BUILD_NUMBER and the other
+# variables the full build needs.
+if [[ "${1:-}" == "--read-profile-fields" ]]; then
+  read_profile_fields "${2:-}"
+  printf 'NAME=%s\nUUID=%s\nTEAM_ID=%s\nAPP_ID=%s\nGET_TASK_ALLOW=%s\nDEVICES=%s\n' \
+    "$PROFILE_NAME" "$PROFILE_UUID" "$PROFILE_TEAM_ID" "$PROFILE_APP_ID" "$PROFILE_GET_TASK_ALLOW" "$PROFILE_DEVICES"
+  exit 0
+fi
+if [[ "${1:-}" == "--require-one-workspace" ]]; then
+  require_one_workspace "${2:-ios}"
   exit 0
 fi
 
@@ -68,17 +131,8 @@ trap cleanup EXIT
 (umask 077 && printf '%s' "$IOS_DIST_CERT_P12_BASE64" | base64 --decode > "$work/distribution.p12")
 (umask 077 && printf '%s' "$IOS_APPSTORE_PROFILE_BASE64" | base64 --decode > "$work/appstore.mobileprovision")
 
-# What cli.mjs ios-signing checks: the profile's name, team, app ID and kind.
 security cms -D -i "$work/appstore.mobileprovision" > "$work/profile.plist"
-profile_value() {
-  /usr/libexec/PlistBuddy -c "Print :$1" "$work/profile.plist" 2>/dev/null || true
-}
-PROFILE_NAME="$(profile_value Name)"
-PROFILE_UUID="$(profile_value UUID)"
-PROFILE_TEAM_ID="$(profile_value TeamIdentifier:0)"
-PROFILE_APP_ID="$(profile_value Entitlements:application-identifier)"
-PROFILE_GET_TASK_ALLOW="$(profile_value Entitlements:get-task-allow)"
-PROFILE_DEVICES="$(profile_value ProvisionedDevices)$(profile_value ProvisionsAllDevices)"
+read_profile_fields "$work/profile.plist"
 export PROFILE_NAME PROFILE_UUID PROFILE_TEAM_ID PROFILE_APP_ID PROFILE_GET_TASK_ALLOW PROFILE_DEVICES
 
 remove_signing
@@ -104,7 +158,8 @@ CI=1 npx expo prebuild --platform ios --clean --no-install
 (cd ios && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install)
 node scripts/release/cli.mjs ios-signing "$work/ExportOptions.plist"
 
-scheme="$(basename ios/*.xcworkspace .xcworkspace)"
+workspace="$(require_one_workspace ios)"
+scheme="$(basename "$workspace" .xcworkspace)"
 xcodebuild -quiet archive \
   -workspace "ios/$scheme.xcworkspace" \
   -scheme "$scheme" \
